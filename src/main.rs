@@ -1,0 +1,319 @@
+mod _utils;
+mod _text;
+mod _duration;
+mod _pitch;
+mod _dict;
+mod _lts;
+mod _vtm;
+mod _vtbl;
+mod _synth;
+
+use std::io;
+
+use crate::_utils::cbuf;
+use crate::_utils::PHNIDToPhoneme;
+use crate::_utils::getVowelCount;
+use crate::_utils::isVowel;
+use crate::_dict::dictdat;
+use crate::_dict::getOffset;
+use crate::_dict::upperToLower;
+use crate::_dict::hasher;
+use crate::_lts::lts;
+
+fn main() {
+	// read in text input
+	let mut input = String::new();
+	io::stdin().read_line(&mut input).expect("failed to read line!");
+
+	// initialize ring buffers
+	let mut buf  = cbuf::new();				// text stream buffer
+	let mut wbuf = cbuf::new();				// word buffer
+	let mut pbuf = cbuf::new();				// phoneme buffer
+
+	// initialize dictionary hashers
+	let mut hsher_a = hasher::new();		// case sensitive hasher   (needed for homographs)
+	let mut hsher_b = hasher::new();		// case insensitive hasher (as fallback)
+
+	// read in text stream into input ring buffer
+	buf.write(0x20);
+	buf.write_text(&input);
+	buf.write(0x20);
+	buf.write(0x00);
+
+	// initialize engines
+	let mut synth_engine = _synth::engine::new();
+	let mut text_engine  = _text::engine::new();
+	let mut lts_engine   = _lts::pvec::new();
+	let mut dur_model    = _duration::model::new();
+	let mut pit_model    = _pitch::model::new();
+
+	// proceed with the text normalizer/LTS pipeline
+	let mut pa: u8                = 0;
+	let mut pb: u8                = 0;
+	let mut sa: u8                = 0;
+	let mut sb: u8                = 0;
+	let mut l4: u8                = 0;
+	let mut l3: u8                = 0;
+	let mut l2: u8                = 0;
+	let mut l1: u8                = 0;
+	let mut c:  u8                = 0;
+	let mut r1: u8                = 0;
+	let mut r2: u8                = 0;
+	let mut r3: u8                = 0;
+	let mut r4: u8                = 0;
+	let mut p: i32                = -1;
+	let mut pp: i32               = -1;
+	let mut ent: usize            = 0;
+	let mut pout: u8              = 0;
+	let mut prev: u8              = 0;
+	let mut cc: u8                = 0;
+	let mut cin: u8               = 0;
+	let mut text_done: bool       = false;
+	let mut vwl_count: u16        = 0;
+	let mut yyreset: usize        = 0;
+	let mut isFunctionWord:  bool = false;
+	let mut isFunctionWordA: bool = false;
+	let mut isFunctionWordB: bool = false;
+	let mut release_flag: bool    = false;
+	let mut past_phone: u8        = 0;
+	let mut phone: u8             = 0;
+	let mut stress: u8            = 0;
+	let mut duration: u16         = 0;
+	let mut is_final: bool        = false;
+
+	while buf.is_not_empty() {
+		text_done = text_engine.lex(&mut buf);
+		if text_done { break; }
+		while text_engine.is_not_empty() {
+			cc = text_engine.read();
+			if wbuf.is_not_empty() && cc == 0x20 {
+				// process word when whitespace is
+				// hit and word buffer is not empty
+				hsher_a.reset();
+				hsher_b.reset();
+				yyreset = wbuf.getcurs();
+				while wbuf.is_not_empty() {
+					cin = wbuf.read();
+					wbuf.advance();
+					if cin == 0x20 { continue; }
+					hsher_a.update(cin);
+					hsher_b.update(upperToLower(cin));
+				}
+
+				// attempt to get dictionary offset
+				// if hash has been found
+				isFunctionWord = false;
+				(p,  isFunctionWordA) = getOffset(hsher_a.get());
+				(pp, isFunctionWordB) = getOffset(hsher_b.get());
+
+				// write out word boundary first
+				pbuf.write(90);
+
+				if p >= 0 || pp >= 0 {
+					// dictionary entry found! figure out
+					// which hasher found the match
+					if p >= 0 {
+						ent = p as usize;
+						isFunctionWord = isFunctionWordA;
+					} else if pp >= 0 {
+						ent = pp as usize;
+						isFunctionWord = isFunctionWordB;
+					}
+
+					// erase old word boundary if word
+					// is identified as function word
+					if isFunctionWord {
+						pbuf.erase();
+						pbuf.write(95);
+					}
+
+					// retrieve the phoneme sequence from dictdat
+					// until null character 0xFF is hit
+					loop {
+						pout = dictdat[ent];
+						if pout == 0xFF { break; }
+						ent += 1;
+						pbuf.write(pout);
+						vwl_count += getVowelCount(pout);
+					}
+				} else {
+					// if no dictionary match, then
+					// do letter-to-sound stuff here!
+					lts_engine.reset();
+					wbuf.setcurs(yyreset);
+					prev = 0;
+					while lts_engine.is_not_last() {
+						cin = wbuf.read();
+						wbuf.advance();
+						(l4, l3, l2, l1, c, r1, r2, r3, r4) = lts_engine.step(cin);
+						if lts_engine.is_ready() {
+							// NOTE FOR TERMINAL PUNCTUATIONS
+							//
+							// word boundary is erased first before
+							// adding terminal punctuations to the stream
+							if c == 28 {
+								// exclamation point
+								pbuf.erase();
+								pbuf.write(94);
+							} else if c == 29 {
+								// comma
+								pbuf.erase();
+								pbuf.write(91);
+							} else if c == 30 {
+								// period
+								pbuf.erase();
+								pbuf.write(92);
+							} else if c == 31 {
+								// question mark
+								pbuf.erase();
+								pbuf.write(93);
+							} else {
+								// normal case
+								pout = lts(l4, l3, l2, l1, c, r1, r2, r3, r4);
+								if pout != 31 && pout != prev {
+									// write out phoneme when not null and not a run-on
+									pbuf.write(pout);
+									vwl_count += getVowelCount(pout);
+									prev = pout;
+								}
+							}
+						}
+					}
+				}
+			} else {
+				wbuf.write(cc);
+			}
+		}
+		pbuf.write(90);
+		
+		// proceed with the synthesis
+		dur_model.reset();
+		pit_model.reset();
+		//f_eng.reset();
+		
+		let mut last_syl: bool = false;
+		isFunctionWord = false;
+		if vwl_count > 0 { vwl_count -= 1; }
+		
+		while dur_model.is_not_last() {
+			pa = 0;
+			pb = 0;
+			sa = 0;
+			sb = 0;
+			if pbuf.is_not_empty() {
+				(pa, pb, sa, sb) = PHNIDToPhoneme(pbuf.read());
+				pbuf.advance();
+			}
+			loop {
+				// decrement vowel counter for is_final syllable trigger
+				if vwl_count > 0 && isVowel(pa) {
+					vwl_count -= 1;
+				} else if vwl_count == 0 {
+					last_syl = true;
+				}
+				
+				// feed phoneme, stress, and last_syl trigger into model
+				dur_model.step(pa, sa, last_syl);
+
+				// fetch result when ready
+				if dur_model.is_ready() {
+					(past_phone, phone, stress, duration, is_final) = dur_model.fetch();
+					//if is_final { pit_model.set_final(0); }
+					if phone != 50 && phone != 55 {
+						// output phoneme, stress, and duration
+						// when phoneme is not a word boundary
+						
+						// reset pitch model if past phone is terminal punctuation
+						// as long as current phone is not terminal punctuation
+						if phone != 52 || phone != 53 || phone != 54 {
+							if past_phone == 52 || past_phone == 53 || past_phone == 54 {
+								pit_model.reset();
+							}
+						}
+
+						// convert phrase boundaries to release phoneme (AXP or IXP)
+						// and change duration to match duration profile
+						// close to that of DECTalk.
+						release_flag = false;
+						if phone == 51 {
+							// comma (do an upstep)
+							pit_model.upstep();
+							pit_model.upstep();
+							duration = 150;
+							release_flag = true;
+						} else if phone == 52 || phone == 53 || phone == 54 {
+							match phone {
+								53 => { pit_model.set_final(2); },		// question mark
+								54 => { pit_model.set_final(3); },		// exclamation point
+								_  => { pit_model.set_final(0); },		// period
+							}
+							duration = 400;
+							release_flag = true;
+						}
+						if release_flag {
+							// check if past phoneme is alveolar stop (T, D)
+							phone = match past_phone {
+								11|36 => 49,			// is alveolar. use IXP release
+								_     => 48,			// otherwise, use AXP release
+							};
+						}
+
+						// output phone, stress, and duration for debugging
+						println!("{} {} {}", phone, stress, duration);
+
+						// note. duration is shorter for function words
+						// lets do that here
+						if isFunctionWord { duration = (duration as f32 * 0.9) as u16; }
+
+						// feed phoneme and duration into formant synth
+						/*ready = f_eng.load(phone, duration, stress)
+						if ready {
+							while f_eng.is_running() {
+								pit_model.set(f_eng.pst_c)
+								F0 = pit_model.step()
+								snd_out.append(f_eng(F0))
+							}
+						}*/
+					} else if phone == 50 {
+						//println!("content word/word boundary");
+						if isFunctionWord == false {
+							// do compound stress if content word
+							// is after a content word
+							pit_model.set_compound(true);
+						}
+						isFunctionWord = false;
+					} else if phone == 55 {
+						//println!("function word");
+						pit_model.set_compound(false);
+						if isFunctionWord == false {
+							// do a downstep if content word
+							// was before a function word
+							pit_model.downstep();
+						}
+						isFunctionWord = true;
+					}
+				}
+				// assign pb and sb to pa and sa to process those next
+				pa = pb;
+				sa = sb;
+				pb = 0;
+				sb = 0;
+				if pa == 0 { break; }
+			}
+		}
+
+		// if formant synth not done, let's finish up the synthesis
+		// this is redundant, but will let us quickly test the set up
+		/*finish_off = True
+		while not f_eng.is_last():
+			if finish_off:
+				finish_off = False
+				ready = f_eng.load(48, 100, 0)
+			else:
+				ready = f_eng.load(0, 50, 0)
+			if ready:
+				while f_eng.is_running():
+					F0 = pit_model.step()
+					snd_out.append(f_eng(F0))*/
+	}
+}
