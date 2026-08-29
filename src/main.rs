@@ -238,7 +238,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					if phone == 51 {
 						// comma (do an upstep)
 						pit_model.upstep();
-						pit_model.upstep();
 						duration = 150;
 						release_flag = true;
 					} else if phone == 52 || phone == 53 || phone == 54 {
