@@ -750,7 +750,7 @@ impl engine {
 	}
 	fn get_control_B_duration(&mut self, x: u8, d: i32) -> i32 {
 		let xx = 100 - x;
-		self.get_control_A_duration(x, d)
+		self.get_control_A_duration(xx, d)
 	}
 	fn load_registers(&mut self) {
 		// load for the first time
@@ -942,9 +942,6 @@ impl engine {
 		// d is duration (ms)
 		// s is stress
 
-		// simple stress trigger
-		let is_stressed = if s { true } else { false };
-
 		// reset end early flag
 		self.end_early = false;
 		
@@ -952,7 +949,7 @@ impl engine {
 		let mut b_onset: i32 = 0;
 		let mut t_onset: i32 = 0;
 
-		self.advance(x, d, is_stressed);
+		self.advance(x, d, s);
 		if self.is_ready() {
 			// do ptar before anything else
 			self.ptar();
@@ -978,7 +975,7 @@ impl engine {
 				//   + fric  -> 40 ms (~30-50ms)
 				//   + sonor -> 50 ms (~40-60ms) [default]
 				//==============================================
-				/*if self.pft_c & 0x1 == 0 {
+				if self.pft_c & 0x1 == 0 {
 					// fricative transition
 					if self.pft_r1 & 0x1C10 != 0 {
 						// shorten if fricative follows sonorant (-20ms)
@@ -1001,8 +998,8 @@ impl engine {
 				} else {
 					// otherwise, get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
-				}*/
-				self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
+				}
+				//self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				self.marker_B = self.get_control_B_duration(self.C_B_src, self.pdr_c);
 			} else if self.pft_c & 0x8000 != 0 {
 				// is affricate
