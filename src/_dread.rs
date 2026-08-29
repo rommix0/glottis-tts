@@ -32,6 +32,7 @@ pub struct dictreader {
 	wordload: [u8; 32],
 	wordlen:  u8,
 	funcword: bool,
+	is_valid: bool,
 }
 impl dictreader {
 	pub fn new() -> dictreader {
@@ -42,6 +43,7 @@ impl dictreader {
 			wordload: [0; 32],
 			wordlen:  0,
 			funcword: false,
+			is_valid: false,
 		}
 	}
 	pub fn reset(&mut self) {
@@ -49,6 +51,7 @@ impl dictreader {
 		self.memcount = 0;
 		self.counter  = 0;
 		self.funcword = false;
+		self.is_valid = false;
 		self.wordlen  = 0;
 		for x in 0..32 { self.wordload[x] = 0; }
 	}
@@ -87,10 +90,15 @@ impl dictreader {
 	pub fn isFunctionWord(&mut self) -> bool { self.funcword }
 	pub fn readIn(&mut self, x: u8) {
 		// read in the word to look up
-		if self.counter < 32 && x > 0x20 && x < 0x7F {
-			self.wordload[self.counter] = x;
-			self.counter += 1;
-			self.wordlen += 1;
+		if self.counter < 32 {
+			if x > 0x20 && x < 0x7F {
+				if self.is_valid == false { self.is_valid = true; }
+				self.wordload[self.counter] = x;
+				self.counter += 1;
+				self.wordlen += 1;
+			}
+		} else if self.is_valid {
+			self.is_valid = false;
 		}
 	}
 	pub fn readOut(&mut self) -> u8 {
@@ -100,6 +108,9 @@ impl dictreader {
 		xx
 	}
 	pub fn search(&mut self) -> bool {
+		// return false if not valid
+		if self.is_valid == false { return false; }
+		
 		// find the word using naive lookup method
 		// set up some variables
 		let mut x:       u8   = 0;
@@ -135,7 +146,7 @@ impl dictreader {
 
 					self.counter  += 1;
 					self.memcount += 1;
-					if x == 0 || y == 0xFE { break; }
+					if y == 0xFE { break; }
 					length += 1;
 
 					//println!("wordload: {}, dictdat: {}", x, y);

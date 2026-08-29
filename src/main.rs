@@ -116,6 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				}
 
 				if dict_reader.search() {
+					//println!("dictionary mode!");
 					// get phoneme stream for word
 					// if found in the dictionary
 					if dict_reader.isFunctionWord() {
@@ -125,22 +126,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 						// content word boundary
 						pbuf.write(90);
 					}
-					
+
 					// retrieve the phoneme sequence from dictionary
 					// until null character 0xFF is hit
 					loop {
 						pout = dict_reader.readOut();
+						//print!("{} ", pout);
 						if pout == 0xFF { break; }
 						vwl_count += getVowelCount(pout);
 						pbuf.write(pout);
 					}
+					//print!("\n");
 				} else {
 					// if no dictionary match, then
 					// do letter-to-sound stuff here!
-
-					// write out word boundary first
-					pbuf.write(90);
-
+					//println!("LTS mode!");
 					lts_engine.reset();
 					wbuf.setcurs(yyreset);
 					prev = 0;
@@ -155,22 +155,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 							// adding terminal punctuations to the stream
 							if c == 28 {
 								// exclamation point
-								pbuf.erase();
 								pbuf.write(94);
 							} else if c == 29 {
 								// comma
-								pbuf.erase();
 								pbuf.write(91);
 							} else if c == 30 {
 								// period
-								pbuf.erase();
 								pbuf.write(92);
 							} else if c == 31 {
 								// question mark
-								pbuf.erase();
 								pbuf.write(93);
 							} else {
 								// normal case
+								pbuf.write(90);
 								pout = lts(l4, l3, l2, l1, c, r1, r2, r3, r4);
 								if pout != 31 && pout != prev {
 									// write out phoneme when not null and not a run-on
@@ -189,15 +186,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 	}
 	pbuf.write(90);
-	
-	// print out phoneme stream for debugging
-	yyreset = pbuf.getcurs();
-	while pbuf.is_not_empty() {
-		print!("{} ", pbuf.read());
-		pbuf.advance();
-	}
-	pbuf.setcurs(yyreset);
-	print!("\n");
 
 	// proceed with the synthesis
 	dur_model.reset();
