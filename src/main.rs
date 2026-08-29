@@ -285,7 +285,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					}
 
 					// output phone, stress, and duration for debugging
-					println!("{} {} {}", phone, stress, duration);
+					//println!("{} {} {}", phone, stress, duration);
 
 					// note. duration is shorter for function words
 					// lets do that here

@@ -33,35 +33,26 @@ const BNP_INIT: f32 = 100.0;
 const FNZ_INIT: f32 = 250.0;
 const BNZ_INIT: f32 = 100.0;
 
-// noise generators
-struct noise {
-	alpha: f32,
-	//nxt:   i32,
-	nxt:   u16,
-	xp1:   f32,
-}
+// noise generator
+struct noise { alpha: f32, nxt: i16, xp1: f32 }
 impl noise {
 	pub fn new() -> noise {
-		noise {
-			alpha: 0.75,
-			nxt:   5612,
-			xp1:   0.0,
-		}
+		noise { alpha: 0.75, nxt: 5612, xp1: 0.0 }
 	}
 	pub fn reset(&mut self) {
 		self.nxt = 5612;
 		self.xp1 = 0.0;
 	}
-	fn xorshift(x: u16) -> u16 {
-		let mut xx = x;
+	fn xorshift(&mut self){
+		let mut xx = self.nxt;
 		xx ^= xx << 7;
 		xx ^= xx >> 9;
 		xx ^= xx << 8;
-		xx
+		self.nxt = xx;
 	}
 	pub fn step(&mut self) -> (f32, f32) {
-		self.nxt = noise::xorshift(self.nxt);
-		let n: f32 = (self.nxt as f32 / 32767.0) - 1.0;
+		self.xorshift();
+		let n: f32 = self.nxt as f32 / 32767.0;
 		let f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
 		self.xp1 = f;
 		(n, f)
@@ -376,7 +367,7 @@ impl vtm {
 			/*##############################
 			# vocal tract model parameters #
 			##############################*/
-			G_MAX  : 87.0,			// default max gain setting
+			G_MAX  : 96.0,			// default max gain setting
 			F0     : 125.0,			// fundamental frequency (Hz)
 			AV     : 60.0,			// Amplitude of voicing, in dB
 			TL     : 0.0,			// tilt (for glottal pulse model)
@@ -409,7 +400,7 @@ impl vtm {
 			A6     : 0.0,			// Amp of parallel 6th formant, in dB
 			A7     : 0.0,			// Amp of parallel 7th formant, in dB
 			AB     : 0.0,			// Amp of parallel bypass path, in dB
-			MIN_D  : 300.0,			// min distance between formants
+			MIN_D  : 500.0,			// min distance between formants
 			MUL_B  : 2.5,			// bandwidth multiplier adjust
 			B1_ADJ : 1.0,			// B1 adjustment factor
 			B2_ADJ : 1.0,			// B2 adjustment factor
