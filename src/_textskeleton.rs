@@ -1972,7 +1972,7 @@ impl engine {
 				self.scratch_pad.write_text(" p r ");
 				break;
 			}
-			wbound 'ph.d.' wbound {
+			wbound 'ph.d.'  {
 				self.scratch_pad.write_text(" p h d ");
 				break;
 			}
@@ -2714,10 +2714,10 @@ impl engine {
 				self.scratch_pad.write_text(" apartment ");
 				break;
 			}
-			wbound "ASAP" wbound {
+			/*wbound "ASAP" wbound {
 				self.scratch_pad.write_text(" as soon as possible ");
 				break;
-			}
+			}*/
 			wbound 'a.s.l.' {
 				self.scratch_pad.write_text(" age , sex , and location. ");
 				break;
@@ -7896,15 +7896,15 @@ impl engine {
 			/* SOME PUNCTUATIONS RULES */
 			/*-------------------------*/
 
-			space exc_point space {
+			space exc_point {
 				self.scratch_pad.write_text(" exclaimation point ");
 				break;
 			}
-			space "(" space {
+			"(" space {
 				self.scratch_pad.write_text(" left parenthesis ");
 				break;
 			}
-			space ")" space {
+			space ")" {
 				self.scratch_pad.write_text(" right parenthesis ");
 				break;
 			}
@@ -7912,19 +7912,19 @@ impl engine {
 				self.scratch_pad.write_text(" asterisk ");
 				break;
 			}
-			space comma space {
+			space comma {
 				self.scratch_pad.write_text(" comma ");
 				break;
 			}
-			space period space {
+			space period {
 				self.scratch_pad.write_text(" period ");
 				break;
 			}
-			space ":" space {
+			space ":" {
 				self.scratch_pad.write_text(" colon ");
 				break;
 			}
-			space ";" space {
+			space ";" {
 				self.scratch_pad.write_text(" semicolon ");
 				break;
 			}
@@ -7935,19 +7935,19 @@ impl engine {
 				}
 				break;
 			}
-			space ques_mark space {
+			space ques_mark {
 				self.scratch_pad.write_text(" question mark ");
 				break;
 			}
-			space "[" space {
+			"[" space {
 				self.scratch_pad.write_text(" left square bracket ");
 				break;
 			}
-			space dquote space {
+			space dquote {
 				self.scratch_pad.write_text(" double quote ");
 				break;
 			}
-			space squote space {
+			space squote {
 				self.scratch_pad.write_text(" single quote ");
 				break;
 			}
@@ -7956,7 +7956,7 @@ impl engine {
 				self.scratch_pad.write_text("\x27");
 				break;
 			}
-			space "]" space {
+			space "]" {
 				self.scratch_pad.write_text(" right square bracket ");
 				break;
 			}
@@ -7964,11 +7964,11 @@ impl engine {
 				self.scratch_pad.write_text(" caret ");
 				break;
 			}
-			space "{" space {
+			"{" space {
 				self.scratch_pad.write_text(" left curly bracket ");
 				break;
 			}
-			space "}" space {
+			space "}" {
 				self.scratch_pad.write_text(" right curly bracket ");
 				break;
 			}
@@ -8039,7 +8039,7 @@ impl engine {
 			/*---------------------*/
 
 			fun_tag "version" fun_tag {
-				self.scratch_pad.write_text(" version one ");
+				self.scratch_pad.write_text(" version one point one ");
 				break;
 			}
 			fun_tag "author" fun_tag {
@@ -8047,7 +8047,7 @@ impl engine {
 				break;
 			}
 			fun_tag "build_date" fun_tag {
-				self.scratch_pad.write_text(" august twenty fifth , twenty twenty six ");
+				self.scratch_pad.write_text(" august twenty ninth , twenty twenty six ");
 				break;
 			}
 

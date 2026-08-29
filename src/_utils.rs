@@ -4,7 +4,7 @@ pub struct cbuf {
 	buffer: [u8; 2048],		// buffer itself (2048 is hard coded here)
 	head:   isize,			// producer
 	tail:   isize,			// consumer
-	prev:   u8,				// previous character (for space trimming)
+	prev:   u8				// previous character for trimming when writing text
 }
 impl cbuf {
 	pub fn new() -> cbuf {

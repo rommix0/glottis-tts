@@ -543,7 +543,7 @@ impl vtm {
 		self.fix_bw();
 		
 		// adjust tilt (might improve sound quality)
-		self.TL *= self.max_adj();
+		//self.TL *= self.max_adj();
 
 		// get noise and glottal sound sources
 		let mut n:     f32 = 0.0;
@@ -569,6 +569,6 @@ impl vtm {
 		let parr_out: f32 = self.parallel(parr_in);
 
 		// add them together and return
-		casc_out + parr_out
+		(casc_out + parr_out).clamp(-0.995, 0.995)
 	}
 }
