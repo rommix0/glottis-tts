@@ -13,7 +13,7 @@ columns:
 
 */
 
-pub static vot_tbl: [u16; 12] = [
+pub static vot_tbl: [i32; 12] = [
     58, 53,     // p (31)
     71, 66,     // t (36)
     73, 68,     // k (23)

@@ -1,9 +1,9 @@
 // ring buffer
 pub struct cbuf {
-	size:   usize,			// buffer size
+	size:   isize,			// buffer size
 	buffer: [u8; 2048],		// buffer itself (2048 is hard coded here)
-	head:   usize,			// producer
-	tail:   usize,			// consumer
+	head:   isize,			// producer
+	tail:   isize,			// consumer
 	prev:   u8,				// previous character (for space trimming)
 }
 impl cbuf {
@@ -17,22 +17,22 @@ impl cbuf {
 		}
 	}
 	pub fn is_not_empty(&mut self) -> bool {
-		if self.head != self.tail { return true; }
-		false
+		if self.head == self.tail { return false; }
+		true
 	}
 	fn enqueue(&mut self, x: u8) {
 		let nxt = (self.head + 1) & (self.size - 1);
-		if nxt == self.tail {
-			panic!("cbuf:BUFFER OVERFLOW!!");
-		}
-		self.buffer[self.head] = x;
+		if nxt == self.tail { panic!("cbuf:BUFFER OVERFLOW!!"); }
+		self.buffer[self.head as usize] = x;
 		self.head = nxt;
+		//println!("enqueue: t: {}, h: {}", self.tail, self.head);
 	}
 	fn dequeue(&mut self) -> u8 {
 		let mut output: u8 = 0x20;
 		if self.is_not_empty() {
-			output = self.buffer[self.tail];
+			output = self.buffer[self.tail as usize];
 		}
+		//println!("dequeue: t: {}, h: {}", self.tail, self.head);
 		output
 	}
 	pub fn erase(&mut self) {
@@ -53,19 +53,21 @@ impl cbuf {
 			self.tail = (self.tail + 1) & (self.size - 1);
 		}
 	}
-	pub fn getcurs(&mut self) -> usize  { self.tail }
-	pub fn setcurs(&mut self, x: usize) { self.tail = x; }
+	pub fn getcurs(&mut self) -> usize  { self.tail as usize }
+	pub fn setcurs(&mut self, x: usize) { self.tail = x as isize; }
 	pub fn read(&mut self) -> u8 { self.dequeue() }
 	pub fn write(&mut self, x: u8) {
-		if self.prev == 0x20 && x == 0x20 {
-			// pass
-		} else {
-			self.enqueue(x);
-			self.prev = x;
-		}
+		self.enqueue(x);
+		self.prev = x;
 	}
 	pub fn write_text(&mut self, txt: &str) {
-		for x in txt.bytes() { self.write(x); }
+		for x in txt.bytes() {
+			if self.prev == 0x20 && x == 0x20 {
+				// pass
+			} else {
+				self.write(x);
+			}
+		}
 	}
 }
 

@@ -8,7 +8,11 @@ mod _vtm;
 mod _vtbl;
 mod _synth;
 
+use std::fs;
+use std::io::Write;
 use std::io;
+use _vtm::m_sr;
+use hound;
 
 use crate::_utils::cbuf;
 use crate::_utils::PHNIDToPhoneme;
@@ -20,7 +24,17 @@ use crate::_dict::upperToLower;
 use crate::_dict::hasher;
 use crate::_lts::lts;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+	// setup wav file stuff here
+	let spec = hound::WavSpec {
+		channels: 1,
+		sample_rate: m_sr as u32,
+		bits_per_sample: 32,
+		sample_format: hound::SampleFormat::Float,
+	};
+	let mut writer = hound::WavWriter::create("tts_demo.wav", spec).unwrap();
+
 	// read in text input
 	let mut input = String::new();
 	io::stdin().read_line(&mut input).expect("failed to read line!");
@@ -46,6 +60,7 @@ fn main() {
 	let mut lts_engine   = _lts::pvec::new();
 	let mut dur_model    = _duration::model::new();
 	let mut pit_model    = _pitch::model::new();
+	synth_engine.init();
 
 	// proceed with the text normalizer/LTS pipeline
 	let mut pa: u8                = 0;
@@ -78,8 +93,12 @@ fn main() {
 	let mut past_phone: u8        = 0;
 	let mut phone: u8             = 0;
 	let mut stress: u8            = 0;
-	let mut duration: u16         = 0;
+	let mut duration: i32         = 0;
+	let mut is_stressed: bool     = false;
 	let mut is_final: bool        = false;
+	let mut finish_off: bool      = false;
+	let mut ready: bool           = false;
+	let mut F0: f32               = 125.0;
 
 	while buf.is_not_empty() {
 		text_done = text_engine.lex(&mut buf);
@@ -184,136 +203,153 @@ fn main() {
 				wbuf.write(cc);
 			}
 		}
-		pbuf.write(90);
-		
-		// proceed with the synthesis
-		dur_model.reset();
-		pit_model.reset();
-		//f_eng.reset();
-		
-		let mut last_syl: bool = false;
-		isFunctionWord = false;
-		if vwl_count > 0 { vwl_count -= 1; }
-		
-		while dur_model.is_not_last() {
-			pa = 0;
-			pb = 0;
-			sa = 0;
-			sb = 0;
-			if pbuf.is_not_empty() {
-				(pa, pb, sa, sb) = PHNIDToPhoneme(pbuf.read());
-				pbuf.advance();
+	}
+	pbuf.write(90);
+
+	// debug pbuf
+	/*while pbuf.is_not_empty() {
+		println!("{}", pbuf.read());
+		pbuf.advance();
+	}
+	println!("\n");*/
+
+	// proceed with the synthesis
+	dur_model.reset();
+	pit_model.reset();
+	synth_engine.reset();
+	let mut last_syl: bool = false;
+	isFunctionWord = false;
+	if vwl_count > 0 { vwl_count -= 1; }
+
+	while dur_model.is_not_last() {
+		pa = 0;
+		pb = 0;
+		sa = 0;
+		sb = 0;
+		if pbuf.is_not_empty() {
+			(pa, pb, sa, sb) = PHNIDToPhoneme(pbuf.read());
+			pbuf.advance();
+		}
+		loop {
+			// decrement vowel counter for is_final syllable trigger
+			if vwl_count > 0 && isVowel(pa) {
+				vwl_count -= 1;
+			} else if vwl_count == 0 {
+				last_syl = true;
 			}
-			loop {
-				// decrement vowel counter for is_final syllable trigger
-				if vwl_count > 0 && isVowel(pa) {
-					vwl_count -= 1;
-				} else if vwl_count == 0 {
-					last_syl = true;
-				}
-				
-				// feed phoneme, stress, and last_syl trigger into model
-				dur_model.step(pa, sa, last_syl);
 
-				// fetch result when ready
-				if dur_model.is_ready() {
-					(past_phone, phone, stress, duration, is_final) = dur_model.fetch();
-					//if is_final { pit_model.set_final(0); }
-					if phone != 50 && phone != 55 {
-						// output phoneme, stress, and duration
-						// when phoneme is not a word boundary
-						
-						// reset pitch model if past phone is terminal punctuation
-						// as long as current phone is not terminal punctuation
-						if phone != 52 || phone != 53 || phone != 54 {
-							if past_phone == 52 || past_phone == 53 || past_phone == 54 {
-								pit_model.reset();
-							}
-						}
+			// feed phoneme, stress, and last_syl trigger into model
+			dur_model.step(pa, sa, last_syl);
 
-						// convert phrase boundaries to release phoneme (AXP or IXP)
-						// and change duration to match duration profile
-						// close to that of DECTalk.
-						release_flag = false;
-						if phone == 51 {
-							// comma (do an upstep)
-							pit_model.upstep();
-							pit_model.upstep();
-							duration = 150;
-							release_flag = true;
-						} else if phone == 52 || phone == 53 || phone == 54 {
-							match phone {
-								53 => { pit_model.set_final(2); },		// question mark
-								54 => { pit_model.set_final(3); },		// exclamation point
-								_  => { pit_model.set_final(0); },		// period
-							}
-							duration = 400;
-							release_flag = true;
-						}
-						if release_flag {
-							// check if past phoneme is alveolar stop (T, D)
-							phone = match past_phone {
-								11|36 => 49,			// is alveolar. use IXP release
-								_     => 48,			// otherwise, use AXP release
-							};
-						}
+			// fetch result when ready
+			if dur_model.is_ready() {
+				(past_phone, phone, stress, duration, is_final) = dur_model.fetch();
+				//if is_final { pit_model.set_final(0); }
+				if phone != 50 && phone != 55 {
+					// output phoneme, stress, and duration
+					// when phoneme is not a word boundary
 
-						// output phone, stress, and duration for debugging
-						println!("{} {} {}", phone, stress, duration);
-
-						// note. duration is shorter for function words
-						// lets do that here
-						if isFunctionWord { duration = (duration as f32 * 0.9) as u16; }
-
-						// feed phoneme and duration into formant synth
-						/*ready = f_eng.load(phone, duration, stress)
-						if ready {
-							while f_eng.is_running() {
-								pit_model.set(f_eng.pst_c)
-								F0 = pit_model.step()
-								snd_out.append(f_eng(F0))
-							}
-						}*/
-					} else if phone == 50 {
-						//println!("content word/word boundary");
-						if isFunctionWord == false {
-							// do compound stress if content word
-							// is after a content word
-							pit_model.set_compound(true);
+					// reset pitch model if past phone is terminal punctuation
+					// as long as current phone is not terminal punctuation
+					if phone != 52 || phone != 53 || phone != 54 {
+						if past_phone == 52 || past_phone == 53 || past_phone == 54 {
+							pit_model.reset();
 						}
-						isFunctionWord = false;
-					} else if phone == 55 {
-						//println!("function word");
-						pit_model.set_compound(false);
-						if isFunctionWord == false {
-							// do a downstep if content word
-							// was before a function word
-							pit_model.downstep();
-						}
-						isFunctionWord = true;
 					}
+
+					// convert phrase boundaries to release phoneme (AXP or IXP)
+					// and change duration to match duration profile
+					// close to that of DECTalk.
+					release_flag = false;
+					if phone == 51 {
+						// comma (do an upstep)
+						pit_model.upstep();
+						pit_model.upstep();
+						duration = 150;
+						release_flag = true;
+					} else if phone == 52 || phone == 53 || phone == 54 {
+						match phone {
+							53 => { pit_model.set_final(2); },		// question mark
+							54 => { pit_model.set_final(3); },		// exclamation point
+							_  => { pit_model.set_final(0); },		// period
+						}
+						duration = 400;
+						release_flag = true;
+					}
+					if release_flag {
+						// check if past phoneme is alveolar stop (T, D)
+						phone = match past_phone {
+							11|36 => 49,			// is alveolar. use IXP release
+							_     => 48,			// otherwise, use AXP release
+						};
+					}
+
+					// output phone, stress, and duration for debugging
+					println!("{} {} {}", phone, stress, duration);
+
+					// note. duration is shorter for function words
+					// lets do that here
+					if isFunctionWord { duration = (duration as f32 * 0.9) as i32; }
+
+					// feed phoneme and duration into synthesizer
+					// and write out to WAV file
+					is_stressed = if stress != 0 { true } else { false };
+					ready = synth_engine.load(phone, duration, is_stressed);
+					if ready {
+						while synth_engine.is_running() {
+							pit_model.set(synth_engine.pst_c);
+							F0 = pit_model.step();
+							writer.write_sample(synth_engine.sample(F0)).unwrap();
+						}
+					}
+				} else if phone == 50 {
+					// content word - word boundary
+					if isFunctionWord == false {
+						// do compound stress if content word
+						// is after a content word
+						pit_model.set_compound(true);
+					}
+					isFunctionWord = false;
+				} else if phone == 55 {
+					// function word boundary
+					pit_model.set_compound(false);
+					if isFunctionWord == false {
+						// do a downstep if content word
+						// was before a function word
+						pit_model.downstep();
+					}
+					isFunctionWord = true;
 				}
-				// assign pb and sb to pa and sa to process those next
-				pa = pb;
-				sa = sb;
-				pb = 0;
-				sb = 0;
-				if pa == 0 { break; }
+			}
+			// assign pb and sb to pa and sa to process those next
+			pa = pb;
+			sa = sb;
+			pb = 0;
+			sb = 0;
+			if pa == 0 { break; }
+		}
+	}
+
+	// if formant synth not done, let's finish up the synthesis
+	// this is redundant, but will let us quickly test the set up
+	finish_off = true;
+	while synth_engine.is_not_last() {
+		if finish_off {
+			finish_off = false;
+			ready = synth_engine.load(48, 100, false);
+		} else {
+			ready = synth_engine.load(0, 50, false);
+		}
+		if ready {
+			while synth_engine.is_running() {
+				F0 = pit_model.step();
+				writer.write_sample(synth_engine.sample(F0)).unwrap();
 			}
 		}
-
-		// if formant synth not done, let's finish up the synthesis
-		// this is redundant, but will let us quickly test the set up
-		/*finish_off = True
-		while not f_eng.is_last():
-			if finish_off:
-				finish_off = False
-				ready = f_eng.load(48, 100, 0)
-			else:
-				ready = f_eng.load(0, 50, 0)
-			if ready:
-				while f_eng.is_running():
-					F0 = pit_model.step()
-					snd_out.append(f_eng(F0))*/
 	}
+
+	// flush WAV file and write to it
+	writer.finalize().unwrap();
+
+	Ok(())
 }

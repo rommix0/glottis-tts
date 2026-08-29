@@ -2,7 +2,7 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-8/27/2026           |
+| DATE:   8/11/2026-8/29/2026           |
 ---------------------------------------*/
 
 use crate::_vtm::vtm;
@@ -38,7 +38,7 @@ pub struct engine {
 	pdr_c:  i32,
 	pdr_r1: i32,
 	pst_l1: bool,
-	pst_c:  bool,
+	pub pst_c: bool,
 	pst_r1: bool,
 	GL: f32,
 	GL_V: f32,
@@ -298,6 +298,10 @@ impl engine {
 			B3_B_src:  0.0,
 		}
 	}
+	pub fn init(&mut self) {
+		// initialize VTM for first time usage
+		self.vtm_eng.init();
+	}
 	pub fn reset(&mut self) {
 		/////////////////////////////
 		//          VTM            //
@@ -489,11 +493,11 @@ impl engine {
 			_                      => 0x0000,		// otherwise
 		}
 	}
-	fn ms_to_samples(&mut self, x: u16) -> i32 {
+	fn ms_to_samples(&mut self, x: i32) -> i32 {
 		// convert milliseconds to samples
 		((x as f32 / 1000.0) * m_sr as f32) as i32
 	}
-	fn advance(&mut self, x: u8, d: u16, s: bool) {
+	fn advance(&mut self, x: u8, d: i32, s: bool) {
 		// x is phone_id
 		// d is duration
 		// s is stress
@@ -589,6 +593,13 @@ impl engine {
 		let b_onset = self.ms_to_samples(vot_tbl[offset+0]);
 		let t_onset = self.ms_to_samples(vot_tbl[offset+1]);
 		(b_onset, t_onset)
+	}
+	fn ptar(&mut self) {
+		if self.phn_c == 24 && self.pft_r1 & 0x42 == 0x40 {
+			self.phn_c = 45;
+		} else if self.phn_c == 32 && self.pft_r1 & 0x42 == 0x40 {
+			self.phn_c = 46;
+		}
 	}
 	fn ftar(&mut self) {
 		let mut factor: f32 = 1.0;
@@ -853,7 +864,7 @@ impl engine {
 		self.AV_reg = (self.AV_reg_src * (1.0 - y) + self.AV_reg_trg  * y) * self.master_fade * self.closure;
 	}
 	fn update_A_to_B(&mut self) {
-		self.slope = 1.0 / (self.marker_B - self.marker_A) as f32;
+		self.slope = 1.0 / (self.marker_B as f32 - self.marker_A as f32);
 		self.interp = 0.0;
 		// source (A)
 		self.TL_reg_src  = self.TL_reg;
@@ -878,7 +889,7 @@ impl engine {
 	}
 	fn update_B_to_Next(&mut self) {
 		// calculate transition slope here
-		self.slope = 1.0 / (self.marker_A + self.marker_BA) as f32;
+		self.slope = 1.0 / (self.marker_A as f32 + self.marker_BA as f32);
 		self.interp = 0.0;
 
 		// set negative count so locus transition can be completed
@@ -926,7 +937,7 @@ impl engine {
 		self.AH_reg_trg  = self.AH_src;
 		self.AV_reg_trg  = self.AV_src;
 	}
-	pub fn load(&mut self, x: u8, d: u16, s: bool) -> bool {
+	pub fn load(&mut self, x: u8, d: i32, s: bool) -> bool {
 		// x is phoneme
 		// d is duration (ms)
 		// s is stress
@@ -943,6 +954,9 @@ impl engine {
 
 		self.advance(x, d, is_stressed);
 		if self.is_ready() {
+			// do ptar before anything else
+			self.ptar();
+			
 			// phoneme is ready and loaded up
 			// load in formant data
 			self.fetch();
@@ -964,7 +978,7 @@ impl engine {
 				//   + fric  -> 40 ms (~30-50ms)
 				//   + sonor -> 50 ms (~40-60ms) [default]
 				//==============================================
-				if self.pft_c & 0x1 == 0 {
+				/*if self.pft_c & 0x1 == 0 {
 					// fricative transition
 					if self.pft_r1 & 0x1C10 != 0 {
 						// shorten if fricative follows sonorant (-20ms)
@@ -987,7 +1001,8 @@ impl engine {
 				} else {
 					// otherwise, get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
-				}
+				}*/
+				self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				self.marker_B = self.get_control_B_duration(self.C_B_src, self.pdr_c);
 			} else if self.pft_c & 0x8000 != 0 {
 				// is affricate
@@ -1029,7 +1044,7 @@ impl engine {
 				self.burst_C    = 0;
 				self.burst_INIT = 1.0;
 				self.burst_VOT  = 0.0;
-				self.affric_swi = 0;
+				if self.affric_swi != 0 { self.affric_swi = 0; }
 				if self.pft_c & 0x2 != 0 {
 					// voiced stops
 					self.closure = 0.8;

@@ -36,7 +36,8 @@ const BNZ_INIT: f32 = 100.0;
 // noise generators
 struct noise {
 	alpha: f32,
-	nxt:   u32,
+	//nxt:   i32,
+	nxt:   u16,
 	xp1:   f32,
 }
 impl noise {
@@ -51,11 +52,16 @@ impl noise {
 		self.nxt = 5612;
 		self.xp1 = 0.0;
 	}
-	fn rand(&mut self) -> u32 {
-		(214013 * self.nxt + 2531011) & 0xFFFF
+	fn xorshift(x: u16) -> u16 {
+		let mut xx = x;
+		xx ^= xx << 7;
+		xx ^= xx >> 9;
+		xx ^= xx << 8;
+		xx
 	}
 	pub fn step(&mut self) -> (f32, f32) {
-		let n: f32 = (self.rand() - 0x7FFF) as f32 / 0x7FFF as f32;
+		self.nxt = noise::xorshift(self.nxt);
+		let n: f32 = (self.nxt as f32 / 32767.0) - 1.0;
 		let f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
 		self.xp1 = f;
 		(n, f)
@@ -86,6 +92,7 @@ impl resonator {
 			bw:   bw,
 		}
 	}
+	pub fn init(&mut self) { self.set_coeffs(self.bf, self.bw); }
 	pub fn reset(&mut self) {
 		self.xp1 = 0.0;
 		self.xp2 = 0.0;
@@ -369,7 +376,7 @@ impl vtm {
 			/*##############################
 			# vocal tract model parameters #
 			##############################*/
-			G_MAX  : 90.0,			// default max gain setting
+			G_MAX  : 87.0,			// default max gain setting
 			F0     : 125.0,			// fundamental frequency (Hz)
 			AV     : 60.0,			// Amplitude of voicing, in dB
 			TL     : 0.0,			// tilt (for glottal pulse model)
@@ -429,8 +436,27 @@ impl vtm {
 			FR7      : resonator::new(F7_INIT,  B7_INIT,  false),
 		}
 	}
+	pub fn init(&mut self) {
+		// resonator initialization (absolutely needed for them to work correctly)
+		self.VR1.init();
+		self.VR2.init();
+		self.VR3.init();
+		self.VR4.init();
+		self.VR5.init();
+		self.VR6.init();
+		self.NPR.init();
+		self.NZR.init();
+		self.FR2.init();
+		self.FR3.init();
+		self.FR4.init();
+		self.FR5.init();
+		self.FR6.init();
+		self.FR7.init();
+	}
 	pub fn reset(&mut self) {
 		// reset the VTM
+		// prevents the weird DC offset bug
+		// when past samples have not been cleared
 		self.noisegen.reset();
 		self.glottal.reset();
 		self.VR1.reset();
@@ -451,7 +477,7 @@ impl vtm {
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
 		if gain >= self.G_MAX { return 1.0; }
-		0.5_f32.powf((self.G_MAX - gain) / 6.0)
+		0.5_f32.powf((self.G_MAX.floor() - gain) / 6.0)
 	}
 	fn max_adj(&mut self) -> f32 {
 		let mut result: f32 = self.B3_ADJ;
@@ -535,7 +561,7 @@ impl vtm {
 		let mut nmod:  f32 = 0.0;
 		(n, f) = self.noisegen.step();
 		(voice, nmod) = self.glottal.step(self.F0, self.PK, self.TL);
-		f *= 1.75;
+		f *= 2.00;
 
 		// noise modulation
 		let af_mod: f32 = if self.AV > 0.0 { nmod } else { 1.0 };

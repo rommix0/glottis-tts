@@ -2,8 +2,7 @@
 pub struct model {
 	mn:        f32,
 	sd:        f32,
-	DUR_ADD:   u16,
-	DUR_SUB:   u16,
+	DUR_ADD:   f32,
 	L2_CLASS:  u8,
 	L1_CLASS:  u8,
 	L1_PHONE:  u8,
@@ -26,8 +25,7 @@ impl model {
 		model {
 			mn:        90.0,
 			sd:        75.0,
-			DUR_ADD:   0,
-			DUR_SUB:   0,
+			DUR_ADD:   0.0,
 			L2_CLASS:  0,
 			L1_CLASS:  0,
 			L1_PHONE:  0,
@@ -156,79 +154,78 @@ impl model {
 		self.mn += 10.0;
 		self.sd += 15.0;
 	}
-	fn getmin(&mut self) -> u16 {
+	fn getmin(&mut self) -> f32 {
 		// get minimum durations of phoneme
 		// taken from Klatt table
 		match self.CU_PHONE {
-			1  => 100,		// aa
-			2  => 80,		// ae
-			3  => 60,		// ah
-			4  => 100,		// ao
-			5  => 100,		// aw
-			6  => 60,		// ax
-			7  => 120,		// axr
-			8  => 150,		// ay
-			9  => 60,		// b
-			10 => 50,		// ch
-			11 => 50,		// d
-			12 => 30,		// dh
-			13 => 70,		// eh
-			14 => 80,		// er
-			15 => 100,		// ey
-			16 => 80,		// f
-			17 => 60,		// g
-			19 => 40,		// ih
-			20 => 60,		// ix
-			21 => 55,		// iy
-			22 => 50,		// jh
-			23 => 60,		// k
-			24 => 40,		// l
-			25 => 70,		// lx
-			26 => 60,		// m
-			27 => 50,		// n
-			28 => 60,		// ng
-			29 => 80,		// ow
-			30 => 150,		// oy
-			31 => 50,		// p
-			32 => 30,		// r
-			33 => 70,		// rx
-			34 => 60,		// s
-			35 => 80,		// sh
-			36 => 50,		// t
-			37 => 60,		// th
-			38 => 60,		// uh
-			39 => 70,		// uw
-			40 => 40,		// v
-			41 => 60,		// w
-			42 => 40,		// y
-			43 => 40,		// z
-			44 => 40,		// zh
-			48 => 70,		// axp
-			49 => 70,		// ixp
-			_  => 20,		// otherwise
+			1  => 100.0,	// aa
+			2  => 80.0,		// ae
+			3  => 60.0,		// ah
+			4  => 100.0,	// ao
+			5  => 100.0,	// aw
+			6  => 60.0,		// ax
+			7  => 120.0,	// axr
+			8  => 150.0,	// ay
+			9  => 60.0,		// b
+			10 => 50.0,		// ch
+			11 => 50.0,		// d
+			12 => 30.0,		// dh
+			13 => 70.0,		// eh
+			14 => 80.0,		// er
+			15 => 100.0,	// ey
+			16 => 80.0,		// f
+			17 => 60.0,		// g
+			19 => 40.0,		// ih
+			20 => 60.0,		// ix
+			21 => 55.0,		// iy
+			22 => 50.0,		// jh
+			23 => 60.0,		// k
+			24 => 40.0,		// l
+			25 => 70.0,		// lx
+			26 => 60.0,		// m
+			27 => 50.0,		// n
+			28 => 60.0,		// ng
+			29 => 80.0,		// ow
+			30 => 150.0,	// oy
+			31 => 50.0,		// p
+			32 => 30.0,		// r
+			33 => 70.0,		// rx
+			34 => 60.0,		// s
+			35 => 80.0,		// sh
+			36 => 50.0,		// t
+			37 => 60.0,		// th
+			38 => 60.0,		// uh
+			39 => 70.0,		// uw
+			40 => 40.0,		// v
+			41 => 60.0,		// w
+			42 => 40.0,		// y
+			43 => 40.0,		// z
+			44 => 40.0,		// zh
+			48 => 70.0,		// axp
+			49 => 70.0,		// ixp
+			_  => 20.0,		// otherwise
 		}
 	}
 	fn adjust(&mut self) {
 		// do some Klatt-esque duration adjustments after running the tree
 		// this seems to improve articulation of the speech
-		self.DUR_ADD = 0;
-		self.DUR_SUB = 0;
+		self.DUR_ADD = 0.0;
 
 		if self.CU_CLASS == 7 || self.CU_CLASS == 8 {
 			if self.R1_CLASS == 7 || self.R1_CLASS == 8 || self.R1_CLASS == 11 {
 				// PLOSIVE -> { plosive, nasal }
 				// shorten plosive if next to another plosive or nasal
-				self.DUR_SUB += 30;
+				self.DUR_ADD -= 30.0;
 			}
 		}
 
 		if self.L1_CLASS == 7 {
 			if self.CU_CLASS == 11 || self.CU_CLASS == 12 || self.CU_CLASS == 13 || self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// Plosive aspiration lengthening
-				self.DUR_ADD += 20;
+				self.DUR_ADD += 20.0;
 				if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 					// plosive -> VOWEL
-					self.DUR_ADD += 10;
+					self.DUR_ADD += 10.0;
 				}
 			}
 		}
@@ -236,67 +233,67 @@ impl model {
 		if self.L1_CLASS == 13 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// Lengthening due to glide on left
-				self.DUR_ADD = 20;
+				self.DUR_ADD = 20.0;
 			}
 		}
 
 		if self.R1_CLASS == 13 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// Lengthening due to glide on right
-				self.DUR_ADD += 10;
+				self.DUR_ADD += 10.0;
 			}
 		}
 
 		if self.L1_CLASS == 6 && self.CU_STRESS != 0 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// stressed word-initial vowel
-				self.DUR_ADD += 25;
+				self.DUR_ADD += 25.0;
 			}
 		}
 		
 		if self.R1_CLASS == 14 || self.R1_CLASS == 16 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// VOWEL -> vowel
-				self.DUR_ADD += 30;
+				self.DUR_ADD += 30.0;
 			}
 		}
 		
 		if self.L1_CLASS == 9 && self.R1_CLASS == 9 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// vowel inbetween fricatives
-				self.DUR_ADD += 15;
+				self.DUR_ADD += 15.0;
 			}
 		}
 		
 		if self.R1_CLASS == 7 || self.R1_CLASS == 8 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// vowel before plosives
-				self.DUR_ADD += 25;
+				self.DUR_ADD += 25.0;
 			}
 		}
 		
 		if self.CU_CLASS == 9 || self.CU_CLASS == 10 {
 			if self.R1_CLASS == 6 {
 				// word-final fricatives
-				self.DUR_ADD += 20;
+				self.DUR_ADD += 20.0;
 			}
 		}
 		
 		if self.R1_CLASS == 12 {
 			if self.CU_CLASS == 14 || self.CU_CLASS == 16 {
 				// VOWEL -> liquid
-				self.DUR_ADD += 10;
+				self.DUR_ADD += 10.0;
 			}
 		}
 		
 		if self.LAST_SYLL {
 			if self.CU_CLASS == 10 {
-				self.DUR_ADD += 20;
+				self.DUR_ADD += 20.0;
 			} else {
-				self.DUR_ADD += 40;
+				self.DUR_ADD += 40.0;
 			}
 			if self.R1_CLASS == 11 || self.R1_CLASS == 12 || self.R1_CLASS == 13 {
-				self.DUR_SUB += 20;
+				self.DUR_ADD -= 20.0;
 			}
 		}
 	}
@@ -320,12 +317,14 @@ impl model {
 		self.R1_LSYLL  = self.R2_LSYLL;
 		self.R2_LSYLL  = is_last_syl;
 	}
-	pub fn fetch(&mut self) -> (u8, u8, u8, u16, bool) {
+	pub fn fetch(&mut self) -> (u8, u8, u8, i32, bool) {
 		self.phon2ch();
-		let mut pdur: u16 = (self.mn + self.CU_DURAT as f32 * self.sd) as u16 + self.DUR_ADD - self.DUR_SUB;
-		let mindur: u16 = self.getmin();
+		let mut pdur: f32 = (self.mn + self.CU_DURAT * self.sd) + self.DUR_ADD;
+
+		let mindur: f32 = self.getmin();
 		if pdur < mindur { pdur = mindur; }
-		(self.L1_PHONE, self.CU_PHONE, self.CU_STRESS, pdur, self.LAST_SYLL)
+
+		(self.L1_PHONE, self.CU_PHONE, self.CU_STRESS, pdur as i32, self.LAST_SYLL)
 	}
 	pub fn is_ready(&mut self) -> bool {
 		if self.CU_PHONE != 0 { return true; }

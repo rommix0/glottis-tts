@@ -98,8 +98,8 @@ impl model {
 		self.count         = 0;
 		self.kC            = 0;
 	}
-	pub fn set(&mut self, stress: u8) {
-		if stress != 0 {
+	pub fn set(&mut self, stress: bool) {
+		if stress {
 			self.count = self.stress_ps;
 			if self.phrase == 0 { self.phrase = 1; }
 		}
