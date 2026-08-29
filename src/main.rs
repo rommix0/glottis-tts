@@ -2,15 +2,17 @@ mod _utils;
 mod _text;
 mod _duration;
 mod _pitch;
-mod _dict;
 mod _lts;
 mod _vtm;
 mod _vtbl;
 mod _synth;
+mod _dict;
+mod _dread;
 
 use std::fs;
 use std::io::Write;
 use std::io;
+use std::env;
 use _vtm::m_sr;
 use hound;
 
@@ -18,13 +20,19 @@ use crate::_utils::cbuf;
 use crate::_utils::PHNIDToPhoneme;
 use crate::_utils::getVowelCount;
 use crate::_utils::isVowel;
-use crate::_dict::dictdat;
-use crate::_dict::getOffset;
-use crate::_dict::upperToLower;
-use crate::_dict::hasher;
+use crate::_dread::dictreader;
 use crate::_lts::lts;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+	// read in text from argument
+	let mut input = String::new();
+	if let Some(text_arg) = env::args().nth(1) {
+		input = text_arg;
+	} else {
+		println!("please enter text!");
+		return Ok(());
+	}
 
 	// setup wav file stuff here
 	let spec = hound::WavSpec {
@@ -35,18 +43,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	};
 	let mut writer = hound::WavWriter::create("tts_demo.wav", spec).unwrap();
 
-	// read in text input
-	let mut input = String::new();
-	io::stdin().read_line(&mut input).expect("failed to read line!");
-
 	// initialize ring buffers
 	let mut buf  = cbuf::new();				// text stream buffer
 	let mut wbuf = cbuf::new();				// word buffer
 	let mut pbuf = cbuf::new();				// phoneme buffer
 
-	// initialize dictionary hashers
-	let mut hsher_a = hasher::new();		// case sensitive hasher   (needed for homographs)
-	let mut hsher_b = hasher::new();		// case insensitive hasher (as fallback)
+	// initialize dictionary reader
+	let mut dict_reader = dictreader::new();
 
 	// read in text stream into input ring buffer
 	buf.write(0x20);
@@ -62,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut pit_model    = _pitch::model::new();
 	synth_engine.init();
 
-	// proceed with the text normalizer/LTS pipeline
+	// initialize variables
 	let mut pa: u8                = 0;
 	let mut pb: u8                = 0;
 	let mut sa: u8                = 0;
@@ -76,19 +79,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut r2: u8                = 0;
 	let mut r3: u8                = 0;
 	let mut r4: u8                = 0;
-	let mut p: i32                = -1;
-	let mut pp: i32               = -1;
-	let mut ent: usize            = 0;
 	let mut pout: u8              = 0;
 	let mut prev: u8              = 0;
 	let mut cc: u8                = 0;
 	let mut cin: u8               = 0;
-	let mut text_done: bool       = false;
 	let mut vwl_count: u16        = 0;
 	let mut yyreset: usize        = 0;
 	let mut isFunctionWord:  bool = false;
-	let mut isFunctionWordA: bool = false;
-	let mut isFunctionWordB: bool = false;
 	let mut release_flag: bool    = false;
 	let mut past_phone: u8        = 0;
 	let mut phone: u8             = 0;
@@ -100,64 +97,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut ready: bool           = false;
 	let mut F0: f32               = 125.0;
 
+	// proceed with the text normalizer/LTS pipeline
 	while buf.is_not_empty() {
-		text_done = text_engine.lex(&mut buf);
-		if text_done { break; }
+		if text_engine.lex(&mut buf) { break; }
 		while text_engine.is_not_empty() {
 			cc = text_engine.read();
 			if wbuf.is_not_empty() && cc == 0x20 {
 				// process word when whitespace is
 				// hit and word buffer is not empty
-				hsher_a.reset();
-				hsher_b.reset();
+				dict_reader.reset();
 				yyreset = wbuf.getcurs();
 				while wbuf.is_not_empty() {
+					// read word into dictionary reader
 					cin = wbuf.read();
 					wbuf.advance();
 					if cin == 0x20 { continue; }
-					hsher_a.update(cin);
-					hsher_b.update(upperToLower(cin));
+					dict_reader.readIn(cin);
 				}
 
-				// attempt to get dictionary offset
-				// if hash has been found
-				isFunctionWord = false;
-				(p,  isFunctionWordA) = getOffset(hsher_a.get());
-				(pp, isFunctionWordB) = getOffset(hsher_b.get());
-
-				// write out word boundary first
-				pbuf.write(90);
-
-				if p >= 0 || pp >= 0 {
-					// dictionary entry found! figure out
-					// which hasher found the match
-					if p >= 0 {
-						ent = p as usize;
-						isFunctionWord = isFunctionWordA;
-					} else if pp >= 0 {
-						ent = pp as usize;
-						isFunctionWord = isFunctionWordB;
-					}
-
-					// erase old word boundary if word
-					// is identified as function word
-					if isFunctionWord {
-						pbuf.erase();
+				if dict_reader.search() {
+					// get phoneme stream for word
+					// if found in the dictionary
+					if dict_reader.isFunctionWord() {
+						// function word boundary
 						pbuf.write(95);
+					} else {
+						// content word boundary
+						pbuf.write(90);
 					}
-
-					// retrieve the phoneme sequence from dictdat
+					
+					// retrieve the phoneme sequence from dictionary
 					// until null character 0xFF is hit
 					loop {
-						pout = dictdat[ent];
+						pout = dict_reader.readOut();
 						if pout == 0xFF { break; }
-						ent += 1;
-						pbuf.write(pout);
 						vwl_count += getVowelCount(pout);
+						pbuf.write(pout);
 					}
 				} else {
 					// if no dictionary match, then
 					// do letter-to-sound stuff here!
+
+					// write out word boundary first
+					pbuf.write(90);
+
 					lts_engine.reset();
 					wbuf.setcurs(yyreset);
 					prev = 0;
@@ -200,18 +183,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					}
 				}
 			} else {
+				// write to word buffer if not ready to parse yet
 				wbuf.write(cc);
 			}
 		}
 	}
 	pbuf.write(90);
-
-	// debug pbuf
-	/*while pbuf.is_not_empty() {
-		println!("{}", pbuf.read());
+	
+	// print out phoneme stream for debugging
+	yyreset = pbuf.getcurs();
+	while pbuf.is_not_empty() {
+		print!("{} ", pbuf.read());
 		pbuf.advance();
 	}
-	println!("\n");*/
+	pbuf.setcurs(yyreset);
+	print!("\n");
 
 	// proceed with the synthesis
 	dur_model.reset();
@@ -331,7 +317,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	}
 
 	// if formant synth not done, let's finish up the synthesis
-	// this is redundant, but will let us quickly test the set up
 	finish_off = true;
 	while synth_engine.is_not_last() {
 		if finish_off {
