@@ -5,15 +5,21 @@
 #########################################
 
   author: anthony c. bartman (@rommix0)
-  date:   4/6/2026 - 8/26/2026
+  date:   4/6/2026 - 8/30/2026
 
 */
 
+// master sample rate
 pub const m_sr: u16 = 22050;
 
+// math constants
 pub const M_EU: f32 = 2.7182818284590452;
 pub const M_PI: f32 = 3.1415927410125732;
 
+// delay slope for softening rough edges on formant movements
+const delay_slope: f32 = 1.0 / 2.0;
+
+// formant parameter inits
 const F1_INIT:  f32 = 500.0;
 const B1_INIT:  f32 = 60.0;
 const F2_INIT:  f32 = 1500.0;
@@ -44,6 +50,7 @@ impl noise {
 		self.xp1 = 0.0;
 	}
 	fn xorshift(&mut self){
+		// signed 16-bit xorshift
 		let mut xx = self.nxt;
 		xx ^= xx << 7;
 		xx ^= xx >> 9;
@@ -51,6 +58,7 @@ impl noise {
 		self.nxt = xx;
 	}
 	pub fn step(&mut self) -> (f32, f32) {
+		// generate both white and fricative noise
 		self.xorshift();
 		let n: f32 = self.nxt as f32 / 32767.0;
 		let f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
@@ -111,7 +119,7 @@ impl resonator {
 
 		// normalize filter gain so it's not too loud
 		self.a *= (1.0 - self.b - self.c) / self.a;
-		
+
 		// set internal bf and bw to new values
 		self.bf = bf;
 		self.bw = bw;
@@ -277,26 +285,26 @@ impl glottal {
 	pub fn step(&mut self, freq: f32, peak_db: f32, tilt_q: f32) -> (f32 ,f32) {
 		let per: f32 = m_sr as f32 / freq;
 		let hlf: f32 = per / 2.0;
-		
+
 		// create pulse
 		if self.c < 4 {
 			self.x = self.glot_tbl[self.c];
 			self.c += 1;
 		}
-		
+
 		// noise modulation
 		let mut nmod: f32 = 1.0;
 		if self.count >= hlf { nmod = 0.5; }
-		
+
 		// reset counter if glottal length has been past
 		if self.count == 0.0 || self.count > per {
 			self.count = 0.0;
 			self.c = 0;
 		}
-		
+
 		// increment counter
 		self.count += 1.0;
-		
+
 		// return the filtered glottal pulse
 		let f1: f32 = self.tilt.filter(self.x, tilt_q);
 		let f2: f32 = self.peak.filter(f1, freq, peak_db);
@@ -304,62 +312,88 @@ impl glottal {
 	}
 }
 
+// formant movement delay unit
+struct delay { xx: f32 }
+impl delay {
+	pub fn new() -> delay { delay { xx: 0.0 } }
+	pub fn set(&mut self, y: f32) { self.xx = y; }
+	pub fn step(&mut self, y: f32) -> f32 {
+		if self.xx < y {
+			self.xx += delay_slope;
+			if self.xx > y { self.xx = y; }
+		} else if self.xx > y {
+			self.xx -= delay_slope;
+			if self.xx < y { self.xx = y; }
+		}
+		self.xx
+	}
+}
+
 // vocal tract model - the main event
 pub struct vtm {
-        G_MAX:    f32,
-        pub F0:   f32,		// this can be accessed by _synth.rs
-        pub AV:   f32,		// this can be accessed by _synth.rs
-        pub TL:   f32,		// this can be accessed by _synth.rs
-        pub PK:   f32,		// this can be accessed by _synth.rs
-        pub AH:   f32,		// this can be accessed by _synth.rs
-        pub AF:   f32,		// this can be accessed by _synth.rs
-        pub BR:   f32,		// this can be accessed by _synth.rs
-        pub F1:   f32,		// this can be accessed by _synth.rs
-        pub B1:   f32,		// this can be accessed by _synth.rs
-        pub F2:   f32,		// this can be accessed by _synth.rs
-        pub B2:   f32,		// this can be accessed by _synth.rs
-        pub F3:   f32,		// this can be accessed by _synth.rs
-        pub B3:   f32,		// this can be accessed by _synth.rs
-        pub F4:   f32,		// this can be accessed by _synth.rs
-        pub B4:   f32,		// this can be accessed by _synth.rs
-        pub F5:   f32,		// this can be accessed by _synth.rs
-        pub B5:   f32,		// this can be accessed by _synth.rs
-        pub F6:   f32,		// this can be accessed by _synth.rs
-        pub B6:   f32,		// this can be accessed by _synth.rs
-        pub F7:   f32,		// this can be accessed by _synth.rs
-        pub B7:   f32,		// this can be accessed by _synth.rs
-        pub FNP:  f32,		// this can be accessed by _synth.rs
-        pub BNP:  f32,		// this can be accessed by _synth.rs
-        pub FNZ:  f32,		// this can be accessed by _synth.rs
-        pub BNZ:  f32,		// this can be accessed by _synth.rs
-        pub A2:   f32,		// this can be accessed by _synth.rs
-        pub A3:   f32,		// this can be accessed by _synth.rs
-        pub A4:   f32,		// this can be accessed by _synth.rs
-        pub A5:   f32,		// this can be accessed by _synth.rs
-        pub A6:   f32,		// this can be accessed by _synth.rs
-        pub A7:   f32,		// this can be accessed by _synth.rs
-        pub AB:   f32,		// this can be accessed by _synth.rs
-        MIN_D:    f32,
-        MUL_B:    f32,
-        B1_ADJ:   f32,
-        B2_ADJ:   f32,
-        B3_ADJ:   f32,
-        noisegen: noise,
-        glottal:  glottal,
-        VR1:      resonator,
-        VR2:      resonator,
-        VR3:      resonator,
-        VR4:      resonator,
-        VR5:      resonator,
-        VR6:      resonator,
-        NPR:      resonator,
-        NZR:      resonator,
-        FR2:      resonator,
-        FR3:      resonator,
-        FR4:      resonator,
-        FR5:      resonator,
-        FR6:      resonator,
-        FR7:      resonator,
+	G_MAX:    f32,
+	pub F0:   f32,		// this can be accessed by _synth.rs
+	pub AV:   f32,		// this can be accessed by _synth.rs
+	pub TL:   f32,		// this can be accessed by _synth.rs
+	pub PK:   f32,		// this can be accessed by _synth.rs
+	pub AH:   f32,		// this can be accessed by _synth.rs
+	pub AF:   f32,		// this can be accessed by _synth.rs
+	pub BR:   f32,		// this can be accessed by _synth.rs
+	pub F1:   f32,		// this can be accessed by _synth.rs
+	pub B1:   f32,		// this can be accessed by _synth.rs
+	pub F2:   f32,		// this can be accessed by _synth.rs
+	pub B2:   f32,		// this can be accessed by _synth.rs
+	pub F3:   f32,		// this can be accessed by _synth.rs
+	pub B3:   f32,		// this can be accessed by _synth.rs
+	pub F4:   f32,		// this can be accessed by _synth.rs
+	pub B4:   f32,		// this can be accessed by _synth.rs
+	pub F5:   f32,		// this can be accessed by _synth.rs
+	pub B5:   f32,		// this can be accessed by _synth.rs
+	pub F6:   f32,		// this can be accessed by _synth.rs
+	pub B6:   f32,		// this can be accessed by _synth.rs
+	pub F7:   f32,		// this can be accessed by _synth.rs
+	pub B7:   f32,		// this can be accessed by _synth.rs
+	pub FNP:  f32,		// this can be accessed by _synth.rs
+	pub BNP:  f32,		// this can be accessed by _synth.rs
+	pub FNZ:  f32,		// this can be accessed by _synth.rs
+	pub BNZ:  f32,		// this can be accessed by _synth.rs
+	pub A2:   f32,		// this can be accessed by _synth.rs
+	pub A3:   f32,		// this can be accessed by _synth.rs
+	pub A4:   f32,		// this can be accessed by _synth.rs
+	pub A5:   f32,		// this can be accessed by _synth.rs
+	pub A6:   f32,		// this can be accessed by _synth.rs
+	pub A7:   f32,		// this can be accessed by _synth.rs
+	pub AB:   f32,		// this can be accessed by _synth.rs
+	TL_D:     delay,
+	PK_D:     delay,
+	F1_D:     delay,
+	B1_D:     delay,
+	F2_D:     delay,
+	B2_D:     delay,
+	F3_D:     delay,
+	B3_D:     delay,
+	FNZ_D:    delay,
+	MIN_D:    f32,
+	MUL_B:    f32,
+	B1_ADJ:   f32,
+	B2_ADJ:   f32,
+	B3_ADJ:   f32,
+	noisegen: noise,
+	glottal:  glottal,
+	VR1:      resonator,
+	VR2:      resonator,
+	VR3:      resonator,
+	VR4:      resonator,
+	VR5:      resonator,
+	VR6:      resonator,
+	NPR:      resonator,
+	NZR:      resonator,
+	FR2:      resonator,
+	FR3:      resonator,
+	FR4:      resonator,
+	FR5:      resonator,
+	FR6:      resonator,
+	FR7:      resonator,
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -367,44 +401,53 @@ impl vtm {
 			/*##############################
 			# vocal tract model parameters #
 			##############################*/
-			G_MAX  : 96.0,			// default max gain setting
-			F0     : 125.0,			// fundamental frequency (Hz)
-			AV     : 60.0,			// Amplitude of voicing, in dB
-			TL     : 0.0,			// tilt (for glottal pulse model)
-			PK     : 0.0,			// peak (for glottal pulse model)
-			AH     : 0.0,			// Amplitude of aspiration, in dB
-			AF     : 0.0,			// Amplitude of frication, in dB
-			BR     : 50.0,			// breathiness amp (dB)
-			F1     : F1_INIT,		// Frequency of 1st formant, in Hz
-			B1     : B1_INIT,		// Bandwidth of 1st formant, in Hz
-			F2     : F2_INIT,		// Frequency of 2nd formant, in Hz
-			B2     : B2_INIT,		// Bandwidth of 2nd formant, in Hz
-			F3     : F3_INIT,		// Frequency of 3rd formant, in Hz
-			B3     : B3_INIT,		// Bandwidth of 3rd formant, in Hz
-			F4     : F4_INIT,		// Frequency of 4th formant, in Hz
-			B4     : B4_INIT,		// Bandwidth of 4th formant, in Hz
-			F5     : F5_INIT,		// Frequency of 5th formant, in Hz
-			B5     : B5_INIT,		// Bandwidth of 5th formant, in Hz
-			F6     : F6_INIT,		// Frequency of 6th formant, in Hz
-			B6     : B6_INIT,		// Bandwidth of 6th formant, in Hz
-			F7     : F7_INIT,		// Frequency of 7th formant, in Hz
-			B7     : B7_INIT,		// Bandwidth of 7th formant, in Hz
-			FNP    : FNP_INIT,		// Frequency of nasal pole, in Hz
-			BNP    : BNP_INIT,		// Bandwidth of nasal pole, in Hz
-			FNZ    : FNZ_INIT,		// Frequency of nasal zero, in Hz
-			BNZ    : BNZ_INIT,		// Bandwidth of nasal zero, in Hz
-			A2     : 0.0,			// Amp of parallel 2nd formant, in dB
-			A3     : 0.0,			// Amp of parallel 3rd formant, in dB
-			A4     : 0.0,			// Amp of parallel 4th formant, in dB
-			A5     : 0.0,			// Amp of parallel 5th formant, in dB
-			A6     : 0.0,			// Amp of parallel 6th formant, in dB
-			A7     : 0.0,			// Amp of parallel 7th formant, in dB
-			AB     : 0.0,			// Amp of parallel bypass path, in dB
-			MIN_D  : 500.0,			// min distance between formants
-			MUL_B  : 2.5,			// bandwidth multiplier adjust
-			B1_ADJ : 1.0,			// B1 adjustment factor
-			B2_ADJ : 1.0,			// B2 adjustment factor
-			B3_ADJ : 1.0,			// B3 adjustment factor
+			G_MAX  : 96.0,				// default max gain setting
+			F0     : 125.0,				// fundamental frequency (Hz)
+			AV     : 60.0,				// Amplitude of voicing, in dB
+			TL     : 0.0,				// tilt (for glottal pulse model)
+			PK     : 0.0,				// peak (for glottal pulse model)
+			AH     : 0.0,				// Amplitude of aspiration, in dB
+			AF     : 0.0,				// Amplitude of frication, in dB
+			BR     : 50.0,				// breathiness amp (dB)
+			F1     : F1_INIT,			// Frequency of 1st formant, in Hz
+			B1     : B1_INIT,			// Bandwidth of 1st formant, in Hz
+			F2     : F2_INIT,			// Frequency of 2nd formant, in Hz
+			B2     : B2_INIT,			// Bandwidth of 2nd formant, in Hz
+			F3     : F3_INIT,			// Frequency of 3rd formant, in Hz
+			B3     : B3_INIT,			// Bandwidth of 3rd formant, in Hz
+			F4     : F4_INIT,			// Frequency of 4th formant, in Hz
+			B4     : B4_INIT,			// Bandwidth of 4th formant, in Hz
+			F5     : F5_INIT,			// Frequency of 5th formant, in Hz
+			B5     : B5_INIT,			// Bandwidth of 5th formant, in Hz
+			F6     : F6_INIT,			// Frequency of 6th formant, in Hz
+			B6     : B6_INIT,			// Bandwidth of 6th formant, in Hz
+			F7     : F7_INIT,			// Frequency of 7th formant, in Hz
+			B7     : B7_INIT,			// Bandwidth of 7th formant, in Hz
+			FNP    : FNP_INIT,			// Frequency of nasal pole, in Hz
+			BNP    : BNP_INIT,			// Bandwidth of nasal pole, in Hz
+			FNZ    : FNZ_INIT,			// Frequency of nasal zero, in Hz
+			BNZ    : BNZ_INIT,			// Bandwidth of nasal zero, in Hz
+			A2     : 0.0,				// Amp of parallel 2nd formant, in dB
+			A3     : 0.0,				// Amp of parallel 3rd formant, in dB
+			A4     : 0.0,				// Amp of parallel 4th formant, in dB
+			A5     : 0.0,				// Amp of parallel 5th formant, in dB
+			A6     : 0.0,				// Amp of parallel 6th formant, in dB
+			A7     : 0.0,				// Amp of parallel 7th formant, in dB
+			AB     : 0.0,				// Amp of parallel bypass path, in dB
+			TL_D   : delay::new(),		// formant movement delay unit
+			PK_D   : delay::new(),		// formant movement delay unit
+			F1_D   : delay::new(),		// formant movement delay unit
+			B1_D   : delay::new(),		// formant movement delay unit
+			F2_D   : delay::new(),		// formant movement delay unit
+			B2_D   : delay::new(),		// formant movement delay unit
+			F3_D   : delay::new(),		// formant movement delay unit
+			B3_D   : delay::new(),		// formant movement delay unit
+			FNZ_D  : delay::new(),		// formant movement delay unit
+			MIN_D  : 500.0,				// min distance between formants
+			MUL_B  : 2.5,				// bandwidth multiplier adjust
+			B1_ADJ : 1.0,				// B1 adjustment factor
+			B2_ADJ : 1.0,				// B2 adjustment factor
+			B3_ADJ : 1.0,				// B3 adjustment factor
 
 			/*##############################
 			# sound generators and filters #
@@ -464,6 +507,16 @@ impl vtm {
 		self.FR5.reset();
 		self.FR6.reset();
 		self.FR7.reset();
+		// delay unit init
+		self.TL_D.set(self.TL);
+		self.PK_D.set(self.PK);
+		self.F1_D.set(self.F1);
+		self.B1_D.set(self.B1);
+		self.F2_D.set(self.F2);
+		self.B2_D.set(self.B2);
+		self.F3_D.set(self.F3);
+		self.B3_D.set(self.B3);
+		self.FNZ_D.set(self.FNZ);
 	}
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
@@ -511,8 +564,13 @@ impl vtm {
 		# PARALLEL FILTER NETWORK #
 		#########################*/
 		let mut yy: f32 = 0.0;
-		yy += self.FR2.step(x, self.F2, self.B2 * self.B2_ADJ) * self.db2lin(self.A2);
-		yy -= self.FR3.step(x, self.F3, self.B3 * self.B3_ADJ) * self.db2lin(self.A3);
+		let F2_DD = self.F2_D.step(self.F2);
+		let F3_DD = self.F3_D.step(self.F3);
+		let B2_DD = self.B2_D.step(self.B2);
+		let B3_DD = self.B3_D.step(self.B3);
+
+		yy += self.FR2.step(x, F2_DD, B2_DD * self.B2_ADJ) * self.db2lin(self.A2);
+		yy -= self.FR3.step(x, F3_DD, B3_DD * self.B3_ADJ) * self.db2lin(self.A3);
 		yy += self.FR4.step(x, self.F4, self.B4)               * self.db2lin(self.A4);
 		yy -= self.FR5.step(x, self.F5, self.B5)               * self.db2lin(self.A5);
 		yy += self.FR6.step(x, self.F6, self.B6)               * self.db2lin(self.A6);
@@ -525,10 +583,18 @@ impl vtm {
 		# CASCADE FILTER NETWORK #
 		########################*/
 		let mut yy: f32 = 0.0;
-		yy += self.NPR.step(self.NZR.step(x, self.FNZ, 0.0), 0.0, 0.0);		// NASAL TRACT
-		yy += self.VR1.step(yy, self.F1, self.B1 * self.B1_ADJ);			// F1 - tongue height
-		yy += self.VR2.step(yy, self.F2, self.B2 * self.B2_ADJ);			// F2 - tongue fronting
-		yy += self.VR3.step(yy, self.F3, self.B3 * self.B3_ADJ);			// F3 - R-coloring
+		let F1_DD  = self.F1_D.step(self.F1);
+		let F2_DD  = self.F2_D.step(self.F2);
+		let F3_DD  = self.F3_D.step(self.F3);
+		let B1_DD  = self.B1_D.step(self.B1);
+		let B2_DD  = self.B2_D.step(self.B2);
+		let B3_DD  = self.B3_D.step(self.B3);
+		let FNZ_DD = self.FNZ_D.step(self.FNZ);
+		
+		yy += self.NPR.step(self.NZR.step(x, FNZ_DD, 0.0), 0.0, 0.0);	// NASAL TRACT
+		yy += self.VR1.step(yy, F1_DD, B1_DD * self.B1_ADJ);			// F1 - tongue height
+		yy += self.VR2.step(yy, F2_DD, B2_DD * self.B2_ADJ);			// F2 - tongue fronting
+		yy += self.VR3.step(yy, F3_DD, B3_DD * self.B3_ADJ);			// F3 - R-coloring
 		yy += self.VR4.step(yy, 0.0, 0.0);
 		yy += self.VR5.step(yy, 0.0, 0.0);
 		yy += self.VR6.step(yy, 0.0, 0.0);
@@ -541,7 +607,7 @@ impl vtm {
 
 		// adjust bandwidths if formants are close together
 		self.fix_bw();
-		
+
 		// adjust tilt (might improve sound quality)
 		//self.TL *= self.max_adj();
 
@@ -550,8 +616,10 @@ impl vtm {
 		let mut f:     f32 = 0.0;
 		let mut voice: f32 = 0.0;
 		let mut nmod:  f32 = 0.0;
+		let PK_DD = self.PK_D.step(self.PK);
+		let TL_DD = self.TL_D.step(self.TL);
 		(n, f) = self.noisegen.step();
-		(voice, nmod) = self.glottal.step(self.F0, self.PK, self.TL);
+		(voice, nmod) = self.glottal.step(self.F0, PK_DD, TL_DD);
 		f *= 2.00;
 
 		// noise modulation
