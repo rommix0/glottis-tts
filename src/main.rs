@@ -1,7 +1,9 @@
 mod _utils;
 mod _text;
-mod _duration;
-mod _pitch;
+mod _duration_new;
+//mod _duration;
+//mod _pitch;
+mod _smooth;
 mod _lts;
 mod _vtm;
 mod _vtbl;
@@ -61,8 +63,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut synth_engine = _synth::engine::new();
 	let mut text_engine  = _text::engine::new();
 	let mut lts_engine   = _lts::pvec::new();
-	let mut dur_model    = _duration::model::new();
-	let mut pit_model    = _pitch::model::new();
+	let mut dur_model    = _duration_new::model::new();
+	//let mut pit_model    = _pitch::model::new();
+	let mut pit_model    = _smooth::model::new();
 	synth_engine.init();
 
 	// initialize variables
@@ -83,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut prev: u8              = 0;
 	let mut cc: u8                = 0;
 	let mut cin: u8               = 0;
-	let mut vwl_count: u16        = 0;
+	//let mut vwl_count: u16        = 0;
 	let mut yyreset: usize        = 0;
 	let mut isFunctionWord:  bool = false;
 	let mut release_flag: bool    = false;
@@ -133,7 +136,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 						pout = dict_reader.readOut();
 						//print!("{} ", pout);
 						if pout == 0xFF { break; }
-						vwl_count += getVowelCount(pout);
 						pbuf.write(pout);
 					}
 					//print!("\n");
@@ -172,7 +174,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 								if pout != 31 && pout != prev {
 									// write out phoneme when not null and not a run-on
 									pbuf.write(pout);
-									vwl_count += getVowelCount(pout);
 									prev = pout;
 								}
 							}
@@ -191,9 +192,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	dur_model.reset();
 	pit_model.reset();
 	synth_engine.reset();
-	let mut last_syl: bool = false;
-	isFunctionWord = false;
-	if vwl_count > 0 { vwl_count -= 1; }
+
+	let phn_sz: usize = pbuf.len();
+	let mut phn_cnt: usize = 0;
+	let mut cart_pitch: f32 = 0.0;
+	let mut past_accent: u8 = 0;
+	let mut curr_accent: u8 = 0;
 
 	while dur_model.is_not_last() {
 		pa = 0;
@@ -203,95 +207,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		if pbuf.is_not_empty() {
 			(pa, pb, sa, sb) = PHNIDToPhoneme(pbuf.read());
 			pbuf.advance();
+			phn_cnt += 1;
 		}
 		loop {
-			// decrement vowel counter for is_final syllable trigger
-			if vwl_count > 0 && isVowel(pa) {
-				vwl_count -= 1;
-			} else if vwl_count == 0 {
-				last_syl = true;
-			}
-
 			// feed phoneme, stress, and last_syl trigger into model
-			dur_model.step(pa, sa, last_syl);
+			dur_model.step(pa, sa, past_accent, curr_accent, phn_cnt, phn_sz);
 
 			// fetch result when ready
 			if dur_model.is_ready() {
-				(past_phone, phone, stress, duration, is_final) = dur_model.fetch();
-				//if is_final { pit_model.set_final(0); }
+				(past_phone, phone, stress, duration, cart_pitch) = dur_model.fetch();
+
 				if phone != 50 && phone != 55 {
 					// output phoneme, stress, and duration
 					// when phoneme is not a word boundary
 
 					// reset pitch model if past phone is terminal punctuation
 					// as long as current phone is not terminal punctuation
-					if phone != 52 || phone != 53 || phone != 54 {
-						if past_phone == 52 || past_phone == 53 || past_phone == 54 {
-							pit_model.reset();
-						}
-					}
+					/*if phone != 52 || phone != 53 || phone != 54 {
+						if past_phone == 52 || past_phone == 53 || past_phone == 54 { pit_model.reset(); }
+					}*/
 
 					// convert phrase boundaries to release phoneme (AXP or IXP)
-					// and change duration to match duration profile
-					// close to that of DECTalk.
-					release_flag = false;
-					if phone == 51 {
-						// comma (do an upstep)
-						pit_model.upstep();
-						duration = 150;
-						release_flag = true;
-					} else if phone == 52 || phone == 53 || phone == 54 {
-						match phone {
-							53 => { pit_model.set_final(2); },		// question mark
-							54 => { pit_model.set_final(3); },		// exclamation point
-							_  => { pit_model.set_final(0); },		// period
-						}
-						duration = 400;
-						release_flag = true;
-					}
+					release_flag = if phone == 51 || phone == 52 || phone == 53 || phone == 54 { true } else { false };
 					if release_flag {
-						// check if past phoneme is alveolar stop (T, D)
 						phone = match past_phone {
 							11|36 => 49,			// is alveolar. use IXP release
 							_     => 48,			// otherwise, use AXP release
 						};
 					}
 
-					// output phone, stress, and duration for debugging
-					//println!("{} {} {}", phone, stress, duration);
-
-					// note. duration is shorter for function words
-					// lets do that here
-					if isFunctionWord { duration = (duration as f32 * 0.9) as i32; }
-
 					// feed phoneme and duration into synthesizer
 					// and write out to WAV file
 					is_stressed = if stress != 0 { true } else { false };
-					ready = synth_engine.load(phone, duration, is_stressed);
+					ready = synth_engine.load(phone, duration, is_stressed, cart_pitch);
 					if ready {
 						while synth_engine.is_running() {
-							pit_model.set(synth_engine.pst_c);
+							pit_model.set(synth_engine.pit_c);
 							F0 = pit_model.step();
 							writer.write_sample(synth_engine.sample(F0)).unwrap();
 						}
 					}
-				} else if phone == 50 {
-					// content word - word boundary
-					if isFunctionWord == false {
-						// do compound stress if content word
-						// is after a content word
-						pit_model.set_compound(true);
+				} else {
+					past_accent = curr_accent;
+					if phone == 50 {
+						// content word detected. accent it.
+						curr_accent = 1;
+					} else {
+						// function word detected. leave it alone.
+						curr_accent = 0;
 					}
-					isFunctionWord = false;
-				} else if phone == 55 {
-					// function word boundary
-					pit_model.set_compound(false);
-					if isFunctionWord == false {
-						// do a downstep if content word
-						// was before a function word
-						pit_model.downstep();
-					}
-					isFunctionWord = true;
 				}
 			}
 			// assign pb and sb to pa and sa to process those next
@@ -308,9 +272,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	while synth_engine.is_not_last() {
 		if finish_off {
 			finish_off = false;
-			ready = synth_engine.load(48, 100, false);
+			ready = synth_engine.load(48, 100, false, 50.0);
 		} else {
-			ready = synth_engine.load(0, 50, false);
+			ready = synth_engine.load(0, 50, false, 50.0);
 		}
 		if ready {
 			while synth_engine.is_running() {

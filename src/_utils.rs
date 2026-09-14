@@ -69,6 +69,9 @@ impl cbuf {
 			}
 		}
 	}
+	pub fn len(&mut self) -> usize {
+		(self.head - self.tail) as usize
+	}
 }
 
 // convert phoneme tokens and separate phoneme and stress

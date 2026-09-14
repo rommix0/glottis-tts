@@ -5,10 +5,11 @@
 | DATE:   8/11/2026-8/30/2026           |
 ---------------------------------------*/
 
+use core::f32::consts::PI;
+
 use crate::_vtm::vtm;
 use crate::_vtm::m_sr;
-use crate::_vtm::M_EU;
-use crate::_vtm::M_PI;
+use crate::_vtm::FN_INIT;
 use crate::_vtbl::vot_tbl;
 use crate::_vtbl::formant_tbl;
 
@@ -17,6 +18,7 @@ const two_ms:    i32 = (m_sr as f32 * 0.002) as i32;
 const five_ms:   i32 = (m_sr as f32 * 0.005) as i32;
 const ten_ms:    i32 = (m_sr as f32 * 0.010) as i32;
 const twenty_ms: i32 = (m_sr as f32 * 0.020) as i32;
+const thirty_ms: i32 = (m_sr as f32 * 0.030) as i32;
 const forty_ms:  i32 = (m_sr as f32 * 0.040) as i32;
 const fifty_ms:  i32 = (m_sr as f32 * 0.050) as i32;
 const sixty_ms:  i32 = (m_sr as f32 * 0.060) as i32;
@@ -38,13 +40,14 @@ pub struct engine {
 	pdr_c:  i32,
 	pdr_r1: i32,
 	pst_l1: bool,
+	pub pit_c: f32,
+	pit_r1: f32,
 	pub pst_c: bool,
 	pst_r1: bool,
 	GL: f32,
 	GL_V: f32,
-	TL_reg: f32,
-	PK_reg: f32,
-	NZF_reg: f32,
+	RD_reg: f32,
+	NZP_reg: f32,
 	F1_reg: f32,
 	F2_reg: f32,
 	F3_reg: f32,
@@ -57,13 +60,15 @@ pub struct engine {
 	A5_reg: f32,
 	A6_reg: f32,
 	A7_reg: f32,
+	A8_reg: f32,
+	A9_reg: f32,
+	A10_reg: f32,
 	AB_reg: f32,
 	AF_reg: f32,
 	AH_reg: f32,
 	AV_reg: f32,
-	TL_reg_src: f32,
-	PK_reg_src: f32,
-	NZF_reg_src: f32,
+	RD_reg_src: f32,
+	NZP_reg_src: f32,
 	F1_reg_src: f32,
 	F2_reg_src: f32,
 	F3_reg_src: f32,
@@ -76,13 +81,15 @@ pub struct engine {
 	A5_reg_src: f32,
 	A6_reg_src: f32,
 	A7_reg_src: f32,
+	A8_reg_src: f32,
+	A9_reg_src: f32,
+	A10_reg_src: f32,
 	AB_reg_src: f32,
 	AF_reg_src: f32,
 	AH_reg_src: f32,
 	AV_reg_src: f32,
-	TL_reg_trg: f32,
-	PK_reg_trg: f32,
-	NZF_reg_trg: f32,
+	RD_reg_trg: f32,
+	NZP_reg_trg: f32,
 	F1_reg_trg: f32,
 	F2_reg_trg: f32,
 	F3_reg_trg: f32,
@@ -95,6 +102,9 @@ pub struct engine {
 	A5_reg_trg: f32,
 	A6_reg_trg: f32,
 	A7_reg_trg: f32,
+	A8_reg_trg: f32,
+	A9_reg_trg: f32,
+	A10_reg_trg: f32,
 	AB_reg_trg: f32,
 	AF_reg_trg: f32,
 	AH_reg_trg: f32,
@@ -119,11 +129,9 @@ pub struct engine {
 	sib_ramp: f32,
 	C_A_src: u8,
 	C_B_src: u8,
-	TL_A_src: f32,
-	TL_B_src: f32,
-	PK_A_src: f32,
-	PK_B_src: f32,
-	NZF_A_src: f32,
+	RD_A_src: f32,
+	RD_B_src: f32,
+	NZP_A_src: f32,
 	F1_A_src: f32,
 	F2_A_src: f32,
 	F3_A_src: f32,
@@ -136,11 +144,14 @@ pub struct engine {
 	A5_src: f32,
 	A6_src: f32,
 	A7_src: f32,
+	A8_src: f32,
+	A9_src: f32,
+	A10_src: f32,
 	AB_src: f32,
 	AF_src: f32,
 	AH_src: f32,
 	AV_src: f32,
-	NZF_B_src: f32,
+	NZP_B_src: f32,
 	F1_B_src: f32,
 	F2_B_src: f32,
 	F3_B_src: f32,
@@ -177,15 +188,16 @@ impl engine {
 			pst_l1: false,
 			pst_c:  false,
 			pst_r1: false,
+			pit_c: 0.0,
+			pit_r1: 0.0,
 			/////////////////////////////
 			//        REGISTERS        //
 			/////////////////////////////
 			// traversal registers
 			GL:      1.0,				// glottalization F0 level
 			GL_V:    1.0,				// glottalization AV level
-			TL_reg:  0.0,
-			PK_reg:  0.0,
-			NZF_reg: 0.0,
+			RD_reg:  0.0,
+			NZP_reg: 0.0,
 			F1_reg:  0.0,
 			F2_reg:  0.0,
 			F3_reg:  0.0,
@@ -198,14 +210,16 @@ impl engine {
 			A5_reg:  0.0,
 			A6_reg:  0.0,
 			A7_reg:  0.0,
+			A8_reg:  0.0,
+			A9_reg:  0.0,
+			A10_reg:  0.0,
 			AB_reg:  0.0,
 			AF_reg:  0.0,
 			AH_reg:  0.0,
 			AV_reg:  0.0,
 			// source registers
-			TL_reg_src:  0.0,
-			PK_reg_src:  0.0,
-			NZF_reg_src: 0.0,
+			RD_reg_src:  0.0,
+			NZP_reg_src: 0.0,
 			F1_reg_src:  0.0,
 			F2_reg_src:  0.0,
 			F3_reg_src:  0.0,
@@ -218,14 +232,16 @@ impl engine {
 			A5_reg_src:  0.0,
 			A6_reg_src:  0.0,
 			A7_reg_src:  0.0,
+			A8_reg_src:  0.0,
+			A9_reg_src:  0.0,
+			A10_reg_src:  0.0,
 			AB_reg_src:  0.0,
 			AF_reg_src:  0.0,
 			AH_reg_src:  0.0,
 			AV_reg_src:  0.0,
 			// target registers
-			TL_reg_trg:  0.0,
-			PK_reg_trg:  0.0,
-			NZF_reg_trg: 0.0,
+			RD_reg_trg:  0.0,
+			NZP_reg_trg: 0.0,
 			F1_reg_trg:  0.0,
 			F2_reg_trg:  0.0,
 			F3_reg_trg:  0.0,
@@ -238,6 +254,9 @@ impl engine {
 			A5_reg_trg:  0.0,
 			A6_reg_trg:  0.0,
 			A7_reg_trg:  0.0,
+			A8_reg_trg:  0.0,
+			A9_reg_trg:  0.0,
+			A10_reg_trg:  0.0,
 			AB_reg_trg:  0.0,
 			AF_reg_trg:  0.0,
 			AH_reg_trg:  0.0,
@@ -268,11 +287,9 @@ impl engine {
 			/////////////////////////////
 			C_A_src:   0,
 			C_B_src:   0,
-			TL_A_src:  0.0,
-			TL_B_src:  0.0,
-			PK_A_src:  0.0,
-			PK_B_src:  0.0,
-			NZF_A_src: 0.0,
+			RD_A_src:  0.0,
+			RD_B_src:  0.0,
+			NZP_A_src: 0.0,
 			F1_A_src:  0.0,
 			F2_A_src:  0.0,
 			F3_A_src:  0.0,
@@ -285,11 +302,14 @@ impl engine {
 			A5_src:    0.0,
 			A6_src:    0.0,
 			A7_src:    0.0,
+			A8_src:    0.0,
+			A9_src:    0.0,
+			A10_src:   0.0,
 			AB_src:    0.0,
 			AF_src:    0.0,
 			AH_src:    0.0,
 			AV_src:    0.0,
-			NZF_B_src: 0.0,
+			NZP_B_src: 0.0,
 			F1_B_src:  0.0,
 			F2_B_src:  0.0,
 			F3_B_src:  0.0,
@@ -329,15 +349,16 @@ impl engine {
 		self.pst_l1 = false;
 		self.pst_c =  false;
 		self.pst_r1 = false;
+		self.pit_c = 0.0;
+		self.pit_r1 = 0.0;
 		/////////////////////////////
 		//        REGISTERS        //
 		/////////////////////////////
 		// traversal registers
 		self.GL =      1.0;
 		self.GL_V =    1.0;
-		self.TL_reg =  0.0;
-		self.PK_reg =  0.0;
-		self.NZF_reg = 0.0;
+		self.RD_reg =  0.0;
+		self.NZP_reg = 0.0;
 		self.F1_reg =  0.0;
 		self.F2_reg =  0.0;
 		self.F3_reg =  0.0;
@@ -350,14 +371,16 @@ impl engine {
 		self.A5_reg =  0.0;
 		self.A6_reg =  0.0;
 		self.A7_reg =  0.0;
+		self.A8_reg =  0.0;
+		self.A9_reg =  0.0;
+		self.A10_reg = 0.0;
 		self.AB_reg =  0.0;
 		self.AF_reg =  0.0;
 		self.AH_reg =  0.0;
 		self.AV_reg =  0.0;
 		// source registers
-		self.TL_reg_src =  0.0;
-		self.PK_reg_src =  0.0;
-		self.NZF_reg_src = 0.0;
+		self.RD_reg_src =  0.0;
+		self.NZP_reg_src = 0.0;
 		self.F1_reg_src =  0.0;
 		self.F2_reg_src =  0.0;
 		self.F3_reg_src =  0.0;
@@ -370,14 +393,16 @@ impl engine {
 		self.A5_reg_src =  0.0;
 		self.A6_reg_src =  0.0;
 		self.A7_reg_src =  0.0;
+		self.A8_reg_src =  0.0;
+		self.A9_reg_src =  0.0;
+		self.A10_reg_src =  0.0;
 		self.AB_reg_src =  0.0;
 		self.AF_reg_src =  0.0;
 		self.AH_reg_src =  0.0;
 		self.AV_reg_src =  0.0;
 		// target registers
-		self.TL_reg_trg =  0.0;
-		self.PK_reg_trg =  0.0;
-		self.NZF_reg_trg = 0.0;
+		self.RD_reg_trg =  0.0;
+		self.NZP_reg_trg = 0.0;
 		self.F1_reg_trg =  0.0;
 		self.F2_reg_trg =  0.0;
 		self.F3_reg_trg =  0.0;
@@ -390,6 +415,9 @@ impl engine {
 		self.A5_reg_trg =  0.0;
 		self.A6_reg_trg =  0.0;
 		self.A7_reg_trg =  0.0;
+		self.A8_reg_trg =  0.0;
+		self.A9_reg_trg =  0.0;
+		self.A10_reg_trg =  0.0;
 		self.AB_reg_trg =  0.0;
 		self.AF_reg_trg =  0.0;
 		self.AH_reg_trg =  0.0;
@@ -413,11 +441,9 @@ impl engine {
 		/////////////////////////////
 		self.C_A_src =   0;
 		self.C_B_src =   0;
-		self.TL_A_src =  0.0;
-		self.TL_B_src =  0.0;
-		self.PK_A_src =  0.0;
-		self.PK_B_src =  0.0;
-		self.NZF_A_src = 0.0;
+		self.RD_A_src =  0.0;
+		self.RD_B_src =  0.0;
+		self.NZP_A_src = 0.0;
 		self.F1_A_src =  0.0;
 		self.F2_A_src =  0.0;
 		self.F3_A_src =  0.0;
@@ -430,11 +456,14 @@ impl engine {
 		self.A5_src =    0.0;
 		self.A6_src =    0.0;
 		self.A7_src =    0.0;
+		self.A8_src =    0.0;
+		self.A9_src =    0.0;
+		self.A10_src =    0.0;
 		self.AB_src =    0.0;
 		self.AF_src =    0.0;
 		self.AH_src =    0.0;
 		self.AV_src =    0.0;
-		self.NZF_B_src = 0.0;
+		self.NZP_B_src = 0.0;
 		self.F1_B_src =  0.0;
 		self.F2_B_src =  0.0;
 		self.F3_B_src =  0.0;
@@ -467,9 +496,9 @@ impl engine {
 		match x {
 			47                     => 0x0022,		// dx (alveolar flap)
 			40                     => 0x0002,		// v
-			1|2|3|4|5|6|7|14|29|38 => 0x0003,		// aa, ae, ah, ao, aw, ax, axr, er, ow, uh
+			1|2|3|4|5|6|7|14|29|38 => 0x0003,		// aa, ae, ah, ao, aw, ax, axr, er, ow
 			13|15|19|20|21         => 0x0007,		// eh, ey, ih, ix, iy
-			39                     => 0x000B,		// uw
+			39                     => 0x000B,		// uh, uw
 			27                     => 0x0032,		// n
 			36                     => 0x0060,		// t
 			11                     => 0x0062,		// d
@@ -497,7 +526,7 @@ impl engine {
 		// convert milliseconds to samples
 		((x as f32 / 1000.0) * m_sr as f32) as i32
 	}
-	fn advance(&mut self, x: u8, d: i32, s: bool) {
+	fn advance(&mut self, x: u8, d: i32, s: bool, cp: f32) {
 		// x is phone_id
 		// d is duration
 		// s is stress
@@ -524,6 +553,11 @@ impl engine {
 		self.pst_l1 = self.pst_c;
 		self.pst_c  = self.pst_r1;
 		self.pst_r1 = s;
+		/////////////////////////////
+		//    PITCH PASSTHROUGH    //
+		/////////////////////////////
+		self.pit_c = self.pit_r1;
+		self.pit_r1 = cp;
 	}
 	pub fn is_running(&mut self) -> bool {
 		if self.end_early || self.counter >= self.marker_B { return false; }
@@ -538,38 +572,41 @@ impl engine {
 		true
 	}
 	fn fetch(&mut self) {
-		let offset_src: usize = self.phn_c as usize * 30;
+		let offset_src: usize = self.phn_c as usize * 31;
 		//---------------source---------------------
-		self.C_A_src   = formant_tbl[offset_src+0]  as u8;		// also target during transition time
-		self.C_B_src   = formant_tbl[offset_src+1]  as u8;
-		self.TL_A_src  = formant_tbl[offset_src+2]  as f32;
-		self.TL_B_src  = formant_tbl[offset_src+3]  as f32;
-		self.PK_A_src  = formant_tbl[offset_src+4]  as f32;
-		self.PK_B_src  = formant_tbl[offset_src+5]  as f32;
-		self.NZF_A_src = formant_tbl[offset_src+6]  as f32;
-		self.F1_A_src  = formant_tbl[offset_src+7]  as f32;
-		self.F2_A_src  = formant_tbl[offset_src+8]  as f32;
-		self.F3_A_src  = formant_tbl[offset_src+9]  as f32;
-		self.B1_A_src  = formant_tbl[offset_src+10] as f32;
-		self.B2_A_src  = formant_tbl[offset_src+11] as f32;
-		self.B3_A_src  = formant_tbl[offset_src+12] as f32;
-		self.A2_src    = formant_tbl[offset_src+13] as f32;
-		self.A3_src    = formant_tbl[offset_src+14] as f32;
-		self.A4_src    = formant_tbl[offset_src+15] as f32;
-		self.A5_src    = formant_tbl[offset_src+16] as f32;
-		self.A6_src    = formant_tbl[offset_src+17] as f32;
-		self.A7_src    = formant_tbl[offset_src+18] as f32;
-		self.AB_src    = formant_tbl[offset_src+19] as f32;
-		self.AF_src    = formant_tbl[offset_src+20] as f32;
-		self.AH_src    = formant_tbl[offset_src+21] as f32;
-		self.AV_src    = formant_tbl[offset_src+22] as f32;
-		self.NZF_B_src = formant_tbl[offset_src+23] as f32;
-		self.F1_B_src  = formant_tbl[offset_src+24] as f32;
-		self.F2_B_src  = formant_tbl[offset_src+25] as f32;
-		self.F3_B_src  = formant_tbl[offset_src+26] as f32;
-		self.B1_B_src  = formant_tbl[offset_src+27] as f32;
-		self.B2_B_src  = formant_tbl[offset_src+28] as f32;
-		self.B3_B_src  = formant_tbl[offset_src+29] as f32;
+		self.C_A_src   = formant_tbl[offset_src+0] as u8;		// also target during transition time
+		self.C_B_src   = formant_tbl[offset_src+1] as u8;
+		self.RD_A_src  = formant_tbl[offset_src+2] as f32 / 100.0;
+		self.RD_B_src  = formant_tbl[offset_src+3] as f32 / 100.0;
+		//self.NZP_A_src = formant_tbl[offset_src+4] as f32;
+		self.NZP_A_src = self.fetch_nsl();
+		self.F1_A_src  = formant_tbl[offset_src+5] as f32;
+		self.F2_A_src  = formant_tbl[offset_src+6] as f32;
+		self.F3_A_src  = formant_tbl[offset_src+7] as f32;
+		self.B1_A_src  = formant_tbl[offset_src+8] as f32;
+		self.B2_A_src  = formant_tbl[offset_src+9] as f32;
+		self.B3_A_src  = formant_tbl[offset_src+10] as f32;
+		self.A2_src    = formant_tbl[offset_src+11] as f32;
+		self.A3_src    = formant_tbl[offset_src+12] as f32;
+		self.A4_src    = formant_tbl[offset_src+13] as f32;
+		self.A5_src    = formant_tbl[offset_src+14] as f32;
+		self.A6_src    = formant_tbl[offset_src+15] as f32;
+		self.A7_src    = formant_tbl[offset_src+16] as f32;
+		self.A8_src    = formant_tbl[offset_src+17] as f32;
+		self.A9_src    = formant_tbl[offset_src+18] as f32;
+		self.A10_src   = formant_tbl[offset_src+19] as f32;
+		self.AB_src    = formant_tbl[offset_src+20] as f32;
+		self.AF_src    = formant_tbl[offset_src+21] as f32;
+		self.AH_src    = formant_tbl[offset_src+22] as f32;
+		self.AV_src    = formant_tbl[offset_src+23] as f32;
+		//self.NZP_B_src = formant_tbl[offset_src+24] as f32;
+		self.NZP_B_src = self.NZP_A_src;
+		self.F1_B_src  = formant_tbl[offset_src+25] as f32;
+		self.F2_B_src  = formant_tbl[offset_src+26] as f32;
+		self.F3_B_src  = formant_tbl[offset_src+27] as f32;
+		self.B1_B_src  = formant_tbl[offset_src+28] as f32;
+		self.B2_B_src  = formant_tbl[offset_src+29] as f32;
+		self.B3_B_src  = formant_tbl[offset_src+30] as f32;
 
 		if self.F1_B_src == 0.0 { self.F1_B_src = self.F1_A_src; }
 		if self.F2_B_src == 0.0 { self.F2_B_src = self.F2_A_src; }
@@ -593,6 +630,14 @@ impl engine {
 		let b_onset = self.ms_to_samples(vot_tbl[offset+0]);
 		let t_onset = self.ms_to_samples(vot_tbl[offset+1]);
 		(b_onset, t_onset)
+	}
+	fn fetch_nsl(&mut self) -> f32 {
+		match self.pft_c {
+			0x0092        => 1000.0,	// M
+			0x0032        => 1700.0,	// N
+			0x0112        => 3000.0,	// NG
+			_             => 0.0,		// otherwise
+		}
 	}
 	fn ptar(&mut self) {
 		if self.phn_c == 24 && self.pft_r1 & 0x42 == 0x40 {
@@ -709,6 +754,11 @@ impl engine {
 				self.F3_A_src += 175.0;
 				self.F3_B_src += 175.0;
 			}
+			// NASAL BANDWIDTH ADJUSTMENT (CHEN 1997)
+			if self.pft_c & 0x10 != 0 {
+				self.B1_A_src += 107.0;
+				self.B1_B_src += 107.0;
+			}
 		}
 
 		// deal with fricative amp params below
@@ -757,9 +807,8 @@ impl engine {
 		// reset counter
 		self.counter = 0;
 		// source
-		self.TL_reg_src  = self.TL_A_src;
-		self.PK_reg_src  = self.PK_A_src;
-		self.NZF_reg_src = self.NZF_A_src;
+		self.RD_reg_src  = self.RD_A_src;
+		self.NZP_reg_src = self.NZP_A_src;
 		self.F1_reg_src  = self.F1_A_src;
 		self.F2_reg_src  = self.F2_A_src;
 		self.F3_reg_src  = self.F3_A_src;
@@ -772,15 +821,17 @@ impl engine {
 		self.A5_reg_src  = 0.0;
 		self.A6_reg_src  = 0.0;
 		self.A7_reg_src  = 0.0;
+		self.A8_reg_src  = 0.0;
+		self.A9_reg_src  = 0.0;
+		self.A10_reg_src  = 0.0;
 		self.AB_reg_src  = 0.0;
 		self.AF_reg_src  = 0.0;
 		self.AH_reg_src  = 0.0;
 		self.AV_reg_src  = 0.0;
 		if self.pft_c & 0x40 != 0 { self.closure = 0.0; }
 		// target
-		self.TL_reg_trg  = self.TL_reg_src;
-		self.PK_reg_trg  = self.PK_reg_src;
-		self.NZF_reg_trg = self.NZF_reg_src;
+		self.RD_reg_trg  = self.RD_reg_src;
+		self.NZP_reg_trg = self.NZP_reg_src;
 		self.F1_reg_trg  = self.F1_reg_src;
 		self.F2_reg_trg  = self.F2_reg_src;
 		self.F3_reg_trg  = self.F3_reg_src;
@@ -793,6 +844,9 @@ impl engine {
 		self.A5_reg_trg  = self.A5_src;
 		self.A6_reg_trg  = self.A6_src;
 		self.A7_reg_trg  = self.A7_src;
+		self.A8_reg_trg  = self.A8_src;
+		self.A9_reg_trg  = self.A9_src;
+		self.A10_reg_trg = self.A10_src;
 		self.AB_reg_trg  = self.AB_src;
 		self.AF_reg_trg  = self.AF_src;
 		self.AH_reg_trg  = self.AH_src;
@@ -809,7 +863,7 @@ impl engine {
 		let mut xx = x;
 		if xx > 1.0 { xx = 1.0; }
 		if xx <= 0.0 { return 0.0; }
-		M_EU.powf(-2.0 * M_PI * (1.0 - xx))
+		(-2.0 * PI * (1.0 - xx)).exp()
 	}
 	fn update_registers(&mut self) {
 		// x is interpolation factor (0 < x < 1)
@@ -823,9 +877,8 @@ impl engine {
 		let y = self.lin2smooth(self.interp);
 
 		// update the interpolator (except amps, those will be done elsewhere)
-		self.TL_reg  = self.TL_reg_src  * (1.0 - y) + self.TL_reg_trg  * y;
-		self.PK_reg  = self.PK_reg_src  * (1.0 - y) + self.PK_reg_trg  * y;
-		self.NZF_reg = self.NZF_reg_src * (1.0 - y) + self.NZF_reg_trg * y;
+		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;
+		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
 		self.F1_reg  = self.F1_reg_src  * (1.0 - y) + self.F1_reg_trg  * y;
 		self.F2_reg  = self.F2_reg_src  * (1.0 - y) + self.F2_reg_trg  * y;
 		self.F3_reg  = self.F3_reg_src  * (1.0 - y) + self.F3_reg_trg  * y;
@@ -850,26 +903,30 @@ impl engine {
 		}
 
 		// update the interpolator for the parallel amps
-		self.A2_reg = self.A2_reg_src * (1.0 - y) + self.A2_reg_trg * y;
-		self.A3_reg = self.A3_reg_src * (1.0 - y) + self.A3_reg_trg * y;
-		self.A4_reg = self.A4_reg_src * (1.0 - y) + self.A4_reg_trg * y;
-		self.A5_reg = self.A5_reg_src * (1.0 - y) + self.A5_reg_trg * y;
-		self.A6_reg = self.A6_reg_src * (1.0 - y) + self.A6_reg_trg * y;
-		self.A7_reg = self.A7_reg_src * (1.0 - y) + self.A7_reg_trg * y;
-		self.AB_reg = self.AB_reg_src * (1.0 - y) + self.AB_reg_trg * y;
+		self.A2_reg  = self.A2_reg_src  * (1.0 - y) + self.A2_reg_trg * y;
+		self.A3_reg  = self.A3_reg_src  * (1.0 - y) + self.A3_reg_trg * y;
+		self.A4_reg  = self.A4_reg_src  * (1.0 - y) + self.A4_reg_trg * y;
+		self.A5_reg  = self.A5_reg_src  * (1.0 - y) + self.A5_reg_trg * y;
+		self.A6_reg  = self.A6_reg_src  * (1.0 - y) + self.A6_reg_trg * y;
+		self.A7_reg  = self.A7_reg_src  * (1.0 - y) + self.A7_reg_trg * y;
+		self.A8_reg  = self.A8_reg_src  * (1.0 - y) + self.A8_reg_trg * y;
+		self.A9_reg  = self.A9_reg_src  * (1.0 - y) + self.A9_reg_trg * y;
+		self.A10_reg = self.A10_reg_src * (1.0 - y) + self.A10_reg_trg * y;
 
 		// update the interpolator for main amps
+		self.AB_reg = self.AB_reg_src * (1.0 - y) + self.AB_reg_trg * y;
 		self.AF_reg = (self.AF_reg_src * (1.0 - y) + self.AF_reg_trg  * y) * self.master_fade * self.closure * self.lin2decay(self.burst_INIT) * self.sib_ramp;
 		self.AH_reg = (self.AH_reg_src * (1.0 - y) + self.AH_reg_trg  * y) * self.master_fade * self.closure * self.lin2decay(self.burst_VOT);
 		self.AV_reg = (self.AV_reg_src * (1.0 - y) + self.AV_reg_trg  * y) * self.master_fade * self.closure;
 	}
 	fn update_A_to_B(&mut self) {
-		self.slope = 1.0 / (self.marker_B as f32 - self.marker_A as f32);
+		let mut dist = self.marker_B - self.marker_A;
+		if dist < thirty_ms { dist = thirty_ms; }
+		self.slope = 1.0 / dist as f32;
 		self.interp = 0.0;
 		// source (A)
-		self.TL_reg_src  = self.TL_reg;
-		self.PK_reg_src  = self.PK_reg;
-		self.NZF_reg_src = self.NZF_reg;
+		self.RD_reg_src  = self.RD_reg;
+		self.NZP_reg_src = self.NZP_reg;
 		self.F1_reg_src  = self.F1_reg;
 		self.F2_reg_src  = self.F2_reg;
 		self.F3_reg_src  = self.F3_reg;
@@ -877,9 +934,8 @@ impl engine {
 		self.B2_reg_src  = self.B2_reg;
 		self.B3_reg_src  = self.B3_reg;
 		// target (B)
-		self.TL_reg_trg  = self.TL_B_src;
-		self.PK_reg_trg  = self.PK_B_src;
-		self.NZF_reg_trg = self.NZF_B_src;
+		self.RD_reg_trg  = self.RD_B_src;
+		self.NZP_reg_trg = self.NZP_B_src;
 		self.F1_reg_trg  = self.F1_B_src;
 		self.F2_reg_trg  = self.F2_B_src;
 		self.F3_reg_trg  = self.F3_B_src;
@@ -889,7 +945,9 @@ impl engine {
 	}
 	fn update_B_to_Next(&mut self) {
 		// calculate transition slope here
-		self.slope = 1.0 / (self.marker_A as f32 + self.marker_BA as f32);
+		let mut dist = self.marker_A + self.marker_BA;
+		if dist < thirty_ms { dist = thirty_ms; }
+		self.slope = 1.0 / dist as f32;
 		self.interp = 0.0;
 
 		// set negative count so locus transition can be completed
@@ -897,9 +955,8 @@ impl engine {
 		self.counter = -(self.marker_BA);
 
 		// source (A)
-		self.TL_reg_src  = self.TL_reg;
-		self.PK_reg_src  = self.PK_reg;
-		self.NZF_reg_src = self.NZF_reg;
+		self.RD_reg_src  = self.RD_reg;
+		self.NZP_reg_src = self.NZP_reg;
 		self.F1_reg_src  = self.F1_reg;
 		self.F2_reg_src  = self.F2_reg;
 		self.F3_reg_src  = self.F3_reg;
@@ -912,14 +969,16 @@ impl engine {
 		self.A5_reg_src  = self.A5_reg;
 		self.A6_reg_src  = self.A6_reg;
 		self.A7_reg_src  = self.A7_reg;
+		self.A8_reg_src  = self.A8_reg;
+		self.A9_reg_src  = self.A9_reg;
+		self.A10_reg_src = self.A10_reg;
 		self.AB_reg_src  = self.AB_reg;
 		self.AF_reg_src  = self.AF_reg;
 		self.AH_reg_src  = self.AH_reg;
 		self.AV_reg_src  = self.AV_reg;
 		// target (B)
-		self.TL_reg_trg  = self.TL_A_src;
-		self.PK_reg_trg  = self.PK_A_src;
-		self.NZF_reg_trg = self.NZF_A_src;
+		self.RD_reg_trg  = self.RD_A_src;
+		self.NZP_reg_trg = self.NZP_A_src;
 		self.F1_reg_trg  = self.F1_A_src;
 		self.F2_reg_trg  = self.F2_A_src;
 		self.F3_reg_trg  = self.F3_A_src;
@@ -932,15 +991,19 @@ impl engine {
 		self.A5_reg_trg  = self.A5_src;
 		self.A6_reg_trg  = self.A6_src;
 		self.A7_reg_trg  = self.A7_src;
+		self.A8_reg_trg  = self.A8_src;
+		self.A9_reg_trg  = self.A9_src;
+		self.A10_reg_trg = self.A10_src;
 		self.AB_reg_trg  = self.AB_src;
 		self.AF_reg_trg  = self.AF_src;
 		self.AH_reg_trg  = self.AH_src;
 		self.AV_reg_trg  = self.AV_src;
 	}
-	pub fn load(&mut self, x: u8, d: i32, s: bool) -> bool {
+	pub fn load(&mut self, x: u8, d: i32, s: bool, cp: f32) -> bool {
 		// x is phoneme
 		// d is duration (ms)
 		// s is stress
+		// cp is CART pitch passthrough
 
 		// reset end early flag
 		self.end_early = false;
@@ -949,7 +1012,7 @@ impl engine {
 		let mut b_onset: i32 = 0;
 		let mut t_onset: i32 = 0;
 
-		self.advance(x, d, s);
+		self.advance(x, d, s, cp);
 		if self.is_ready() {
 			// do ptar before anything else
 			self.ptar();
@@ -1006,15 +1069,15 @@ impl engine {
 				// set default markers for affricate
 				self.marker_A = (self.pdr_c as f32 * 0.40) as i32;
 				self.marker_B = (self.pdr_c as f32 * 0.80) as i32;
-			} else if self.phn_c == 47 {
+			/*} else if self.phn_c == 47 {
 				// deal with alveolar flap here
 				self.marker_A = one_ms;
-				self.pdr_c = self.ms_to_samples(50);
+				self.pdr_c = self.ms_to_samples(50);*/
 			} else {
 				// is plosive
 				// get data from VOT table
 				(b_onset, t_onset) = self.fetch_vot();
-				if self.pdr_c < b_onset { self.pdr_c = b_onset; }
+				//if self.pdr_c < b_onset { self.pdr_c = b_onset; }
 				self.marker_A = self.pdr_c - b_onset;
 				self.marker_B = self.pdr_c - t_onset;
 			}
@@ -1104,7 +1167,7 @@ impl engine {
 			}
 		}
 	}
-	fn step(&mut self, f0_in: f32) {
+	fn step(&mut self) {
 		self.counter += 1;
 		self.update_amp_registers(self.counter, self.marker_A);
 		self.step_plosive();
@@ -1155,7 +1218,7 @@ impl engine {
 		(a, b)
 	}*/
 	pub fn sample(&mut self, f0: f32) -> f32 {
-		self.step(f0);
+		self.step();
 		self.vtm_eng.F0  = f0 * self.GL;
 		self.vtm_eng.F1  = self.F1_reg;
 		self.vtm_eng.F2  = self.F2_reg;
@@ -1163,15 +1226,17 @@ impl engine {
 		self.vtm_eng.B1  = self.B1_reg;
 		self.vtm_eng.B2  = self.B2_reg;
 		self.vtm_eng.B3  = self.B3_reg;
-		self.vtm_eng.TL  = self.TL_reg;
-		self.vtm_eng.PK  = self.PK_reg;
-		self.vtm_eng.FNZ = self.vtm_eng.FNP + self.NZF_reg;
+		self.vtm_eng.RD  = self.RD_reg;
+		self.vtm_eng.FNP = self.NZP_reg;
 		self.vtm_eng.A2  = self.A2_reg;
 		self.vtm_eng.A3  = self.A3_reg;
 		self.vtm_eng.A4  = self.A4_reg;
 		self.vtm_eng.A5  = self.A5_reg;
 		self.vtm_eng.A6  = self.A6_reg;
 		self.vtm_eng.A7  = self.A7_reg;
+		self.vtm_eng.A8  = self.A8_reg;
+		self.vtm_eng.A9  = self.A9_reg;
+		self.vtm_eng.A10 = self.A10_reg;
 		self.vtm_eng.AB  = self.AB_reg;
 		self.vtm_eng.AF  = self.AF_reg;
 		self.vtm_eng.AH  = self.AH_reg;
