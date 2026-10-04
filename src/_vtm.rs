@@ -45,7 +45,7 @@ const BN_INIT: f32 = 100.0;
 struct noise { alpha: f32, nxt: u16, xp1: f32 }
 impl noise {
 	pub fn new() -> noise {
-		noise { alpha: 0.2, nxt: 5612, xp1: 0.0 }
+		noise { alpha: 0.75, nxt: 5612, xp1: 0.0 }
 	}
 	pub fn reset(&mut self) {
 		self.nxt  = 5612;
@@ -364,6 +364,7 @@ pub struct vtm {
 	FR8:      resonator,
 	FR9:      resonator,
 	FR10:     resonator,
+	xp1:      f32,
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -429,6 +430,9 @@ impl vtm {
 			FR8      : resonator::new(F8_INIT,  B8_INIT,  false),
 			FR9      : resonator::new(F9_INIT,  B9_INIT,  false),
 			FR10     : resonator::new(F10_INIT, B10_INIT, false),
+			
+			// past sample for lip radiation filter
+			xp1: 0.0,
 		}
 	}
 	pub fn init(&mut self) {
@@ -591,6 +595,13 @@ impl vtm {
 		let excess: f32 = a - CLIP_LIMIT;
 		sign * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
 	}
+	fn lip(&mut self, x: f32, d: f32) -> f32 {
+		// apply lip radiation filter (start with 0.97 for d)
+		//let xx = (1.0 - d) * x - d * self.xp1;
+		let xx = x - d * self.xp1;
+		self.xp1 = x;
+		xx
+	}
 	pub fn step(&mut self) -> f32 {
 		/*#################
 		# MAIN OPERATIONS #
@@ -624,6 +635,7 @@ impl vtm {
 		let parr_out: f32 = self.parallel(parr_in);
 
 		// add them together and return
-		self.softclip(casc_out + parr_out)
+		let out = self.lip(casc_out + parr_out, 0.5);
+		self.softclip(out)
 	}
 }
