@@ -50,8 +50,14 @@ const BURST_SIBILANT_DB: f32 = -6.0;
 const UNRELEASED_SHARE: f32 = 0.5;
 // sibilant fricatives fade in and out over this long (ms), centred on their boundary with a vowel or sonorant
 const SIB_RAMP_MS: f32 = 40.0;
+// other fricatives crossfade with a vowel or sonorant over this long (ms), centred on the boundary
+const FRIC_RAMP_MS: f32 = 40.0;
+// fricative noise rises and falls over this long (ms) next to silence or the phrase-final release
+const FRIC_SILENCE_MS: f32 = 70.0;
 // a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
 const NASAL_EDGE_MS: f32 = 15.0;
+// out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
+const BACK_TRANSITION_MS: f32 = 80.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
 // aspiration level (AH, dB) by place
@@ -1297,8 +1303,11 @@ impl engine {
 						self.marker_A = forty_ms;
 					}
 				} else if self.pft_c & 0x1C11 != 0 {
-					// vowel transition, quicker after a nasal's release
-					self.marker_A = if self.pft_l1 & 0x10 != 0 { samples(NASAL_RELEASE_MS) } else { fifty_ms };
+					// vowel transition: quicker after a nasal's release, slower out of a tongue consonant into a back vowel
+					let tongue = matches!(self.phn_l1, 11 | 36 | 27 | 34 | 43 | 47 | 35 | 44 | 10 | 22 | 17 | 23 | 28);
+					self.marker_A = if self.pft_l1 & 0x10 != 0 { samples(NASAL_RELEASE_MS) }
+						else if tongue && self.F2_A_src < 1400.0 { samples(BACK_TRANSITION_MS) }
+						else { fifty_ms };
 				} else {
 					// otherwise, get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
@@ -1375,11 +1384,17 @@ impl engine {
 			self.amp_start = 0;
 			let sibilant = |f: u16| f & 0x8200 == 0x200;
 			let sonorant = |f: u16| f & 0x1 != 0 || f & 0x1C10 != 0;
-			if (sibilant(self.pft_c) && sonorant(self.pft_l1)) || (sibilant(self.pft_l1) && sonorant(self.pft_c)) {
-				// a sibilant fades in and out across its boundary, as far as the carried-over region allows
-				let half = samples(SIB_RAMP_MS / 2.0);
+			let fricative = |p: u8| matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44);
+			let quiet = |p: u8| p == PAU || p == 0 || p == 48 || p == 49;
+			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
+				// a fricative fades in and out across its boundary, as far as the carried-over region allows
+				let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
+				let half = samples(if sib { SIB_RAMP_MS } else { FRIC_RAMP_MS } / 2.0);
 				self.amp_start = (-half).max(self.counter);
 				self.amp_len = half - self.amp_start;
+			} else if (fricative(self.phn_c) && quiet(self.phn_l1)) || (fricative(self.phn_l1) && quiet(self.phn_c)) {
+				// out of and into silence, fricative noise rises and falls slowly
+				self.amp_len = samples(FRIC_SILENCE_MS);
 			}
 			if self.asp_db > 0.0 {
 				// aspiration: no voicing or frication until this phone's own part starts
@@ -2086,5 +2101,77 @@ mod tests {
 		assert!(!asp.is_empty());
 		assert!(asp.iter().all(|w| w.0 >= ASP_B1_WIDEN - 20.0 && w.1 >= ASP_B2_WIDEN - 20.0), "aspiration not damped: {:?}", asp[0]);
 		assert!(voiced.iter().all(|w| w.0 < ASP_B1_WIDEN / 2.0), "voiced vowel still damped: {:?}", voiced[0]);
+	}
+
+	// per sample (phone, counter, AF gain, AH dB) through phones
+	fn noise_track(phones: &[(u8, i32)]) -> Vec<(u8, i32, f32, f32)> {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let g = |db: f32| if db <= 0.0 { 0.0 } else { 0.5_f32.powf((87.0 - db) / 6.0) };
+		let mut out = Vec::new();
+		for &(p, d) in phones.iter().chain([(48u8, 100), (0, 50)].iter()) {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					out.push((e.phn_c, e.counter, g(e.AF_reg), e.AH_reg));
+				}
+			}
+		}
+		out
+	}
+
+	// 10-90 % rise time (ms) of the AF gain into phone c, against its peak
+	fn af_rise_ms(t: &[(u8, i32, f32, f32)], c: u8) -> f32 {
+		let idx: Vec<usize> = t.iter().enumerate().filter(|x| x.1.0 == c).map(|x| x.0).collect();
+		let hi = idx.iter().map(|&i| t[i].2).fold(0.0, f32::max);
+		let top = idx.iter().cloned().find(|&i| t[i].2 >= 0.9 * hi).unwrap();
+		let v: Vec<f32> = t[..=top].iter().map(|x| x.2).collect();
+		let a = v.iter().rposition(|x| *x < 0.1 * hi).unwrap_or(0);
+		(top - a) as f32 * 1000.0 / m_sr as f32
+	}
+
+	#[test]
+	fn fricative_edges_are_gradual() {
+		let th = noise_track(&[(PAU, 50), (1, 150), (37, 100), (1, 150)]);
+		assert!(af_rise_ms(&th, 37) >= 18.0, "th rises in {} ms", af_rise_ms(&th, 37));
+		let s = noise_track(&[(PAU, 100), (34, 110), (1, 150)]);
+		assert!(af_rise_ms(&s, 34) >= 30.0, "s after silence rises in {} ms", af_rise_ms(&s, 34));
+	}
+
+	#[test]
+	fn voiceless_fricative_breathes_into_its_vowels() {
+		let t = noise_track(&[(PAU, 50), (1, 150), (34, 110), (1, 150)]);
+		// the S's carried-over region is the first vowel's tail; the second vowel starts breathy
+		assert!(t.iter().any(|x| x.0 == 34 && x.1 < 0 && x.3 > 0.0), "no breath at the vowel's end");
+		let after: Vec<_> = t.iter().filter(|x| x.0 == 1).collect();
+		let start = after.iter().filter(|x| x.1 == ms(5.0)).last().unwrap();
+		assert!(start.3 > 0.0, "no breath at the next vowel's start");
+	}
+
+	#[test]
+	fn tongue_consonants_glide_slowly_into_back_vowels() {
+		// out of d, F2 still moves 50 ms into a back vowel but has arrived in a front one
+		let f2_at = |v: u8, at: f32| {
+			let mut e = engine::new();
+			e.init();
+			e.reset();
+			let mut f = (0.0, 0.0);
+			for &(p, d) in &[(PAU, 50), (6, 100), (11, 80), (v, 250), (48, 100), (0, 50)] {
+				if e.load(p, d, true, 0, true) {
+					while e.is_running() {
+						e.sample(120.0);
+						if e.phn_c == v && e.counter == ms(at) { f = (e.F2_reg, e.F2_A_src); }
+					}
+				}
+			}
+			f
+		};
+		let (back, back_t) = f2_at(39, 50.0);
+		assert!((back - back_t).abs() > 30.0, "F2 {} already at {} 50 ms into uw", back, back_t);
+		let (back, back_t) = f2_at(39, BACK_TRANSITION_MS + 1.0);
+		assert!((back - back_t).abs() < 5.0, "F2 {} not at {} by {} ms", back, back_t, BACK_TRANSITION_MS);
+		let (front, front_t) = f2_at(21, 51.0);
+		assert!((front - front_t).abs() < 5.0, "F2 {} not at {} 50 ms into iy", front, front_t);
 	}
 }
