@@ -56,3 +56,4 @@ ixp		49		// plosive/phrase-final release (alveolar)		|   can be inserted manuall
 ?		53
 !		54
 %		55		// function word boundary (beginning of word)
+pau		56		// pause (silence)

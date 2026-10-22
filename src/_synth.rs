@@ -12,6 +12,7 @@ use crate::_vtm::m_sr;
 use crate::_vtm::FN_INIT;
 use crate::_vtbl::vot_tbl;
 use crate::_vtbl::formant_tbl;
+use crate::_utt::PAU;
 
 const one_ms:    i32 = (m_sr as f32 * 0.001) as i32;
 const two_ms:    i32 = (m_sr as f32 * 0.002) as i32;
@@ -575,7 +576,9 @@ impl engine {
 		true
 	}
 	fn fetch(&mut self) {
-		let offset_src: usize = self.phn_c as usize * 31;
+		// the pause uses the silent row
+		let row: u8 = if self.phn_c == PAU { 0 } else { self.phn_c };
+		let offset_src: usize = row as usize * 31;
 		//---------------source---------------------
 		self.C_A_src   = formant_tbl[offset_src+0] as u8;		// also target during transition time
 		self.C_B_src   = formant_tbl[offset_src+1] as u8;
@@ -617,6 +620,22 @@ impl engine {
 		if self.B1_B_src == 0.0 { self.B1_B_src = self.B1_A_src; }
 		if self.B2_B_src == 0.0 { self.B2_B_src = self.B2_A_src; }
 		if self.B3_B_src == 0.0 { self.B3_B_src = self.B3_A_src; }
+
+		if self.phn_c == PAU {
+			// hold the formants where they are during a pause
+			self.F1_A_src = self.F1_reg;
+			self.F2_A_src = self.F2_reg;
+			self.F3_A_src = self.F3_reg;
+			self.B1_A_src = self.B1_reg;
+			self.B2_A_src = self.B2_reg;
+			self.B3_A_src = self.B3_reg;
+			self.F1_B_src = self.F1_reg;
+			self.F2_B_src = self.F2_reg;
+			self.F3_B_src = self.F3_reg;
+			self.B1_B_src = self.B1_reg;
+			self.B2_B_src = self.B2_reg;
+			self.B3_B_src = self.B3_reg;
+		}
 	}
 	fn fetch_vot(&mut self) -> (i32, i32) {
 		// phoneme id to VOT selector
@@ -1028,7 +1047,11 @@ impl engine {
 			self.ftar();
 
 			// get duration markers so slopes can be calculated
-			if self.pft_c & 0x8040 == 0 {
+			if self.phn_c == PAU {
+				// pause plays out its whole duration
+				self.marker_A = self.pdr_c.min(twenty_ms);
+				self.marker_B = self.pdr_c;
+			} else if self.pft_c & 0x8040 == 0 {
 				// not plosive nor affricate
 
 				// adjust phoneme duration and make sure they don't dip below a minimum threshold.
@@ -1096,6 +1119,10 @@ impl engine {
 				// so we can do a complete locus transition
 				self.update_B_to_Next();
 				self.marker_BA = self.get_control_A_duration(self.C_B_src, self.pdr_c);
+			}
+			if self.phn_c == PAU {
+				// no transition carried into the next phone, so the pause keeps its length
+				self.marker_BA = 0;
 			}
 		}
 		self.is_ready()
@@ -1246,5 +1273,48 @@ impl engine {
 		self.vtm_eng.AH  = self.AH_reg;
 		self.vtm_eng.AV  = self.AV_reg * self.GL_V;
 		self.vtm_eng.step()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::_utt::PAU;
+
+	// render phones (id, ms) the way main.rs drives the engine
+	fn render(phones: &[(u8, i32)]) -> Vec<f32> {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut out: Vec<f32> = Vec::new();
+		for &(p, d) in phones {
+			if e.load(p, d, true, 120.0) {
+				while e.is_running() { out.push(e.sample(120.0)); }
+			}
+		}
+		let mut first = true;
+		while e.is_not_last() {
+			let ready = if first { first = false; e.load(48, 100, false, 120.0) } else { e.load(0, 50, false, 120.0) };
+			if ready {
+				while e.is_running() { out.push(e.sample(120.0)); }
+			}
+		}
+		out
+	}
+
+	#[test]
+	fn pause_plays_its_duration() {
+		let plain = render(&[(1, 150), (1, 150)]);
+		let paused = render(&[(1, 150), (PAU, 300), (1, 150)]);
+		let diff = paused.len() as i64 - plain.len() as i64;
+		assert!((diff - 9600).abs() <= 800, "pause added {} samples", diff);
+
+		// the pause is a run of silence
+		let mut run = 0;
+		let mut best = 0;
+		for x in &paused {
+			if x.abs() < 1e-3 { run += 1; if run > best { best = run; } } else { run = 0; }
+		}
+		assert!(best >= 8000, "longest silent run {} samples", best);
 	}
 }
