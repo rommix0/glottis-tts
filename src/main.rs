@@ -14,7 +14,7 @@ mod _f0;
 
 use std::env;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use _vtm::m_sr;
 use hound;
 
@@ -30,15 +30,18 @@ struct Opts {
 	text:  String,
 	rate:  f32,
 	trace: bool,
+	seg_dump: Option<String>,	// file for the playing segment index of every sample
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false };
+	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, seg_dump: None };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(a) = args.next() {
 		if a == "--trace" {
 			opts.trace = true;
+		} else if a == "--seg-dump" {
+			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
 		} else if a == "--rate" {
 			let r: f32 = args.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
 			if !(0.5..=2.0).contains(&r) { return Err("rate must be between 0.5 and 2.0".to_string()); }
@@ -59,6 +62,7 @@ struct Engines {
 	next_seg: usize,		// stream index for the next segment
 	started:  bool,
 	last:     u8,			// last phone loaded
+	dump:     Option<BufWriter<File>>,
 }
 
 fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, seg: usize) {
@@ -69,6 +73,7 @@ fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: b
 			let (s, f) = eng.synth.position();
 			let f0 = eng.contour.hz_at(s, f);
 			writer.write_sample(eng.synth.sample(f0)).unwrap();
+			if let Some(d) = eng.dump.as_mut() { d.write_all(&(s as u32).to_le_bytes()).unwrap(); }
 		}
 	}
 }
@@ -80,6 +85,7 @@ fn new_engines() -> Engines {
 		next_seg: 0,
 		started:  false,
 		last:     0,
+		dump:     None,
 	};
 	eng.synth.init();
 	eng.synth.reset();
@@ -208,6 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// initialize engines
 	let mut eng = new_engines();
+	if let Some(path) = &opts.seg_dump { eng.dump = Some(BufWriter::new(File::create(path)?)); }
 	let mut text_engine  = _text::engine::new();
 	let mut lts_engine   = _lts::pvec::new();
 
@@ -348,7 +355,7 @@ mod tests {
 		let path = env::temp_dir().join(format!("tts_synth_test_{}.wav", std::process::id()));
 		let spec = hound::WavSpec { channels: 1, sample_rate: m_sr as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
 		let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, seg_dump: None };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);
