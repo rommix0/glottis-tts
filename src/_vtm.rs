@@ -499,7 +499,7 @@ impl vtm {
 		self.B1 += 200.0 * (self.F0 / self.F1 - 0.5).powf(2.0);
 
 		// glottal leakage adjust (B1, B2)
-		let DB1 = 250.0 * (self.F1 / 500.0).powf(2.0) * (self.RA - RA_REF) / 12.0;
+		let DB1 = 250.0 * (self.F1 / 500.0).powf(2.0) * (self.RA * 100.0 - RA_REF) / 12.0;
 		let DB2 = DB1 * self.F1 / (2.0 * self.F2);
 		self.B1 += DB1;
 		self.B2 += DB2;
