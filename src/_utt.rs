@@ -96,18 +96,22 @@ impl Utterance {
 		// texts[i] is the text of the i-th word (one per 90/95 token)
 		let mut u = Utterance { segs: Vec::new(), syls: Vec::new(), words: Vec::new(), phrases: Vec::new(), kind: Kind::Statement };
 		let mut phrase_start: usize = 0;
+		let mut text_i: usize = 0;
 		for &tk in tokens {
 			let (pa, pb, sa, sb) = PHNIDToPhoneme(tk);
 			match pa {
 				50 | 55 => {
 					u.close_word();
-					let text = texts.get(u.words.len()).cloned().unwrap_or_default();
+					u.drop_empty_word();
+					let text = texts.get(text_i).cloned().unwrap_or_default();
+					text_i += 1;
 					let n = u.segs.len();
 					let ns = u.syls.len();
 					u.words.push(Word { segs: n..n, syls: ns..ns, function: pa == 55, text, phrase: u.phrases.len() });
 				},
 				51..=54 => {
 					u.close_word();
+					u.drop_empty_word();
 					let end = match pa { 51 => Boundary::Comma, 52 => Boundary::Period, 53 => Boundary::Question, _ => Boundary::Exclaim };
 					if u.words.len() > phrase_start {
 						u.phrases.push(Phrase { words: phrase_start..u.words.len(), end });
@@ -135,6 +139,7 @@ impl Utterance {
 			}
 		}
 		u.close_word();
+		u.drop_empty_word();
 		if u.words.len() > phrase_start {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::None });
 		}
@@ -147,6 +152,10 @@ impl Utterance {
 			_ => Kind::Statement,
 		};
 		u
+	}
+	fn drop_empty_word(&mut self) {
+		// a word boundary with no phones after it is not a word
+		if self.words.last().is_some_and(|w| w.segs.is_empty()) { self.words.pop(); }
 	}
 	fn close_word(&mut self) {
 		// split the last word into syllables, once it has all its phones
@@ -270,6 +279,15 @@ mod tests {
 		let u = Utterance::build(&[CW, 51, 15], &texts(&["ha"]));
 		assert_eq!(u.phrases.len(), 1);
 		assert_eq!(u.phrases[0].end, Boundary::None);
+		assert_eq!(u.kind, Kind::Statement);
+	}
+
+	#[test]
+	fn empty_trailing_word_dropped() {
+		// a boundary token with no phones after the sentence end adds nothing
+		let u = Utterance::build(&[CW, 56, 18, 76, PERIOD, CW], &texts(&["cat"]));
+		assert_eq!(u.words.len(), 1);
+		assert_eq!(u.phrases.len(), 1);
 		assert_eq!(u.kind, Kind::Statement);
 	}
 
