@@ -68,6 +68,10 @@ const ASP_BEFORE_SONORANT: f32 = 0.5;
 // after aspiration, voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it (ms)
 const VOICE_ONSET_MS: f32 = 10.0;
 const ASP_OVERLAP_MS: f32 = 20.0;
+// aspiration through a front, close vowel's tract comes out loud against that quiet vowel: it is cut by this
+// much (dB) per kHz of the next vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
+const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
+const ASP_FRONT_FROM_HZ: f32 = 700.0;
 // the open glottis damps F1 and F2 during aspiration: bandwidth added (Hz), fading out with the aspiration
 const ASP_B1_WIDEN: f32 = 400.0;
 const ASP_B2_WIDEN: f32 = 70.0;
@@ -1362,7 +1366,13 @@ impl engine {
 			if let Some(a) = stop_asp {
 				self.marker_BA = a;
 				if a > 0 {
-					self.asp_db_next = ASP_DB[stop_place(self.phn_c)];
+					let mut level = ASP_DB[stop_place(self.phn_c)];
+					if self.pft_r1 & 0x1 != 0 {
+						// softer before a front, close vowel
+						let [f1, f2, _] = self.next_vowel_formants();
+						level -= ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0;
+					}
+					self.asp_db_next = level.max(1.0);
 					self.asp_seg_next = self.seg_c;
 				}
 			}
@@ -2173,5 +2183,27 @@ mod tests {
 		assert!((back - back_t).abs() < 5.0, "F2 {} not at {} by {} ms", back, back_t, BACK_TRANSITION_MS);
 		let (front, front_t) = f2_at(21, 51.0);
 		assert!((front - front_t).abs() < 5.0, "F2 {} not at {} 50 ms into iy", front, front_t);
+	}
+
+	#[test]
+	fn aspiration_is_softer_before_front_vowels() {
+		// the aspiration a stop leaves for the next vowel drops with how front that vowel is
+		let asp_before = |v: u8| {
+			let mut e = engine::new();
+			e.init();
+			e.reset();
+			for &(q, d) in &[(PAU, 50), (6, 100), (36, 101), (v, 1000)] {
+				if e.load(q, d, true, 0, true) {
+					if e.phn_c == 36 { break; }
+					while e.is_running() { e.sample(120.0); }
+				}
+			}
+			e.asp_db_next
+		};
+		let gap = |v: u8| formant_tbl[v as usize * 31 + 6] as f32 - formant_tbl[v as usize * 31 + 5] as f32;
+		let want = ASP_FRONT_DB_PER_KHZ * (gap(21) - ASP_FRONT_FROM_HZ) / 1000.0;
+		assert!(want > 3.0);
+		assert!(((asp_before(1) - asp_before(21)) - want).abs() < 0.3, "cut {} before iy, want {}", asp_before(1) - asp_before(21), want);
+		assert_eq!(asp_before(1), ASP_DB[1], "aspiration before aa changed");
 	}
 }
