@@ -31,6 +31,15 @@ const min_closure: i32 = thirty_ms;
 // longest share of a vowel the transition into it may take
 const ramp_share: f32 = 0.6;
 
+// vowel reduction: how far a vowel of d ms gets from neutral toward its target (0..1)
+const tau_f1: f32 = 40.0;
+const tau_f2: f32 = 40.0;
+const tau_f3: f32 = 40.0;
+
+fn reduce_k(d_ms: f32, tau: f32) -> f32 {
+	1.0 - (-d_ms / tau).exp()
+}
+
 fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
 	// interpolate two amplitudes (dB, 0 is off) in linear gain, the same scale the VTM uses
 	let gain = |db: f32| if db <= 0.0 { 0.0 } else { 0.5_f32.powf((87.0 - db) / 6.0) };
@@ -686,7 +695,7 @@ impl engine {
 		let mut factor: f32 = 1.0;
 		if self.pft_c & 0x1 == 1 {
 			// STRESS COLORING FOR VOWEL
-			factor = if self.pst_c { 0.5 } else { 1.5 };
+			factor = if self.pst_c { 0.75 } else { 1.25 };
 
 			// VELAR PINCHING RULE
 			if self.pft_l1 & 0x100 != 0 {
@@ -830,6 +839,20 @@ impl engine {
 			// silent burst if another burst is next or nasal
 			self.silent_burst = true;
 		}
+	}
+	fn reduce(&mut self) {
+		// move vowel targets toward the neutral vowel (AX) as the vowel gets shorter
+		if self.pft_c & 0x1 == 0 || self.phn_c == 6 || self.phn_c == 20 { return; }
+		let d_ms = self.pdr_c as f32 * 1000.0 / m_sr as f32;
+		let n = 6 * 31;
+		let (n1, n2, n3) = (formant_tbl[n + 5] as f32, formant_tbl[n + 6] as f32, formant_tbl[n + 7] as f32);
+		let (k1, k2, k3) = (reduce_k(d_ms, tau_f1), reduce_k(d_ms, tau_f2), reduce_k(d_ms, tau_f3));
+		self.F1_A_src = n1 + (self.F1_A_src - n1) * k1;
+		self.F2_A_src = n2 + (self.F2_A_src - n2) * k2;
+		self.F3_A_src = n3 + (self.F3_A_src - n3) * k3;
+		self.F1_B_src = n1 + (self.F1_B_src - n1) * k1;
+		self.F2_B_src = n2 + (self.F2_B_src - n2) * k2;
+		self.F3_B_src = n3 + (self.F3_B_src - n3) * k3;
 	}
 	fn get_control_A_duration(&mut self, x: u8, d: i32) -> i32 {
 		(d as f32 * (x as f32 / 100.0)) as i32
@@ -1059,6 +1082,9 @@ impl engine {
 
 			// do formant target re-adjustments before doing anything else
 			self.ftar();
+
+			// short vowels fall short of their targets
+			self.reduce();
 
 			// get duration markers so slopes can be calculated
 			if self.phn_c == PAU {
@@ -1326,6 +1352,43 @@ mod tests {
 			}
 		}
 		out
+	}
+
+	// formant targets (F1-F3 at A) of phone p lasting d ms, between two AA's
+	fn targets_for(p: u8, d: i32) -> [f32; 3] {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		for &(q, dd) in &[(1, 150), (p, d), (1, 150)] {
+			if e.load(q, dd, true, 0) {
+				if e.phn_c == p { break; }
+				while e.is_running() { e.sample(120.0); }
+			}
+		}
+		[e.F1_A_src, e.F2_A_src, e.F3_A_src]
+	}
+
+	#[test]
+	fn reduce_k_grows() {
+		assert!((reduce_k(40.0, 40.0) - 0.632).abs() < 0.001);
+		assert!((reduce_k(60.0, 40.0) - 0.777).abs() < 0.001);
+		assert!((reduce_k(130.0, 40.0) - 0.961).abs() < 0.001);
+		assert!(reduce_k(50.0, 40.0) < reduce_k(51.0, 40.0));
+	}
+
+	#[test]
+	fn long_vowel_keeps_target() {
+		let long = targets_for(1, 1000);
+		let norm = targets_for(1, 150);
+		for k in 0..3 { assert!((norm[k] - long[k]).abs() <= 0.05 * long[k], "F{} {} vs {}", k + 1, norm[k], long[k]); }
+	}
+
+	#[test]
+	fn short_vowel_moves_to_neutral() {
+		let long = targets_for(21, 1000);
+		let short = targets_for(21, 50);
+		let n_f2 = formant_tbl[6 * 31 + 6] as f32;
+		assert!(short[1] < long[1] && short[1] > n_f2, "IY F2 {} not between {} and {}", short[1], n_f2, long[1]);
 	}
 
 	#[test]
