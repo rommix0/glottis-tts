@@ -29,6 +29,26 @@ const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
 // shortest plosive closure before the burst
 const min_closure: i32 = thirty_ms;
 
+// plosive release: burst and aspiration lengths (ms) by place (labial, alveolar, velar)
+const BURST_MS: [[f32; 3]; 2] = [[5.0, 15.0, 25.0], [5.0, 10.0, 20.0]];		// voiceless, voiced
+const ASP_MS: [f32; 3] = [50.0, 55.0, 50.0];
+// the burst falls this much (dB) over its length
+const BURST_DECAY_DB: f32 = 12.0;
+// plosive bursts: overall trim, and the extra cut before an unstressed vowel (dB)
+const BURST_GAIN_DB: f32 = -4.0;
+const BURST_UNSTRESSED_DB: f32 = -6.0;
+// aspiration level (AH, dB) by place
+const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
+// aspiration after /s/ in the same word, and its share before an unstressed vowel or a sonorant
+const ASP_AFTER_S_MS: f32 = 5.0;
+const ASP_UNSTRESSED: f32 = 0.6;
+const ASP_BEFORE_SONORANT: f32 = 0.5;
+// after aspiration, voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it (ms)
+const VOICE_ONSET_MS: f32 = 10.0;
+const ASP_OVERLAP_MS: f32 = 20.0;
+// voiced stop closure after a voiced sound: the voice bar fades this much (dB) over the closure
+const VOICE_BAR_FADE_DB: f32 = 6.0;
+
 // longest share of a vowel the transition into it may take
 const ramp_share: f32 = 0.6;
 
@@ -54,6 +74,105 @@ fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
 	if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * g.log2() }
 }
 
+fn feats(x: u8) -> u16 {
+	/*
+
+	phnfeat bitmap (little endian, so 15 (MSB) to 0 (LSB) is the ordering):
+		1  -> consonant/vowel
+		2  -> unvoiced/voiced
+		3  -> front
+		4  -> back
+		5  -> nasal
+		6  -> alveolar
+		7  -> stop
+		8  -> bilabial
+		9  -> velar
+		10 -> sibilant
+		11 -> lateral
+		12 -> rhotic
+		13 -> glide
+		14 -> diphthong
+		15 -> dental
+		16 -> affricate
+
+	*/
+	match x {
+		47                     => 0x0022,		// dx (alveolar flap)
+		40                     => 0x0002,		// v
+		1|2|3|4|5|6|7|14|29|38 => 0x0003,		// aa, ae, ah, ao, aw, ax, axr, er, ow
+		13|15|19|20|21         => 0x0007,		// eh, ey, ih, ix, iy
+		39                     => 0x000B,		// uh, uw
+		27                     => 0x0032,		// n
+		36                     => 0x0060,		// t
+		11                     => 0x0062,		// d
+		26                     => 0x0092,		// m
+		31                     => 0x00C0,		// p
+		9                      => 0x00C2,		// b
+		28                     => 0x0112,		// ng
+		23                     => 0x0140,		// k
+		17                     => 0x0142,		// g
+		34|35                  => 0x0220,		// s, sh
+		43|44                  => 0x0222,		// z, zh
+		24|25|45               => 0x0422,		// l, lx
+		32|33|46               => 0x0822,		// r, rx
+		42                     => 0x1002,		// y
+		41                     => 0x1182,		// w
+		8|30                   => 0x2003,		// ay, oy
+		37                     => 0x4000,		// th
+		12                     => 0x4002,		// dh
+		10                     => 0x8260,		// ch
+		22                     => 0x8262,		// jh
+		_                      => 0x0000,		// otherwise
+	}
+}
+
+fn samples(ms: f32) -> i32 {
+	(ms * m_sr as f32 / 1000.0) as i32
+}
+
+fn stop_place(x: u8) -> usize {
+	match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 }
+}
+
+// a plosive's parts in samples: the closure and burst play in its own segment,
+// the aspiration in the start of the next phone
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Stop {
+	closure: i32,
+	burst:   i32,
+	asp:     i32,
+}
+
+fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, word_start: bool) -> Stop {
+	let pf = feats(phone);
+	let nf = feats(next);
+	// unreleased before another stop or a nasal
+	if nf & 0x50 != 0 { return Stop { closure: pdr, burst: 0, asp: 0 }; }
+	let place = stop_place(phone);
+	let voiced = pf & 0x2 != 0;
+	let mut burst = samples(BURST_MS[voiced as usize][place]);
+	let mut asp = if voiced { 0 } else { samples(ASP_MS[place]) };
+	// too short for the whole release: burst and aspiration shrink together
+	let room = (pdr - min_closure).max(0);
+	if burst + asp > room {
+		let k = room as f32 / (burst + asp) as f32;
+		burst = (burst as f32 * k) as i32;
+		asp = (asp as f32 * k) as i32;
+	}
+	let closure = pdr - burst - asp;
+	// context only shortens the aspiration, and with it the stop
+	if nf & 0x1 != 0 {
+		if !next_stressed { asp = (asp as f32 * ASP_UNSTRESSED) as i32; }
+	} else if nf & 0x1C00 != 0 {
+		asp = (asp as f32 * ASP_BEFORE_SONORANT) as i32;
+	} else {
+		// obstruent, phrase-final release or pause: burst only
+		asp = 0;
+	}
+	if prev == 34 && !word_start { asp = asp.min(samples(ASP_AFTER_S_MS)); }
+	Stop { closure, burst, asp }
+}
+
 pub struct engine {
 	vtm_eng: vtm,
 	marker_A: i32,
@@ -74,6 +193,19 @@ pub struct engine {
 	seg_c: usize,		// stream index of the playing segment
 	seg_r1: usize,
 	seg_start: i32,	// counter value when the playing segment started
+	pwi_c:  bool,		// phone starts a word
+	pwi_r1: bool,
+	stop_on: bool,		// playing a plosive's closure and burst
+	stop_bar: bool,		// voiced plosive after a voiced sound: a voice bar in the closure
+	burst_len: i32,
+	burst_gain: f32,	// linear gain on the burst
+	after_stop: bool,	// this phone follows a released plosive
+	after_stop_next: bool,
+	asp_db: f32,		// aspiration level carried over from a voiceless stop (0: none)
+	asp_start: i32,
+	asp_seg: usize,
+	asp_db_next: f32,
+	asp_seg_next: usize,
 	pub pst_c: bool,
 	pst_r1: bool,
 	GL: f32,
@@ -224,6 +356,19 @@ impl engine {
 			seg_c: 0,
 			seg_r1: 0,
 			seg_start: 0,
+			pwi_c:  true,
+			pwi_r1: true,
+			stop_on: false,
+			stop_bar: false,
+			burst_len: 0,
+			burst_gain: 1.0,
+			after_stop: false,
+			after_stop_next: false,
+			asp_db: 0.0,
+			asp_start: 0,
+			asp_seg: 0,
+			asp_db_next: 0.0,
+			asp_seg_next: 0,
 			/////////////////////////////
 			//        REGISTERS        //
 			/////////////////////////////
@@ -386,6 +531,19 @@ impl engine {
 		self.seg_c = 0;
 		self.seg_r1 = 0;
 		self.seg_start = 0;
+		self.pwi_c = true;
+		self.pwi_r1 = true;
+		self.stop_on = false;
+		self.stop_bar = false;
+		self.burst_len = 0;
+		self.burst_gain = 1.0;
+		self.after_stop = false;
+		self.after_stop_next = false;
+		self.asp_db = 0.0;
+		self.asp_start = 0;
+		self.asp_seg = 0;
+		self.asp_db_next = 0.0;
+		self.asp_seg_next = 0;
 		/////////////////////////////
 		//        REGISTERS        //
 		/////////////////////////////
@@ -506,62 +664,11 @@ impl engine {
 		self.B2_B_src =  0.0;
 		self.B3_B_src =  0.0;
 	}
-	fn phone_to_feats(&mut self, x: u8) -> u16 {
-		/*
-
-		phnfeat bitmap (little endian, so 15 (MSB) to 0 (LSB) is the ordering):
-			1  -> consonant/vowel
-			2  -> unvoiced/voiced
-			3  -> front
-			4  -> back
-			5  -> nasal
-			6  -> alveolar
-			7  -> stop
-			8  -> bilabial
-			9  -> velar
-			10 -> sibilant
-			11 -> lateral
-			12 -> rhotic
-			13 -> glide
-			14 -> diphthong
-			15 -> dental
-			16 -> affricate
-
-		*/
-		match x {
-			47                     => 0x0022,		// dx (alveolar flap)
-			40                     => 0x0002,		// v
-			1|2|3|4|5|6|7|14|29|38 => 0x0003,		// aa, ae, ah, ao, aw, ax, axr, er, ow
-			13|15|19|20|21         => 0x0007,		// eh, ey, ih, ix, iy
-			39                     => 0x000B,		// uh, uw
-			27                     => 0x0032,		// n
-			36                     => 0x0060,		// t
-			11                     => 0x0062,		// d
-			26                     => 0x0092,		// m
-			31                     => 0x00C0,		// p
-			9                      => 0x00C2,		// b
-			28                     => 0x0112,		// ng
-			23                     => 0x0140,		// k
-			17                     => 0x0142,		// g
-			34|35                  => 0x0220,		// s, sh
-			43|44                  => 0x0222,		// z, zh
-			24|25|45               => 0x0422,		// l, lx
-			32|33|46               => 0x0822,		// r, rx
-			42                     => 0x1002,		// y
-			41                     => 0x1182,		// w
-			8|30                   => 0x2003,		// ay, oy
-			37                     => 0x4000,		// th
-			12                     => 0x4002,		// dh
-			10                     => 0x8260,		// ch
-			22                     => 0x8262,		// jh
-			_                      => 0x0000,		// otherwise
-		}
-	}
 	fn ms_to_samples(&mut self, x: i32) -> i32 {
 		// convert milliseconds to samples
 		((x as f32 / 1000.0) * m_sr as f32) as i32
 	}
-	fn advance(&mut self, x: u8, d: i32, s: bool, seg: usize) {
+	fn advance(&mut self, x: u8, d: i32, s: bool, seg: usize, w: bool) {
 		// x is phone_id
 		// d is duration
 		// s is stress
@@ -576,7 +683,7 @@ impl engine {
 		/////////////////////////////
 		self.pft_l1 = self.pft_c;
 		self.pft_c  = self.pft_r1;
-		self.pft_r1 = self.phone_to_feats(x);
+		self.pft_r1 = feats(x);
 		/////////////////////////////
 		//        DURATION         //
 		/////////////////////////////
@@ -593,6 +700,8 @@ impl engine {
 		/////////////////////////////
 		self.seg_c  = self.seg_r1;
 		self.seg_r1 = seg;
+		self.pwi_c  = self.pwi_r1;
+		self.pwi_r1 = w;
 	}
 	pub fn is_running(&mut self) -> bool {
 		if self.end_early || self.counter >= self.marker_B { return false; }
@@ -985,9 +1094,40 @@ impl engine {
 		self.AB_reg = lerp_db_gain(self.AB_reg_src, self.AB_reg_trg, y);
 		let burst_init = self.lin2decay(self.burst_INIT);
 		let burst_vot = self.lin2decay(self.burst_VOT);
-		self.AF_reg = fade_db(lerp_db_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * self.closure * burst_init * self.sib_ramp);
-		self.AH_reg = fade_db(lerp_db_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * self.closure * burst_vot);
-		self.AV_reg = fade_db(lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, y), self.master_fade * self.closure);
+		let (mut g_af, mut g_ah, mut g_av) = (self.closure * burst_init * self.sib_ramp, self.closure * burst_vot, self.closure);
+		if self.asp_db > 0.0 && c < 0 {
+			// aspiration rises over 2 ms after the burst
+			let rise = ((c - self.asp_start) as f32 / two_ms as f32).min(1.0);
+			(g_af, g_ah, g_av) = (0.0, rise, 0.0);
+		}
+		self.AF_reg = fade_db(lerp_db_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
+		self.AH_reg = fade_db(lerp_db_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
+		self.AV_reg = fade_db(lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, y), self.master_fade * g_av);
+		if self.stop_on && c >= 0 {
+			// the voice bar fades over the closure and holds through the burst
+			let bar = if self.stop_bar {
+				let t = (c.min(self.marker_A) as f32 / self.marker_A.max(1) as f32).min(1.0);
+				fade_db(self.AV_reg, (-VOICE_BAR_FADE_DB / 6.0 * t).exp2())
+			} else { 0.0 };
+			if c < self.marker_A {
+				// closure: the previous phone's sound dies away over 5 ms
+				let g = self.master_fade * (1.0 - c as f32 / five_ms as f32).max(0.0);
+				self.AF_reg = fade_db(self.AF_reg_src, g);
+				self.AH_reg = fade_db(self.AH_reg_src, g);
+				self.AV_reg = if self.stop_bar { bar } else { fade_db(self.AV_reg_src, g) };
+			} else {
+				// burst: a sharp onset, then an exponential decay over its length
+				let t = (c - self.marker_A) as f32 / self.burst_len.max(1) as f32;
+				self.AF_reg = fade_db(self.AF_reg, self.burst_gain * (-BURST_DECAY_DB / 6.0 * t).exp2());
+				self.AH_reg = 0.0;
+				self.AV_reg = bar;
+			}
+		}
+		if self.asp_db > 0.0 && c >= 0 {
+			// aspiration fades out under the first voicing pulses
+			let k = 1.0 - c as f32 / samples(ASP_OVERLAP_MS) as f32;
+			if k > 0.0 { self.AH_reg = self.AH_reg.max(fade_db(self.asp_db, self.master_fade * k)); }
+		}
 	}
 	fn update_A_to_B(&mut self) {
 		let mut dist = self.marker_B - self.marker_A;
@@ -1069,11 +1209,12 @@ impl engine {
 		self.AH_reg_trg  = self.AH_src;
 		self.AV_reg_trg  = self.AV_src;
 	}
-	pub fn load(&mut self, x: u8, d: i32, s: bool, seg: usize) -> bool {
+	pub fn load(&mut self, x: u8, d: i32, s: bool, seg: usize, w: bool) -> bool {
 		// x is phoneme
 		// d is duration (ms)
 		// s is stress
 		// seg is the segment's stream index (reported back by position)
+		// w is true if x starts a word
 
 		// reset end early flag
 		self.end_early = false;
@@ -1082,8 +1223,17 @@ impl engine {
 		let mut b_onset: i32 = 0;
 		let mut t_onset: i32 = 0;
 
-		self.advance(x, d, s, seg);
+		self.advance(x, d, s, seg, w);
 		if self.is_ready() {
+			// aspiration left by a voiceless stop plays in this phone's carried-over region
+			self.asp_db = self.asp_db_next;
+			self.asp_seg = self.asp_seg_next;
+			self.asp_db_next = 0.0;
+			self.after_stop = self.after_stop_next;
+			self.after_stop_next = false;
+			self.stop_on = false;
+			let mut stop_asp: Option<i32> = None;
+
 			// do ptar before anything else
 			self.ptar();
 			
@@ -1155,13 +1305,18 @@ impl engine {
 				self.marker_A = one_ms;
 				self.pdr_c = self.ms_to_samples(50);*/
 			} else {
-				// is plosive
-				// get data from VOT table
-				(b_onset, t_onset) = self.fetch_vot();
-				// lengthen the plosive if it's too short to fit a closure before the burst
-				if self.pdr_c < b_onset + min_closure { self.pdr_c = b_onset + min_closure; }
-				self.marker_A = self.pdr_c - b_onset;
-				self.marker_B = self.pdr_c - t_onset;
+				// plosive: closure, then burst; a voiceless stop's aspiration is carried into the next phone
+				let t = stop_timeline(self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c);
+				self.marker_A = t.closure;
+				self.marker_B = t.closure + t.burst;
+				self.burst_len = t.burst;
+				self.stop_on = true;
+				self.stop_bar = self.pft_c & 0x2 != 0 && self.pft_l1 & 0x2 != 0;
+				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
+				let gain_db = BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 };
+				self.burst_gain = (gain_db / 6.0).exp2();
+				self.after_stop_next = t.burst > 0;
+				stop_asp = Some(t.asp);
 			}
 			if self.is_first {
 				// load in registers if this is the first time
@@ -1179,22 +1334,52 @@ impl engine {
 				// no transition carried into the next phone, so the pause keeps its length
 				self.marker_BA = 0;
 			}
+			if let Some(a) = stop_asp {
+				self.marker_BA = a;
+				if a > 0 {
+					self.asp_db_next = ASP_DB[stop_place(self.phn_c)];
+					self.asp_seg_next = self.seg_c;
+				}
+			}
 			// sources switch quickly at obstruent edges; formants keep their own transition
 			let obstruent = |f: u16| f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0;
 			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) { self.marker_A.min(fifteen_ms) } else { self.marker_A };
 			self.seg_start = self.counter;
+			if self.after_stop {
+				// voicing builds up quickly after a release
+				self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
+			}
+			if self.asp_db > 0.0 {
+				// aspiration: no voicing or frication until this phone's own part starts
+				self.AF_reg_src = 0.0;
+				self.AV_reg_src = 0.0;
+				self.AH_reg_src = self.asp_db;
+				self.asp_start = self.counter;
+				self.seg_start = 0;
+			}
 		}
 		self.is_ready()
 	}
 	pub fn position(&self) -> (usize, f32) {
 		// the playing segment and how far through it we are (0..1)
 		if self.end_early { return (self.seg_c, 1.0); }
+		// the aspiration still belongs to the stop
+		if self.asp_db > 0.0 && self.counter < 0 { return (self.asp_seg, 1.0); }
 		let len = self.marker_B - self.seg_start;
 		let frac = if len > 0 { (self.counter - self.seg_start) as f32 / len as f32 } else { 1.0 };
 		(self.seg_c, frac.clamp(0.0, 1.0))
 	}
 	fn step_plosive(&mut self) {
 		// make plosive rendering easier by having the code here
+		if self.stop_on {
+			// voiceless stops are shaped in update_amp_registers
+			if self.counter == 0 {
+				self.closure    = 1.0;
+				self.burst_INIT = 1.0;
+				self.burst_VOT  = 1.0;
+			}
+			return;
+		}
 		if self.counter == 0 {
 			if self.pft_c & 0x8040 != 0 {
 				// if plosive or affricate, reset variables
@@ -1354,13 +1539,13 @@ mod tests {
 		e.reset();
 		let mut out: Vec<f32> = Vec::new();
 		for &(p, d) in phones {
-			if e.load(p, d, true, 0) {
+			if e.load(p, d, true, 0, true) {
 				while e.is_running() { out.push(e.sample(120.0)); }
 			}
 		}
 		let mut first = true;
 		while e.is_not_last() {
-			let ready = if first { first = false; e.load(48, 100, false, 0) } else { e.load(0, 50, false, 0) };
+			let ready = if first { first = false; e.load(48, 100, false, 0, true) } else { e.load(0, 50, false, 0, true) };
 			if ready {
 				while e.is_running() { out.push(e.sample(120.0)); }
 			}
@@ -1374,7 +1559,7 @@ mod tests {
 		e.init();
 		e.reset();
 		for &(q, dd) in &[(1, 150), (p, d), (1, 150)] {
-			if e.load(q, dd, true, 0) {
+			if e.load(q, dd, true, 0, true) {
 				if e.phn_c == p { break; }
 				while e.is_running() { e.sample(120.0); }
 			}
@@ -1413,7 +1598,7 @@ mod tests {
 		e.reset();
 		let mut seen: Vec<(usize, f32)> = Vec::new();
 		for &(p, d, seg) in &[(1u8, 150, 7usize), (21, 150, 8), (1, 150, 9), (48, 100, 10), (0, 50, 11)] {
-			if e.load(p, d, false, seg) {
+			if e.load(p, d, false, seg, true) {
 				while e.is_running() {
 					e.sample(120.0);
 					seen.push(e.position());
@@ -1453,7 +1638,7 @@ mod tests {
 		e.init();
 		e.reset();
 		for &(p, d) in &[(1, 150), (6, 60), (1, 150)] {
-			if e.load(p, d, false, 0) {
+			if e.load(p, d, false, 0, true) {
 				if e.phn_c == 6 { break; }
 				while e.is_running() { e.sample(120.0); }
 			}
@@ -1483,5 +1668,144 @@ mod tests {
 			if x.abs() < 1e-3 { run += 1; if run > best { best = run; } } else { run = 0; }
 		}
 		assert!(best >= 8000, "longest silent run {} samples", best);
+	}
+
+	fn ms(x: f32) -> i32 { (x * m_sr as f32 / 1000.0) as i32 }
+
+	#[test]
+	fn stop_timeline_fits() {
+		for &p in &[31u8, 36, 23] {
+			for &d in &[60.0, 88.0, 101.0, 103.0, 150.0] {
+				let pdr = ms(d);
+				let t = stop_timeline(p, pdr, 1, 1, true, true);
+				assert!((t.closure + t.burst + t.asp - pdr).abs() <= 1, "{} at {} ms: {:?}", p, d, t);
+				assert!(t.closure >= min_closure, "{} at {} ms: closure {}", p, d, t.closure);
+			}
+		}
+		// too short for the full release: burst and aspiration shrink together
+		let short = stop_timeline(23, ms(60.0), 1, 1, true, true);
+		let full = stop_timeline(23, ms(150.0), 1, 1, true, true);
+		assert!(short.burst < full.burst && short.asp < full.asp);
+		assert!((short.burst as f32 / short.asp as f32 - full.burst as f32 / full.asp as f32).abs() < 0.02);
+	}
+
+	#[test]
+	fn aspiration_by_context() {
+		let pdr = ms(101.0);
+		let t = |prev: u8, next: u8, stressed: bool, w: bool| stop_timeline(36, pdr, prev, next, stressed, w);
+		let base = t(1, 1, true, true);
+		assert!((base.asp - ms(55.0)).abs() <= 1);
+		assert!((t(34, 1, true, false).asp - ms(5.0)).abs() <= 1, "after s in the word");
+		assert!((t(34, 1, true, true).asp - ms(55.0)).abs() <= 1, "after s across a word start");
+		assert!((t(1, 1, false, true).asp - ms(33.0)).abs() <= 1, "before an unstressed vowel");
+		assert!((t(1, 24, true, true).asp - ms(27.5)).abs() <= 1, "before l");
+		assert_eq!(t(1, 34, true, true).asp, 0, "before s");
+		assert_eq!(t(1, 48, false, true).asp, 0, "phrase-final");
+		for &n in &[36u8, 27] {
+			let s = t(1, n, true, true);
+			assert_eq!((s.closure, s.burst, s.asp), (pdr, 0, 0), "unreleased before {}", n);
+		}
+		// a shorter aspiration never stretches the closure
+		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
+			assert_eq!(t(prev, next, st, w).closure, base.closure);
+		}
+	}
+
+	// per-sample (phone, counter, AF, AH, AV, reported position) while rendering (phone, ms, seg)
+	fn trace_regs(phones: &[(u8, i32, usize)]) -> (engine, Vec<(u8, i32, f32, f32, f32, (usize, f32))>, Vec<(i32, i32, f32)>) {
+		trace_regs_st(phones, &[])
+	}
+
+	// as trace_regs, with the segments listed in `unstressed` loaded unstressed
+	fn trace_regs_st(phones: &[(u8, i32, usize)], unstressed: &[usize]) -> (engine, Vec<(u8, i32, f32, f32, f32, (usize, f32))>, Vec<(i32, i32, f32)>) {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut out = Vec::new();
+		let mut marks = Vec::new();		// (marker_A, marker_B, AF_src) of each phone
+		for &(p, d, seg) in phones {
+			if e.load(p, d, !unstressed.contains(&seg), seg, true) {
+				marks.push((e.marker_A, e.marker_B, e.AF_src));
+				while e.is_running() {
+					let pos = e.position();
+					e.sample(120.0);
+					out.push((e.phn_c, e.counter, e.AF_reg, e.AH_reg, e.AV_reg, pos));
+				}
+			}
+		}
+		(e, out, marks)
+	}
+
+	#[test]
+	fn burst_onset_is_sharp() {
+		let (_, out, marks) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (36, 101, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+		let (a, b, level) = marks[2];
+		let t: Vec<_> = out.iter().filter(|x| x.0 == 36 && x.1 >= 0).collect();
+		for x in t.iter().filter(|x| x.1 < a) { assert_eq!(x.2, 0.0, "AF in the closure at {}", x.1); }
+		let first = t.iter().find(|x| x.1 == a).unwrap();
+		let level = level + BURST_GAIN_DB;
+		assert!((first.2 - level).abs() < 0.5, "burst starts at {} not {}", first.2, level);
+		let last = t.iter().find(|x| x.1 == b).unwrap();
+		assert!((last.2 - (level - BURST_DECAY_DB)).abs() < 0.5, "burst ends at {} not {}", last.2, level - BURST_DECAY_DB);
+	}
+
+	#[test]
+	fn aspiration_reports_stop_segment() {
+		let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (36, 101, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+		let asp: Vec<_> = out.iter().filter(|x| x.0 == 1 && x.1 < 0 && x.5.0 != 1).collect();
+		assert!(asp.len() as i32 >= ms(50.0), "aspiration {} samples", asp.len());
+		for x in &asp {
+			assert_eq!(x.5, (2, 1.0), "aspiration reports {:?}", x.5);
+			assert_eq!(x.4, 0.0, "voicing during aspiration");
+		}
+		assert!(asp.iter().skip(ms(2.0) as usize).all(|x| x.3 > 0.0), "aspiration is silent");
+		let first = out.iter().find(|x| x.5.0 == 3).unwrap();
+		assert_eq!(first.5.1, 0.0, "vowel starts at frac {}", first.5.1);
+	}
+
+	#[test]
+	fn voicing_onset_overlaps_aspiration() {
+		// aspiration fades out under the first voicing pulses, and voicing builds up over them
+		let (e, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (36, 101, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+		let v: Vec<_> = out.iter().filter(|x| x.5.0 == 3).collect();
+		let at = |m: f32| v.iter().find(|x| x.1 == ms(m)).unwrap();
+		assert!(at(10.0).3 > 0.0, "aspiration gone 10 ms into voicing");
+		assert!(at(VOICE_ONSET_MS + 2.0).4 > at(2.0).4 + 3.0, "voicing at full level within 2 ms");
+		let _ = e;
+	}
+
+	#[test]
+	fn voiced_closure_is_quiet() {
+		for &(prev, bar) in &[(1u8, true), (34u8, false)] {
+			let (_, out, marks) = trace_regs(&[(PAU, 50, 0), (prev, 150, 1), (11, 80, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+			let (a, b, _) = marks[2];
+			let cl: Vec<_> = out.iter().filter(|x| x.0 == 11 && x.1 >= ms(5.0) && x.1 < a).collect();
+			assert!(cl.len() as i32 > ms(40.0), "closure {} samples", cl.len());
+			for x in &cl { assert_eq!(x.2, 0.0, "AF in the closure after {}", prev); }
+			let (first, last) = (cl.first().unwrap().4, cl.last().unwrap().4);
+			if bar {
+				// a voice bar after a vowel, fading over the closure
+				assert!(first > 0.0 && last > 0.0 && first - last > 4.0, "voice bar {} -> {}", first, last);
+			} else {
+				assert!(cl.iter().all(|x| x.4 == 0.0), "voicing in the closure after {}", prev);
+			}
+			// a burst, then voicing builds up in the vowel
+			assert!(out.iter().any(|x| x.0 == 11 && x.1 >= a && x.1 <= b && x.2 > 0.0), "no burst after {}", prev);
+			let v: Vec<_> = out.iter().filter(|x| x.5.0 == 3).collect();
+			let full = v.iter().find(|x| x.1 == ms(40.0)).unwrap().4;
+			let at = v.iter().find(|x| x.1 == ms(VOICE_ONSET_MS + 2.0)).unwrap().4;
+			assert!(full - at < 3.0, "voicing {} at onset+12 ms vs {} later", at, full);
+		}
+	}
+
+	#[test]
+	fn burst_is_softer_before_unstressed_vowel() {
+		let onset = |unstressed: &[usize]| {
+			let (_, out, marks) = trace_regs_st(&[(PAU, 50, 0), (1, 150, 1), (36, 101, 2), (6, 80, 3), (48, 100, 4), (0, 50, 5)], unstressed);
+			let a = marks[2].0;
+			out.iter().find(|x| x.0 == 36 && x.1 == a).unwrap().2
+		};
+		let (st, un) = (onset(&[]), onset(&[3]));
+		assert!((st - un + BURST_UNSTRESSED_DB).abs() < 0.5, "stressed {} unstressed {}", st, un);
 	}
 }

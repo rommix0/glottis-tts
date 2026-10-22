@@ -65,10 +65,10 @@ struct Engines {
 	dump:     Option<BufWriter<File>>,
 }
 
-fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, seg: usize) {
+fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, seg: usize, word_start: bool) {
 	// feed one phone into the synthesizer and write out what it plays
 	eng.last = phone;
-	if eng.synth.load(phone, dur_ms.round() as i32, stressed, seg) {
+	if eng.synth.load(phone, dur_ms.round() as i32, stressed, seg, word_start) {
 		while eng.synth.is_running() {
 			let (s, f) = eng.synth.position();
 			let f0 = eng.contour.hz_at(s, f);
@@ -101,13 +101,13 @@ fn finish(eng: &mut Engines, writer: &mut Wav) {
 			finish_off = false;
 			if eng.last == PAU {
 				// the sentence already ended with its release and pause
-				play(eng, writer, PAU, 50.0, false, seg);
+				play(eng, writer, PAU, 50.0, false, seg, true);
 			} else {
 				// unpunctuated end of input: this is its release
-				play(eng, writer, 48, 100.0, false, seg);
+				play(eng, writer, 48, 100.0, false, seg, true);
 			}
 		} else {
-			play(eng, writer, 0, 50.0, false, seg);
+			play(eng, writer, 0, 50.0, false, seg, true);
 		}
 	}
 }
@@ -132,7 +132,7 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 	if !eng.started {
 		eng.started = true;
 		let seg = take_seg(eng);
-		play(eng, writer, PAU, _dur::START_PAUSE_MS, false, seg);
+		play(eng, writer, PAU, _dur::START_PAUSE_MS, false, seg, true);
 	}
 
 	// stream indices: the segments of each phrase, then its release and pause
@@ -158,7 +158,7 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 				let tg: Vec<String> = eng.contour.targets_of(stream[i]).iter().map(|t| format!("{:?}@{:.2}:{:+.1}/{:+.1}", t.kind, t.frac, t.st, t.base)).collect();
 				eprintln!("TRACE {} {} seg={} dur={:.0} rules={} targets={}", s.phone, s.stress, stream[i], s.dur_ms, s.rules.join(","), tg.join(" "));
 			}
-			play(eng, writer, s.phone, s.dur_ms, s.stress != 0, stream[i]);
+			play(eng, writer, s.phone, s.dur_ms, s.stress != 0, stream[i], utt.words[s.word].segs.start == i);
 		}
 		if ph.end != Boundary::None {
 			// phrase-end release, then the pause
@@ -173,8 +173,8 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 				eprintln!("TRACE {} 0 seg={} dur={:.0} rules=release", release, r, _dur::RELEASE_MS);
 				eprintln!("TRACE {} 0 seg={} dur={:.0} rules=pause", PAU, p, pause);
 			}
-			play(eng, writer, release, _dur::RELEASE_MS, false, r);
-			play(eng, writer, PAU, pause, false, p);
+			play(eng, writer, release, _dur::RELEASE_MS, false, r, true);
+			play(eng, writer, PAU, pause, false, p, true);
 		}
 	}
 }
