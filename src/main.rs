@@ -10,6 +10,7 @@ mod _vtbl;
 mod _synth;
 mod _dict;
 mod _dread;
+mod _utt;
 
 use std::fs;
 use std::io::Write;
