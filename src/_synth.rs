@@ -34,7 +34,10 @@ const BURST_MS: [[f32; 3]; 2] = [[5.0, 15.0, 25.0], [5.0, 10.0, 20.0]];		// voic
 const ASP_MS: [f32; 3] = [50.0, 55.0, 50.0];
 // the burst falls this much (dB) over its length
 const BURST_DECAY_DB: f32 = 12.0;
-// plosive bursts: overall trim, and the extra cut before an unstressed vowel (dB)
+// affricates: frication length (ms; voiceless, voiced) after the closure, and its fall (dB) over that length
+const AFFRIC_MS: [f32; 2] = [55.0, 40.0];
+const AFFRIC_DECAY_DB: f32 = 6.0;
+// plosive bursts (not affricates): overall trim, and the extra cut before an unstressed vowel (dB)
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
 // aspiration level (AH, dB) by place
@@ -134,7 +137,7 @@ fn stop_place(x: u8) -> usize {
 	match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 }
 }
 
-// a plosive's parts in samples: the closure and burst play in its own segment,
+// a plosive's parts in samples: the closure and burst (an affricate's frication) play in its own segment,
 // the aspiration in the start of the next phone
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Stop {
@@ -145,6 +148,11 @@ struct Stop {
 
 fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, word_start: bool) -> Stop {
 	let pf = feats(phone);
+	if pf & 0x8000 != 0 {
+		// affricate: always released, its frication plays where a stop's burst would
+		let fric = samples(AFFRIC_MS[(pf & 0x2 != 0) as usize]).min((pdr - min_closure).max(0));
+		return Stop { closure: pdr - fric, burst: fric, asp: 0 };
+	}
 	let nf = feats(next);
 	// unreleased before another stop or a nasal
 	if nf & 0x50 != 0 { return Stop { closure: pdr, burst: 0, asp: 0 }; }
@@ -197,7 +205,9 @@ pub struct engine {
 	pwi_r1: bool,
 	stop_on: bool,		// playing a plosive's closure and burst
 	stop_bar: bool,		// voiced plosive after a voiced sound: a voice bar in the closure
+	stop_affric: bool,
 	burst_len: i32,
+	burst_decay: f32,
 	burst_gain: f32,	// linear gain on the burst
 	after_stop: bool,	// this phone follows a released plosive
 	after_stop_next: bool,
@@ -360,7 +370,9 @@ impl engine {
 			pwi_r1: true,
 			stop_on: false,
 			stop_bar: false,
+			stop_affric: false,
 			burst_len: 0,
+			burst_decay: 0.0,
 			burst_gain: 1.0,
 			after_stop: false,
 			after_stop_next: false,
@@ -535,7 +547,9 @@ impl engine {
 		self.pwi_r1 = true;
 		self.stop_on = false;
 		self.stop_bar = false;
+		self.stop_affric = false;
 		self.burst_len = 0;
+		self.burst_decay = 0.0;
 		self.burst_gain = 1.0;
 		self.after_stop = false;
 		self.after_stop_next = false;
@@ -1118,9 +1132,10 @@ impl engine {
 			} else {
 				// burst: a sharp onset, then an exponential decay over its length
 				let t = (c - self.marker_A) as f32 / self.burst_len.max(1) as f32;
-				self.AF_reg = fade_db(self.AF_reg, self.burst_gain * (-BURST_DECAY_DB / 6.0 * t).exp2());
+				self.AF_reg = fade_db(self.AF_reg, self.burst_gain * (-self.burst_decay / 6.0 * t).exp2());
 				self.AH_reg = 0.0;
-				self.AV_reg = bar;
+				// a voiced affricate's frication is voiced; a stop's burst keeps the voice bar
+				if !self.stop_affric { self.AV_reg = bar; }
 			}
 		}
 		if self.asp_db > 0.0 && c >= 0 {
@@ -1295,25 +1310,23 @@ impl engine {
 					// short vowels get a shorter transition so they still reach their target
 					self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
 				}
-			} else if self.pft_c & 0x8000 != 0 {
-				// is affricate
-				// set default markers for affricate
-				self.marker_A = (self.pdr_c as f32 * 0.40) as i32;
-				self.marker_B = (self.pdr_c as f32 * 0.80) as i32;
 			/*} else if self.phn_c == 47 {
 				// deal with alveolar flap here
 				self.marker_A = one_ms;
 				self.pdr_c = self.ms_to_samples(50);*/
 			} else {
-				// plosive: closure, then burst; a voiceless stop's aspiration is carried into the next phone
+				// plosive or affricate: closure, then burst or frication;
+				// a voiceless stop's aspiration is carried into the next phone
 				let t = stop_timeline(self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c);
 				self.marker_A = t.closure;
 				self.marker_B = t.closure + t.burst;
 				self.burst_len = t.burst;
 				self.stop_on = true;
 				self.stop_bar = self.pft_c & 0x2 != 0 && self.pft_l1 & 0x2 != 0;
+				self.stop_affric = self.pft_c & 0x8000 != 0;
+				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
 				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
-				let gain_db = BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 };
+				let gain_db = if self.stop_affric { 0.0 } else { BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } };
 				self.burst_gain = (gain_db / 6.0).exp2();
 				self.after_stop_next = t.burst > 0;
 				stop_asp = Some(t.asp);
@@ -1795,6 +1808,22 @@ mod tests {
 			let full = v.iter().find(|x| x.1 == ms(40.0)).unwrap().4;
 			let at = v.iter().find(|x| x.1 == ms(VOICE_ONSET_MS + 2.0)).unwrap().4;
 			assert!(full - at < 3.0, "voicing {} at onset+12 ms vs {} later", at, full);
+		}
+	}
+
+	#[test]
+	fn affricate_has_closure_then_frication() {
+		for &(p, d, fric) in &[(10u8, 100, 55.0), (22u8, 90, 40.0)] {
+			// released even before a nasal, with no aspiration
+			for &next in &[1u8, 27] {
+				let t = stop_timeline(p, ms(d as f32), 1, next, true, true);
+				assert!((t.burst - ms(fric)).abs() <= 1 && t.asp == 0 && t.closure + t.burst == ms(d as f32), "{} before {}: {:?}", p, next, t);
+			}
+			let (_, out, marks) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (p, d, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+			let (a, b, _) = marks[2];
+			let seg: Vec<_> = out.iter().filter(|x| x.0 == p && x.1 >= 0).collect();
+			assert!(seg.iter().filter(|x| x.1 < a).all(|x| x.2 == 0.0), "frication in the closure of {}", p);
+			assert!(seg.iter().filter(|x| x.1 >= a && x.1 <= b).all(|x| x.2 > 0.0), "frication gaps in {}", p);
 		}
 	}
 
