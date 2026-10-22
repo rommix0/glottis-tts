@@ -71,6 +71,18 @@ fn reduce_k(d_ms: f32, tau: f32) -> f32 {
 	1.0 - (-d_ms / tau).exp()
 }
 
+// consonant F2 next to a vowel, by place: slope and offset of F2 = offset + slope * the vowel's F2
+fn locus(x: u8) -> Option<(f32, f32)> {
+	match x {
+		9 | 31 | 26 | 16 | 40      => Some((0.8, 300.0)),		// labial: b p m f v
+		37 | 12                    => Some((0.5, 900.0)),		// dental: th dh
+		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0)),	// alveolar: d t n s z dx
+		35 | 44 | 10 | 22          => Some((0.3, 1500.0)),		// postalveolar: sh zh ch jh
+		17 | 23 | 28               => Some((0.75, 600.0)),		// velar: g k ng
+		_                          => None,
+	}
+}
+
 fn fade_db(db: f32, m: f32) -> f32 {
 	// scale an amplitude (dB, 0 is off) by a fader m in linear gain
 	if db <= 0.0 || m <= 0.0 { return 0.0; }
@@ -193,6 +205,7 @@ pub struct engine {
 	marker_A: i32,
 	amp_len: i32,		// samples the amplitudes take to reach this phone's values
 	amp_start: i32,		// counter value where that ramp starts
+	ab_at: i32,			// counter value where the formants start moving from the A to the B targets
 	marker_B: i32,
 	marker_BA: i32,
 	is_first: bool,
@@ -341,6 +354,7 @@ impl engine {
 			/////////////////////////////
 			marker_A:  0,
 			amp_len:   0,
+			ab_at: 0,
 			amp_start: 0,
 			marker_B:  0,
 			marker_BA: 0,
@@ -931,6 +945,36 @@ impl engine {
 		self.F2_B_src = n2 + (self.F2_B_src - n2) * k2;
 		self.F3_B_src = n3 + (self.F3_B_src - n3) * k3;
 	}
+	fn next_vowel_formants(&self) -> [f32; 3] {
+		// the next vowel's F1-F3 at its start, reduced for its length as reduce() will do
+		let o = self.phn_r1 as usize * 31;
+		let t = [formant_tbl[o + 5] as f32, formant_tbl[o + 6] as f32, formant_tbl[o + 7] as f32];
+		if self.phn_r1 == 6 || self.phn_r1 == 20 { return t; }
+		let d_ms = self.pdr_r1 as f32 * 1000.0 / m_sr as f32;
+		let n = 6 * 31;
+		let nv = [formant_tbl[n + 5] as f32, formant_tbl[n + 6] as f32, formant_tbl[n + 7] as f32];
+		let k = [reduce_k(d_ms, tau_f1), reduce_k(d_ms, tau_f2), reduce_k(d_ms, tau_f3)];
+		[0, 1, 2].map(|i| nv[i] + (t[i] - nv[i]) * k[i])
+	}
+	fn loci(&mut self, prev_f2: f32) {
+		let prev_vowel = self.pft_l1 & 0x1 != 0;
+		let next_vowel = self.pft_r1 & 0x1 != 0;
+		if self.phn_c == 18 {
+			// h is the next vowel's formants, breathed
+			if next_vowel {
+				let [f1, f2, f3] = self.next_vowel_formants();
+				(self.F1_A_src, self.F2_A_src, self.F3_A_src) = (f1, f2, f3);
+				(self.F1_B_src, self.F2_B_src, self.F3_B_src) = (f1, f2, f3);
+			}
+			return;
+		}
+		let Some((k, c)) = locus(self.phn_c) else { return };
+		let left = if prev_vowel { Some(c + k * prev_f2) } else { None };
+		let right = if next_vowel { Some(c + k * self.next_vowel_formants()[1]) } else { None };
+		// a side with no vowel holds the other side's value
+		if let Some(a) = left.or(right) { self.F2_A_src = a; }
+		if let Some(b) = right.or(left) { self.F2_B_src = b; }
+	}
 	fn get_control_A_duration(&mut self, x: u8, d: i32) -> i32 {
 		(d as f32 * (x as f32 / 100.0)) as i32
 	}
@@ -1076,7 +1120,7 @@ impl engine {
 		}
 	}
 	fn update_A_to_B(&mut self) {
-		let mut dist = self.marker_B - self.marker_A;
+		let mut dist = self.marker_B - self.ab_at;
 		if dist < thirty_ms { dist = thirty_ms; }
 		self.slope = 1.0 / dist as f32;
 		self.interp = 0.0;
@@ -1174,6 +1218,9 @@ impl engine {
 			// do ptar before anything else
 			self.ptar();
 			
+			// the previous phone's formant targets at its end, before fetch replaces them
+			let prev_f2 = self.F2_B_src;
+
 			// phoneme is ready and loaded up
 			// load in formant data
 			self.fetch();
@@ -1183,6 +1230,9 @@ impl engine {
 
 			// short vowels fall short of their targets
 			self.reduce();
+
+			// consonants take their formants at each edge from the neighbouring vowel
+			self.loci(prev_f2);
 
 			// get duration markers so slopes can be calculated
 			if self.phn_c == PAU {
@@ -1276,6 +1326,8 @@ impl engine {
 					self.asp_seg_next = self.seg_c;
 				}
 			}
+			// a consonant's formants move to their B (right-side) targets early enough to arrive by its end
+			self.ab_at = if self.pft_c & 0x1 == 0 && self.phn_c != PAU { self.marker_A.min(self.marker_B - thirty_ms).max(0) } else { self.marker_A };
 			// sources switch quickly at obstruent edges; formants keep their own transition
 			let obstruent = |f: u16| f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0;
 			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) { self.marker_A.min(fifteen_ms) } else { self.marker_A };
@@ -1320,10 +1372,14 @@ impl engine {
 	fn step(&mut self) {
 		self.counter += 1;
 		self.update_amp_registers(self.counter, self.amp_len);
+		if self.counter == self.ab_at && self.ab_at != self.marker_A {
+			// a consonant starting its move to the B targets early
+			self.update_A_to_B();
+		}
 		if self.counter == self.marker_A {
 			
 			// update registers for diphthongnization (all phonemes)
-			self.update_A_to_B();
+			if self.ab_at == self.marker_A { self.update_A_to_B(); }
 			
 		} else if self.counter >= 0 && self.counter < self.marker_A {
 			
@@ -1826,5 +1882,64 @@ mod tests {
 		assert!((m0.2 - m0.3).abs() < 10.0, "F1 {} at the closure, nasal's {}", m0.2, m0.3);
 		let v = f1.iter().filter(|x| x.0 == 1 && x.1 == ms(NASAL_RELEASE_MS)).last().unwrap();
 		assert!((v.2 - v.3).abs() < 10.0, "F1 {} {} ms after the release, vowel's {}", v.2, NASAL_RELEASE_MS, v.3);
+	}
+
+	// (F2 at A, F2 at B, F1 at A) of phone c between vowels v1 and v2, all long
+	fn cons_targets(v1: u8, c: u8, v2: u8) -> (f32, f32, f32) {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		for &(q, d) in &[(PAU, 50), (v1, 1000), (c, 90), (v2, 1000)] {
+			if e.load(q, d, true, 0, true) {
+				if e.phn_c == c { break; }
+				while e.is_running() { e.sample(120.0); }
+			}
+		}
+		(e.F2_A_src, e.F2_B_src, e.F1_A_src)
+	}
+
+	#[test]
+	fn consonant_f2_follows_the_vowel() {
+		// the consonant's F2 on each side moves with the neighbouring vowel's F2, by its place's slope
+		let f2 = |v: u8| formant_tbl[v as usize * 31 + 6] as f32;
+		for &(c, slope) in &[(9u8, 0.8f32), (11, 0.4), (17, 0.75), (26, 0.8), (27, 0.4), (34, 0.4)] {
+			let (_, b_iy, _) = cons_targets(6, c, 21);
+			let (_, b_uw, _) = cons_targets(6, c, 39);
+			let want = slope * (f2(21) - f2(39));
+			assert!(((b_iy - b_uw) - want).abs() < 0.1 * want, "phone {}: F2 {} before iy, {} before uw, want a {} gap", c, b_iy, b_uw, want);
+			let (a_iy, _, _) = cons_targets(21, c, 6);
+			let (a_uw, _, _) = cons_targets(39, c, 6);
+			assert!((a_iy - a_uw) > 0.5 * want, "phone {}: F2 {} after iy, {} after uw", c, a_iy, a_uw);
+		}
+	}
+
+	#[test]
+	fn h_takes_the_next_vowels_formants() {
+		for &v in &[21u8, 1, 39] {
+			let (a, b, f1) = cons_targets(6, 18, v);
+			let (tf1, tf2) = (formant_tbl[v as usize * 31 + 5] as f32, formant_tbl[v as usize * 31 + 6] as f32);
+			assert!((a - tf2).abs() < 0.03 * tf2 && (b - tf2).abs() < 0.03 * tf2, "h before {}: F2 {} {} vs {}", v, a, b, tf2);
+			assert!((f1 - tf1).abs() < 0.05 * tf1, "h before {}: F1 {} vs {}", v, f1, tf1);
+		}
+	}
+
+	#[test]
+	fn consonant_reaches_its_right_side() {
+		// the vowel after a consonant starts from the consonant's right-side F2
+		for &c in &[9u8, 11, 17, 43, 40, 12, 31, 26] {
+			let mut e = engine::new();
+			e.init();
+			e.reset();
+			let (mut last, mut target) = (0.0f32, 0.0f32);
+			for &(q, d) in &[(PAU, 50), (6, 120), (c, 90), (21, 200), (48, 100), (0, 50)] {
+				if e.load(q, d, true, 0, true) {
+					while e.is_running() {
+						e.sample(120.0);
+						if e.phn_c == c { last = e.F2_reg; target = e.F2_B_src; }
+					}
+				}
+			}
+			assert!((last - target).abs() < 30.0, "phone {} ends at F2 {} not {}", c, last, target);
+		}
 	}
 }
