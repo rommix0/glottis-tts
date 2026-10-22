@@ -38,6 +38,12 @@ const AFFRIC_DECAY_DB: f32 = 6.0;
 // plosive bursts (not affricates): overall trim, and the extra cut before an unstressed vowel (dB)
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
+// a lip release is weak noise through the vocal tract: its level (AH, dB) for p and b
+const LABIAL_BURST_AH: [f32; 2] = [24.0, 30.0];
+// the noise starts at the lips, in front of the tract, so the tract hardly shapes it:
+// during the burst F2 and F3 are held at most at these (Hz), whatever the vowel
+const LABIAL_BURST_F2: f32 = 1100.0;
+const LABIAL_BURST_F3: f32 = 2300.0;
 // and the cut next to a sibilant (dB)
 const BURST_SIBILANT_DB: f32 = -6.0;
 // an unreleased stop plays this share of its duration, as closure merging with the next one
@@ -70,6 +76,9 @@ const tau_f3: f32 = 40.0;
 fn reduce_k(d_ms: f32, tau: f32) -> f32 {
 	1.0 - (-d_ms / tau).exp()
 }
+
+// velar F3 next to a vowel: slope and offset of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
+const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 
 // consonant F2 next to a vowel, by place: slope and offset of F2 = offset + slope * the vowel's F2
 fn locus(x: u8) -> Option<(f32, f32)> {
@@ -227,6 +236,7 @@ pub struct engine {
 	stop_on: bool,		// playing a plosive's closure and burst
 	stop_bar: bool,		// voiced plosive after a voiced sound: a voice bar in the closure
 	stop_affric: bool,
+	stop_labial: bool,
 	burst_len: i32,
 	burst_decay: f32,
 	burst_gain: f32,	// linear gain on the burst
@@ -382,6 +392,7 @@ impl engine {
 			stop_on: false,
 			stop_bar: false,
 			stop_affric: false,
+			stop_labial: false,
 			burst_len: 0,
 			burst_decay: 0.0,
 			burst_gain: 1.0,
@@ -547,6 +558,7 @@ impl engine {
 		self.stop_on = false;
 		self.stop_bar = false;
 		self.stop_affric = false;
+		self.stop_labial = false;
 		self.burst_len = 0;
 		self.burst_decay = 0.0;
 		self.burst_gain = 1.0;
@@ -969,11 +981,18 @@ impl engine {
 			return;
 		}
 		let Some((k, c)) = locus(self.phn_c) else { return };
-		let left = if prev_vowel { Some(c + k * prev_f2) } else { None };
-		let right = if next_vowel { Some(c + k * self.next_vowel_formants()[1]) } else { None };
+		let next_f2 = self.next_vowel_formants()[1];
+		let left = if prev_vowel { Some(prev_f2) } else { None };
+		let right = if next_vowel { Some(next_f2) } else { None };
 		// a side with no vowel holds the other side's value
-		if let Some(a) = left.or(right) { self.F2_A_src = a; }
-		if let Some(b) = right.or(left) { self.F2_B_src = b; }
+		if let Some(v) = left.or(right) { self.F2_A_src = c + k * v; }
+		if let Some(v) = right.or(left) { self.F2_B_src = c + k * v; }
+		if stop_place(self.phn_c) == 2 && self.pft_c & 0x100 != 0 {
+			// velars: F3 comes down toward F2 by front vowels
+			let (k3, c3) = VELAR_F3;
+			if let Some(v) = left.or(right) { self.F3_A_src = c3 + k3 * v; }
+			if let Some(v) = right.or(left) { self.F3_B_src = c3 + k3 * v; }
+		}
 	}
 	fn get_control_A_duration(&mut self, x: u8, d: i32) -> i32 {
 		(d as f32 * (x as f32 / 100.0)) as i32
@@ -1107,8 +1126,15 @@ impl engine {
 			} else {
 				// burst: a sharp onset, then an exponential decay over its length
 				let t = (c - self.marker_A) as f32 / self.burst_len.max(1) as f32;
-				self.AF_reg = fade_db(self.AF_reg, self.burst_gain * (-self.burst_decay / 6.0 * t).exp2());
-				self.AH_reg = 0.0;
+				let g = self.burst_gain * (-self.burst_decay / 6.0 * t).exp2();
+				if self.stop_labial {
+					// a lip release: weak noise through the vocal tract, low and falling
+					self.AF_reg = 0.0;
+					self.AH_reg = fade_db(LABIAL_BURST_AH[(self.pft_c & 0x2 != 0) as usize], self.master_fade * g);
+				} else {
+					self.AF_reg = fade_db(self.AF_reg, g);
+					self.AH_reg = 0.0;
+				}
 				// a voiced affricate's frication is voiced; a stop's burst keeps the voice bar
 				if !self.stop_affric { self.AV_reg = bar; }
 			}
@@ -1213,6 +1239,7 @@ impl engine {
 			self.after_stop = self.after_stop_next;
 			self.after_stop_next = false;
 			self.stop_on = false;
+			self.stop_labial = false;
 			let mut stop_asp: Option<i32> = None;
 
 			// do ptar before anything else
@@ -1293,6 +1320,7 @@ impl engine {
 				self.stop_on = true;
 				self.stop_bar = self.pft_c & 0x2 != 0 && self.pft_l1 & 0x2 != 0;
 				self.stop_affric = self.pft_c & 0x8000 != 0;
+				self.stop_labial = !self.stop_affric && stop_place(self.phn_c) == 0;
 				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
 				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
 				let sibilant = (self.pft_l1 | self.pft_r1) & 0x200 != 0;
@@ -1431,6 +1459,11 @@ impl engine {
 		self.vtm_eng.B1  = self.B1_reg;
 		self.vtm_eng.B2  = self.B2_reg;
 		self.vtm_eng.B3  = self.B3_reg;
+		if self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A {
+			// a lip release: low and falling whatever the vowel
+			self.vtm_eng.F2 = self.F2_reg.min(LABIAL_BURST_F2);
+			self.vtm_eng.F3 = self.F3_reg.min(LABIAL_BURST_F3);
+		}
 		self.vtm_eng.RD  = self.RD_reg;
 		self.vtm_eng.NC  = self.NZP_reg;
 		self.vtm_eng.A2  = self.A2_reg;
@@ -1941,5 +1974,87 @@ mod tests {
 			}
 			assert!((last - target).abs() < 30.0, "phone {} ends at F2 {} not {}", c, last, target);
 		}
+	}
+
+	// the burst samples (and AF/AH during them) of stop c, sentence-initially before vowel v
+	fn burst_of(c: u8, v: u8) -> (Vec<f32>, Vec<(f32, f32)>) {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let (mut x, mut amps) = (Vec::new(), Vec::new());
+		for &(p, d) in &[(PAU, 50), (c, 100), (v, 200), (48, 100), (0, 50)] {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					let y = e.sample(120.0);
+					if e.phn_c == c && e.counter >= e.marker_A { x.push(y); amps.push((e.AF_reg, e.AH_reg)); }
+				}
+			}
+		}
+		(x, amps)
+	}
+
+	#[test]
+	fn labial_burst_is_vocal_tract_noise() {
+		for &c in &[31u8, 9] {
+			let (x, amps) = burst_of(c, 1);
+			assert!(!x.is_empty());
+			assert!(amps.iter().all(|a| a.0 == 0.0), "frication noise in the labial burst of {}", c);
+			assert!(amps.iter().any(|a| a.1 > 0.0), "no burst noise for {}", c);
+			// low and falling: more energy near 1 kHz than near 3 kHz
+			assert!(band_db(&x, 1000.0) > band_db(&x, 3000.0), "burst of {} is not falling", c);
+		}
+	}
+
+	#[test]
+	fn velar_burst_follows_the_vowel() {
+		for &c in &[23u8, 17] {
+			let (front, _) = burst_of(c, 21);
+			let (back, _) = burst_of(c, 1);
+			assert!(band_db(&front, 2400.0) > band_db(&front, 1400.0) + 3.0, "{} before iy: no high peak", c);
+			assert!(band_db(&back, 1400.0) > band_db(&back, 2400.0) + 3.0, "{} before aa: no low peak", c);
+		}
+	}
+
+	#[test]
+	fn velar_f3_follows_the_vowel() {
+		// velar F3 sits near F2 before a front vowel and lower before a back one
+		let f2 = |v: u8| formant_tbl[v as usize * 31 + 6] as f32;
+		for &c in &[17u8, 23] {
+			let mut f3 = Vec::new();
+			for &v in &[21u8, 1] {
+				let mut e2 = engine::new();
+				e2.init();
+				e2.reset();
+				for &(q, d) in &[(PAU, 50), (6, 1000), (c, 90), (v, 1000)] {
+					if e2.load(q, d, true, 0, true) {
+						if e2.phn_c == c { break; }
+						while e2.is_running() { e2.sample(120.0); }
+					}
+				}
+				f3.push(e2.F3_B_src);
+				let want = VELAR_F3.1 + VELAR_F3.0 * f2(v);
+				assert!((e2.F3_B_src - want).abs() < 0.03 * want, "{} before {}: F3 {} not {}", c, v, e2.F3_B_src, want);
+			}
+			assert!(f3[0] > f3[1] + 400.0, "{}: F3 {} before iy, {} before aa", c, f3[0], f3[1]);
+		}
+	}
+
+	#[test]
+	fn labial_burst_leaves_no_transient() {
+		// the vowel after a lip release peaks no higher than after a tongue release
+		let peak = |c: u8| {
+			let mut e = engine::new();
+			e.init();
+			e.reset();
+			let mut m = 0.0f32;
+			for &(p, d) in &[(PAU, 50), (c, 90), (8, 250), (48, 100), (0, 50)] {
+				if e.load(p, d, true, 0, true) {
+					while e.is_running() { m = m.max(e.sample(120.0).abs()); }
+				}
+			}
+			m
+		};
+		let (b, d) = (peak(9), peak(11));
+		assert!(b < 1.15 * d, "peak {} after b, {} after d", b, d);
 	}
 }
