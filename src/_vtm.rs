@@ -16,6 +16,12 @@ pub const m_sr: u32 = 32000;
 // soft clip default
 const CLIP_LIMIT: f32 = 0.85;
 
+// makeup gain for the cascade branch (unity DC gain per resonator)
+const CASC_GAIN: f32 = 2328.0;
+
+// high frequency emphasis for the cascade branch
+const CASC_EMPH: f32 = 0.75;
+
 // formant parameter inits
 const RA_REF:   f32 = 3.8;
 const F1_INIT:  f32 = 500.0;
@@ -365,6 +371,7 @@ pub struct vtm {
 	FR9:      resonator,
 	FR10:     resonator,
 	xp1:      f32,
+	ep1:      f32,
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -433,6 +440,9 @@ impl vtm {
 			
 			// past sample for lip radiation filter
 			xp1: 0.0,
+
+			// past sample for cascade emphasis filter
+			ep1: 0.0,
 		}
 	}
 	pub fn init(&mut self) {
@@ -486,6 +496,8 @@ impl vtm {
 		self.FR8.reset();
 		self.FR9.reset();
 		self.FR10.reset();
+		self.xp1 = 0.0;
+		self.ep1 = 0.0;
 	}
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
@@ -574,17 +586,17 @@ impl vtm {
 			self.FNZ = (self.FNP + self.F1) / 2.0;
 		}
 
-		yy += self.NPR.step(self.NZR.step(x, self.FNZ, 0.0), 0.0, 0.0);		// NASAL TRACT
-		yy += self.VR1.step(yy, self.F1, bb1);								// F1 - tongue height
-		yy += self.VR2.step(yy, self.F2, bb2);								// F2 - tongue fronting
-		yy += self.VR3.step(yy, self.F3, bb3);								// F3 - R-coloring
-		yy += self.VR4.step(yy, 0.0, 0.0);
-		yy += self.VR5.step(yy, 0.0, 0.0);
-		yy += self.VR6.step(yy, 0.0, 0.0);
-		yy += self.VR7.step(yy, 0.0, 0.0);
-		yy += self.VR8.step(yy, 0.0, 0.0);
-		yy += self.VR9.step(yy, 0.0, 0.0);
-		yy += self.VR10.step(yy, 0.0, 0.0);
+		yy = self.NPR.step(self.NZR.step(x, self.FNZ, 0.0), 0.0, 0.0);		// NASAL TRACT
+		yy = self.VR1.step(yy, self.F1, bb1);								// F1 - tongue height
+		yy = self.VR2.step(yy, self.F2, bb2);								// F2 - tongue fronting
+		yy = self.VR3.step(yy, self.F3, bb3);								// F3 - R-coloring
+		yy = self.VR4.step(yy, 0.0, 0.0);
+		yy = self.VR5.step(yy, 0.0, 0.0);
+		yy = self.VR6.step(yy, 0.0, 0.0);
+		yy = self.VR7.step(yy, 0.0, 0.0);
+		yy = self.VR8.step(yy, 0.0, 0.0);
+		yy = self.VR9.step(yy, 0.0, 0.0);
+		yy = self.VR10.step(yy, 0.0, 0.0);
 		yy
 	}
 	fn softclip(&mut self, x: f32) -> f32 {
@@ -594,6 +606,12 @@ impl vtm {
 		let sign: f32 = if x < 0.0 { -1.0 } else { 1.0 };
 		let excess: f32 = a - CLIP_LIMIT;
 		sign * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
+	}
+	fn emph(&mut self, x: f32) -> f32 {
+		// brighten the cascade output
+		let xx = x - CASC_EMPH * self.ep1;
+		self.ep1 = x;
+		xx
 	}
 	fn lip(&mut self, x: f32, d: f32) -> f32 {
 		// apply lip radiation filter (start with 0.97 for d)
@@ -615,7 +633,7 @@ impl vtm {
 		(n, f) = self.noisegen.step();
 		(voice, nmod, self.RA) = self.glottal.step(self.F0, self.RD, 75.0, 0.0, 0.0);
 		voice *= 0.01;
-		f *= 0.15;
+		f *= 0.6;
 
 		// adjust bandwidths if formants are close together
 		self.fix_bw();
@@ -632,6 +650,7 @@ impl vtm {
 
 		// pass them through the filters
 		let casc_out: f32 = self.cascade(casc_in);
+		let casc_out: f32 = self.emph(casc_out) * CASC_GAIN;
 		let parr_out: f32 = self.parallel(parr_in);
 
 		// add them together and return
