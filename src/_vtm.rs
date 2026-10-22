@@ -22,6 +22,15 @@ const CASC_GAIN: f32 = 2328.0;
 // high frequency emphasis for the cascade branch
 const CASC_EMPH: f32 = 0.75;
 
+// frication noise: rolled off above this, so consonants are not too bright
+const FRIC_LP_HZ: f32 = 6000.0;
+
+// how much voicing modulates frication (1 is half-level noise in every other half period)
+const FRIC_MOD: f32 = 0.3;
+
+// makeup gain for the parallel branch (frication)
+const PARR_GAIN: f32 = 2.5;
+
 // formant parameter inits
 const RA_REF:   f32 = 3.8;
 const F1_INIT:  f32 = 500.0;
@@ -372,6 +381,7 @@ pub struct vtm {
 	FR10:     resonator,
 	xp1:      f32,
 	ep1:      f32,
+	fric_y1:  f32,		// frication noise lowpass state
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -443,6 +453,7 @@ impl vtm {
 
 			// past sample for cascade emphasis filter
 			ep1: 0.0,
+			fric_y1: 0.0,
 		}
 	}
 	pub fn init(&mut self) {
@@ -498,6 +509,7 @@ impl vtm {
 		self.FR10.reset();
 		self.xp1 = 0.0;
 		self.ep1 = 0.0;
+		self.fric_y1 = 0.0;
 	}
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
@@ -639,22 +651,27 @@ impl vtm {
 		self.fix_bw();
 
 		// noise modulation
-		let af_mod: f32 = if self.AV > 0.0 { nmod } else { 1.0 };
+		let af_mod: f32 = if self.AV > 0.0 { 1.0 - FRIC_MOD * (1.0 - nmod) } else { 1.0 };
 
 		// route audio sources to a source fed in by cascade filter
 		voice   = voice + (n * self.db2lin(self.BR) * af_mod);
 		let casc_in: f32 = voice * self.db2lin(self.AV) + f * self.db2lin(self.AH);
 
 		// route noise source to source fed in by parallel filter
-		let parr_in: f32 = f * self.db2lin(self.AF) * af_mod;
+		// frication is broadband noise, rolled off above FRIC_LP_HZ
+		let a = (-2.0 * PI * FRIC_LP_HZ / m_sr as f32).exp();
+		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
+		let parr_in: f32 = self.fric_y1 * self.db2lin(self.AF) * af_mod;
 
 		// pass them through the filters
 		let casc_out: f32 = self.cascade(casc_in);
 		let casc_out: f32 = self.emph(casc_out) * CASC_GAIN;
-		let parr_out: f32 = self.parallel(parr_in);
+		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
 		// add them together and return
 		let out = self.lip(casc_out + parr_out, 0.5);
 		self.softclip(out)
 	}
 }
+
+
