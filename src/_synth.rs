@@ -38,10 +38,15 @@ const AFFRIC_DECAY_DB: f32 = 6.0;
 // plosive bursts (not affricates): overall trim, and the extra cut before an unstressed vowel (dB)
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
+// and the cut next to a sibilant (dB)
+const BURST_SIBILANT_DB: f32 = -6.0;
+// an unreleased stop plays this share of its duration, as closure merging with the next one
+const UNRELEASED_SHARE: f32 = 0.5;
+// sibilant fricatives fade in and out over this long (ms), centred on their boundary with a vowel or sonorant
+const SIB_RAMP_MS: f32 = 40.0;
 // aspiration level (AH, dB) by place
 const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
-// aspiration after /s/ in the same word, and its share before an unstressed vowel or a sonorant
-const ASP_AFTER_S_MS: f32 = 5.0;
+// aspiration's share before an unstressed vowel or a sonorant (none after a sibilant in the same word)
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.5;
 // after aspiration, voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it (ms)
@@ -153,7 +158,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 	}
 	let nf = feats(next);
 	// unreleased before another stop or a nasal
-	if nf & 0x50 != 0 { return Stop { closure: pdr, burst: 0, asp: 0 }; }
+	if nf & 0x50 != 0 { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
 	let place = stop_place(phone);
 	let voiced = pf & 0x2 != 0;
 	let mut burst = samples(BURST_MS[voiced as usize][place]);
@@ -175,7 +180,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		// obstruent, phrase-final release or pause: burst only
 		asp = 0;
 	}
-	if prev == 34 && !word_start { asp = asp.min(samples(ASP_AFTER_S_MS)); }
+	if feats(prev) & 0x200 != 0 && !word_start { asp = 0; }
 	Stop { closure, burst, asp }
 }
 
@@ -183,6 +188,7 @@ pub struct engine {
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,		// samples the amplitudes take to reach this phone's values
+	amp_start: i32,		// counter value where that ramp starts
 	marker_B: i32,
 	marker_BA: i32,
 	is_first: bool,
@@ -287,8 +293,6 @@ pub struct engine {
 	optime: f32,
 	glot_time: f32,
 	end_time: f32,
-	sib_time: f32,
-	sib_ramp: f32,
 	C_A_src: u8,
 	C_B_src: u8,
 	RD_A_src: f32,
@@ -333,6 +337,7 @@ impl engine {
 			/////////////////////////////
 			marker_A:  0,
 			amp_len:   0,
+			amp_start: 0,
 			marker_B:  0,
 			marker_BA: 0,
 			is_first:  true,
@@ -449,8 +454,6 @@ impl engine {
 			optime:       1.0 / two_ms   as f32,		// time the master fader takes to come back
 			glot_time:    1.0 / ten_ms   as f32,		// glottalization timing
 			end_time:     1.0 / fifty_ms as f32,		// phrase-final fade time
-			sib_time:     1.0 / sixty_ms as f32,
-			sib_ramp:     0.0,
 			/////////////////////////////
 			//         SOURCE          //
 			/////////////////////////////
@@ -613,7 +616,6 @@ impl engine {
 		self.slope =        0.0;
 		self.interp =       0.0;
 		self.master_fade =  1.0;
-		self.sib_ramp =     0.0;
 		/////////////////////////////
 		//         SOURCE          //
 		/////////////////////////////
@@ -914,11 +916,6 @@ impl engine {
 			// unstressed consonant has lower AF
 			self.AF_src -= 3.0;
 		}
-
-		if self.pft_c & 0x200 != 0 {
-			// phoneme is a sibilant, lower AF_reg so we can ramp it up during synthesis
-			self.sib_ramp = 0.95;
-		}
 	}
 	fn reduce(&mut self) {
 		// move vowel targets toward the neutral vowel (AX) as the vowel gets shorter
@@ -1020,17 +1017,12 @@ impl engine {
 		// interpolation smooth mapping algorithm
 		let mut y: f32 = 0.0;
 		if l > 0 {
-			let mut rr: f32 = c as f32 / l as f32;
+			let mut rr: f32 = (c - self.amp_start) as f32 / l as f32;
 			if rr < 0.0 { rr = 0.0; }
 			if rr > 1.0 { rr = 1.0; }
 			y = self.lin2smooth(rr);
 		}
 
-		// ramp up sibilant fader
-		if self.sib_ramp < 1.0 {
-			self.sib_ramp += self.sib_time;
-			if self.sib_ramp > 1.0 { self.sib_ramp = 1.0; }
-		}
 
 		// update the interpolator for the parallel amps
 		self.A2_reg  = lerp_db_gain(self.A2_reg_src, self.A2_reg_trg, y);
@@ -1045,7 +1037,7 @@ impl engine {
 
 		// update the interpolator for main amps
 		self.AB_reg = lerp_db_gain(self.AB_reg_src, self.AB_reg_trg, y);
-		let (mut g_af, mut g_ah, mut g_av) = (self.sib_ramp, 1.0, 1.0);
+		let (mut g_af, mut g_ah, mut g_av) = (1.0, 1.0, 1.0);
 		if self.asp_db > 0.0 && c < 0 {
 			// aspiration rises over 2 ms after the burst
 			let rise = ((c - self.asp_start) as f32 / two_ms as f32).min(1.0);
@@ -1060,8 +1052,8 @@ impl engine {
 				let t = (c.min(self.marker_A) as f32 / self.marker_A.max(1) as f32).min(1.0);
 				fade_db(self.AV_reg, (-VOICE_BAR_FADE_DB / 6.0 * t).exp2())
 			} else { 0.0 };
-			if c < self.marker_A {
-				// closure: the previous phone's sound dies away over 5 ms
+			if c < self.marker_A || self.burst_len == 0 {
+				// closure (all of an unreleased stop): the previous phone's sound dies away over 5 ms
 				let g = self.master_fade * (1.0 - c as f32 / five_ms as f32).max(0.0);
 				self.AF_reg = fade_db(self.AF_reg_src, g);
 				self.AH_reg = fade_db(self.AH_reg_src, g);
@@ -1256,7 +1248,10 @@ impl engine {
 				self.stop_affric = self.pft_c & 0x8000 != 0;
 				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
 				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
-				let gain_db = if self.stop_affric { 0.0 } else { BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } };
+				let sibilant = (self.pft_l1 | self.pft_r1) & 0x200 != 0;
+				let gain_db = if self.stop_affric { 0.0 } else {
+					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 }
+				};
 				self.burst_gain = (gain_db / 6.0).exp2();
 				self.after_stop_next = t.burst > 0;
 				stop_asp = Some(t.asp);
@@ -1291,6 +1286,15 @@ impl engine {
 			if self.after_stop {
 				// voicing builds up quickly after a release
 				self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
+			}
+			self.amp_start = 0;
+			let sibilant = |f: u16| f & 0x8200 == 0x200;
+			let sonorant = |f: u16| f & 0x1 != 0 || f & 0x1C10 != 0;
+			if (sibilant(self.pft_c) && sonorant(self.pft_l1)) || (sibilant(self.pft_l1) && sonorant(self.pft_c)) {
+				// a sibilant fades in and out across its boundary, as far as the carried-over region allows
+				let half = samples(SIB_RAMP_MS / 2.0);
+				self.amp_start = (-half).max(self.counter);
+				self.amp_len = half - self.amp_start;
 			}
 			if self.asp_db > 0.0 {
 				// aspiration: no voicing or frication until this phone's own part starts
@@ -1556,7 +1560,8 @@ mod tests {
 		let t = |prev: u8, next: u8, stressed: bool, w: bool| stop_timeline(36, pdr, prev, next, stressed, w);
 		let base = t(1, 1, true, true);
 		assert!((base.asp - ms(55.0)).abs() <= 1);
-		assert!((t(34, 1, true, false).asp - ms(5.0)).abs() <= 1, "after s in the word");
+		assert_eq!(t(34, 1, true, false).asp, 0, "after s in the word");
+		assert_eq!(t(35, 1, true, false).asp, 0, "after sh in the word");
 		assert!((t(34, 1, true, true).asp - ms(55.0)).abs() <= 1, "after s across a word start");
 		assert!((t(1, 1, false, true).asp - ms(33.0)).abs() <= 1, "before an unstressed vowel");
 		assert!((t(1, 24, true, true).asp - ms(27.5)).abs() <= 1, "before l");
@@ -1564,10 +1569,11 @@ mod tests {
 		assert_eq!(t(1, 48, false, true).asp, 0, "phrase-final");
 		for &n in &[36u8, 27] {
 			let s = t(1, n, true, true);
-			assert_eq!((s.closure, s.burst, s.asp), (pdr, 0, 0), "unreleased before {}", n);
+			// unreleased, and its closure merges with the next one
+			assert_eq!((s.closure, s.burst, s.asp), ((pdr as f32 * UNRELEASED_SHARE) as i32, 0, 0), "unreleased before {}", n);
 		}
 		// a shorter aspiration never stretches the closure
-		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
+		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (35, 1, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
 			assert_eq!(t(prev, next, st, w).closure, base.closure);
 		}
 	}
@@ -1684,5 +1690,51 @@ mod tests {
 		};
 		let (st, un) = (onset(&[]), onset(&[3]));
 		assert!((st - un + BURST_UNSTRESSED_DB).abs() < 0.5, "stressed {} unstressed {}", st, un);
+	}
+
+	// AF at the burst onset of the T in phones (T at segment 2)
+	fn t_burst_af(phones: &[(u8, i32, usize)]) -> f32 {
+		let (_, out, marks) = trace_regs(phones);
+		let a = marks[2].0;
+		out.iter().find(|x| x.0 == 36 && x.1 == a).unwrap().2
+	}
+
+	#[test]
+	fn burst_is_softer_next_to_sibilant() {
+		let tail = [(48u8, 100, 4usize), (0, 50, 5)];
+		let with = |a: u8, b: u8| -> Vec<(u8, i32, usize)> { [(PAU, 50, 0), (a, 150, 1), (36, 101, 2), (b, 150, 3)].iter().chain(tail.iter()).cloned().collect() };
+		let plain = t_burst_af(&with(1, 1));
+		let after = t_burst_af(&with(34, 1));
+		let before = t_burst_af(&with(1, 34));
+		assert!((plain - after + BURST_SIBILANT_DB).abs() < 0.5, "after s: {} vs {}", after, plain);
+		// before s: no aspiration either way, the burst only drops by the sibilant cut
+		assert!((plain - before + BURST_SIBILANT_DB).abs() < 0.5, "before s: {} vs {}", before, plain);
+	}
+
+	#[test]
+	fn sibilant_ramp_is_centered() {
+		// frication fades in across the vowel-to-S boundary and out across the S-to-vowel one
+		let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (34, 150, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+		let half = ms(SIB_RAMP_MS / 2.0);
+		let af = |p: u8, c: i32| out.iter().find(|x| x.0 == p && x.1 == c).unwrap().2;
+		let full = af(34, half + ms(10.0));
+		assert_eq!(af(34, -half - ms(2.0)), 0.0, "frication before the ramp");
+		let mid = af(34, 0);
+		assert!(mid > 0.0 && mid < full - 3.0, "frication at the boundary {} (full {})", mid, full);
+		assert!((af(34, half) - full).abs() < 0.5, "frication not full {} ms after the boundary", SIB_RAMP_MS / 2.0);
+		assert!((af(1, -half - ms(2.0)) - full).abs() < 0.5, "frication fades before the exit ramp");
+		let out_mid = af(1, 0);
+		assert!(out_mid > 0.0 && out_mid < full - 3.0, "frication at the exit boundary {}", out_mid);
+		assert_eq!(af(1, half + ms(1.0)), 0.0, "frication after the exit ramp");
+	}
+
+	#[test]
+	fn unreleased_stop_stays_silent() {
+		// AA-K-T-AA: no frication anywhere in the K or in the T's closure
+		let (_, out, marks) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (23, 103, 2), (36, 101, 3), (1, 150, 4), (48, 100, 5), (0, 50, 6)]);
+		let t_closure = marks[3].0;
+		for x in out.iter().filter(|x| (x.0 == 23 && x.1 >= 0) || (x.0 == 36 && x.1 >= 0 && x.1 < t_closure)) {
+			assert_eq!(x.2, 0.0, "AF {} in phone {} at {}", x.2, x.0, x.1);
+		}
 	}
 }
