@@ -27,6 +27,7 @@ const MAX_HZ: f32 = 250.0;
 // targets, tuned by ear
 const BASELINE_FALL_ST:     f32 = 2.0;
 const PHRASE_RESET_ST:      f32 = 1.0;
+const PHRASE_RESET_MAX_ST:  f32 = 2.0;
 const ACCENT_ST:            f32 = 6.0;
 const DOWNSTEP:             f32 = 0.8;
 const ACCENT_FLOOR_ST:      f32 = 2.0;
@@ -103,14 +104,14 @@ impl Contour {
 			let voiced: Vec<usize> = segs.clone().filter(|&i| is_voiced(utt.segs[i].phone)).collect();
 			let (Some(&first_v), Some(&last_v)) = (voiced.first(), voiced.last()) else { continue; };
 
-			let b0 = -PHRASE_RESET_ST * k as f32;
+			let b0 = (-PHRASE_RESET_ST * k as f32).max(-PHRASE_RESET_MAX_ST);
 			let (ts, te) = (t0[segs.start], t0[segs.end]);
 			let base = |t: f32| b0 - BASELINE_FALL_ST * if te > ts { (t - ts) / (te - ts) } else { 0.0 };
 
 			push(&mut new, first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), Tk::Start, false);
 
 			// accents, stepping down within the phrase
-			if k > 0 { first_height *= PHRASE_ACCENT_RATIO; }
+			if k > 0 { first_height = (first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
 			let mut h = first_height;
 			let mut n_acc = 0;
 			let mut prev_peak: Option<(usize, f32)> = None;
@@ -276,6 +277,20 @@ mod tests {
 		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
 		assert!(h.iter().all(|&x| x >= ACCENT_FLOOR_ST - 0.01));
 		assert!((h[7] - ACCENT_FLOOR_ST).abs() < 0.01);
+	}
+
+	#[test]
+	fn long_list_keeps_pitch_up() {
+		// twelve comma phrases: resets and accents must not sink without end
+		let w = [BAA, DEE, GO, MA, NEE, BAA, DEE, GO, MA, NEE, BAA, DEE];
+		let ends: Vec<(usize, u8)> = (0..12).map(|i| (i, if i == 11 { PERIOD } else { COMMA })).collect();
+		let (_, c) = utt(&w, &ends, "w");
+		for t in c.targets.iter().filter(|t| t.kind == Tk::Accent) {
+			assert!(t.st - t.base >= ACCENT_FLOOR_ST - 0.01, "accent {} above baseline", t.st - t.base);
+		}
+		for t in c.targets.iter().filter(|t| t.kind == Tk::Start) {
+			assert!(t.base >= -PHRASE_RESET_MAX_ST - 0.01, "phrase starts at {}", t.base);
+		}
 	}
 
 	#[test]
