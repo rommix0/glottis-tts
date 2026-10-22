@@ -23,6 +23,7 @@ const thirty_ms: i32 = (m_sr as f32 * 0.030) as i32;
 const forty_ms:  i32 = (m_sr as f32 * 0.040) as i32;
 const fifty_ms:  i32 = (m_sr as f32 * 0.050) as i32;
 const sixty_ms:  i32 = (m_sr as f32 * 0.060) as i32;
+const fifteen_ms: i32 = (m_sr as f32 * 0.015) as i32;
 const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
 
 // shortest plosive closure before the burst
@@ -40,6 +41,12 @@ fn reduce_k(d_ms: f32, tau: f32) -> f32 {
 	1.0 - (-d_ms / tau).exp()
 }
 
+fn fade_db(db: f32, m: f32) -> f32 {
+	// scale an amplitude (dB, 0 is off) by a fader m in linear gain
+	if db <= 0.0 || m <= 0.0 { return 0.0; }
+	(db + 6.0 * m.log2()).max(0.0)
+}
+
 fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
 	// interpolate two amplitudes (dB, 0 is off) in linear gain, the same scale the VTM uses
 	let gain = |db: f32| if db <= 0.0 { 0.0 } else { 0.5_f32.powf((87.0 - db) / 6.0) };
@@ -50,6 +57,7 @@ fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
 pub struct engine {
 	vtm_eng: vtm,
 	marker_A: i32,
+	amp_len: i32,		// samples the amplitudes take to reach this phone's values
 	marker_B: i32,
 	marker_BA: i32,
 	is_first: bool,
@@ -194,6 +202,7 @@ impl engine {
 			//          MAIN           //
 			/////////////////////////////
 			marker_A:  0,
+			amp_len:   0,
 			marker_B:  0,
 			marker_BA: 0,
 			is_first:  true,
@@ -962,21 +971,23 @@ impl engine {
 		}
 
 		// update the interpolator for the parallel amps
-		self.A2_reg  = self.A2_reg_src  * (1.0 - y) + self.A2_reg_trg * y;
-		self.A3_reg  = self.A3_reg_src  * (1.0 - y) + self.A3_reg_trg * y;
-		self.A4_reg  = self.A4_reg_src  * (1.0 - y) + self.A4_reg_trg * y;
-		self.A5_reg  = self.A5_reg_src  * (1.0 - y) + self.A5_reg_trg * y;
-		self.A6_reg  = self.A6_reg_src  * (1.0 - y) + self.A6_reg_trg * y;
-		self.A7_reg  = self.A7_reg_src  * (1.0 - y) + self.A7_reg_trg * y;
-		self.A8_reg  = self.A8_reg_src  * (1.0 - y) + self.A8_reg_trg * y;
-		self.A9_reg  = self.A9_reg_src  * (1.0 - y) + self.A9_reg_trg * y;
-		self.A10_reg = self.A10_reg_src * (1.0 - y) + self.A10_reg_trg * y;
+		self.A2_reg  = lerp_db_gain(self.A2_reg_src, self.A2_reg_trg, y);
+		self.A3_reg  = lerp_db_gain(self.A3_reg_src, self.A3_reg_trg, y);
+		self.A4_reg  = lerp_db_gain(self.A4_reg_src, self.A4_reg_trg, y);
+		self.A5_reg  = lerp_db_gain(self.A5_reg_src, self.A5_reg_trg, y);
+		self.A6_reg  = lerp_db_gain(self.A6_reg_src, self.A6_reg_trg, y);
+		self.A7_reg  = lerp_db_gain(self.A7_reg_src, self.A7_reg_trg, y);
+		self.A8_reg  = lerp_db_gain(self.A8_reg_src, self.A8_reg_trg, y);
+		self.A9_reg  = lerp_db_gain(self.A9_reg_src, self.A9_reg_trg, y);
+		self.A10_reg = lerp_db_gain(self.A10_reg_src, self.A10_reg_trg, y);
 
 		// update the interpolator for main amps
-		self.AB_reg = self.AB_reg_src * (1.0 - y) + self.AB_reg_trg * y;
-		self.AF_reg = (self.AF_reg_src * (1.0 - y) + self.AF_reg_trg  * y) * self.master_fade * self.closure * self.lin2decay(self.burst_INIT) * self.sib_ramp;
-		self.AH_reg = (self.AH_reg_src * (1.0 - y) + self.AH_reg_trg  * y) * self.master_fade * self.closure * self.lin2decay(self.burst_VOT);
-		self.AV_reg = lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, y) * self.master_fade * self.closure;
+		self.AB_reg = lerp_db_gain(self.AB_reg_src, self.AB_reg_trg, y);
+		let burst_init = self.lin2decay(self.burst_INIT);
+		let burst_vot = self.lin2decay(self.burst_VOT);
+		self.AF_reg = fade_db(lerp_db_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * self.closure * burst_init * self.sib_ramp);
+		self.AH_reg = fade_db(lerp_db_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * self.closure * burst_vot);
+		self.AV_reg = fade_db(lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, y), self.master_fade * self.closure);
 	}
 	fn update_A_to_B(&mut self) {
 		let mut dist = self.marker_B - self.marker_A;
@@ -1168,6 +1179,9 @@ impl engine {
 				// no transition carried into the next phone, so the pause keeps its length
 				self.marker_BA = 0;
 			}
+			// sources switch quickly at obstruent edges; formants keep their own transition
+			let obstruent = |f: u16| f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0;
+			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) { self.marker_A.min(fifteen_ms) } else { self.marker_A };
 			self.seg_start = self.counter;
 		}
 		self.is_ready()
@@ -1252,7 +1266,7 @@ impl engine {
 	}
 	fn step(&mut self) {
 		self.counter += 1;
-		self.update_amp_registers(self.counter, self.marker_A);
+		self.update_amp_registers(self.counter, self.amp_len);
 		self.step_plosive();
 		if self.counter == self.marker_A {
 			
@@ -1323,7 +1337,7 @@ impl engine {
 		self.vtm_eng.AB  = self.AB_reg;
 		self.vtm_eng.AF  = self.AF_reg;
 		self.vtm_eng.AH  = self.AH_reg;
-		self.vtm_eng.AV  = self.AV_reg * self.GL_V;
+		self.vtm_eng.AV  = fade_db(self.AV_reg, self.GL_V);
 		self.vtm_eng.step()
 	}
 }
@@ -1411,6 +1425,16 @@ mod tests {
 		for w in seen.windows(2) {
 			if w[0].0 == w[1].0 { assert!(w[1].1 >= w[0].1); } else { assert!(w[0].1 >= 0.95, "seg {} ended at {}", w[0].0, w[0].1); }
 		}
+	}
+
+	#[test]
+	fn faders_scale_linear_gain() {
+		// a fader of 0.5 halves the gain (-6 dB), it does not halve the dB value
+		assert!((fade_db(60.0, 0.5) - 54.0).abs() < 0.01);
+		assert!((fade_db(60.0, 1.0) - 60.0).abs() < 0.01);
+		assert_eq!(fade_db(60.0, 0.0), 0.0);
+		assert_eq!(fade_db(0.0, 0.5), 0.0);
+		assert_eq!(fade_db(3.0, 0.01), 0.0);
 	}
 
 	#[test]
