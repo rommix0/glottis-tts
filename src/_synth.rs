@@ -28,6 +28,9 @@ const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
 // shortest plosive closure before the burst
 const min_closure: i32 = thirty_ms;
 
+// longest share of a vowel the transition into it may take
+const ramp_share: f32 = 0.6;
+
 pub struct engine {
 	vtm_eng: vtm,
 	marker_A: i32,
@@ -1091,6 +1094,10 @@ impl engine {
 				}
 				//self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				self.marker_B = self.get_control_B_duration(self.C_B_src, self.pdr_c);
+				if self.pft_c & 0x1 != 0 {
+					// short vowels get a shorter transition so they still reach their target
+					self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
+				}
 			} else if self.pft_c & 0x8000 != 0 {
 				// is affricate
 				// set default markers for affricate
@@ -1301,6 +1308,22 @@ mod tests {
 			}
 		}
 		out
+	}
+
+	#[test]
+	fn ramp_scales() {
+		// a short vowel still reaches its target before its own segment ends
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		for &(p, d) in &[(1, 150), (6, 60), (1, 150)] {
+			if e.load(p, d, false, 120.0) {
+				if e.phn_c == 6 { break; }
+				while e.is_running() { e.sample(120.0); }
+			}
+		}
+		assert_eq!(e.phn_c, 6);
+		assert!(e.marker_A < e.marker_B, "ramp {} ends after the vowel {}", e.marker_A, e.marker_B);
 	}
 
 	#[test]
