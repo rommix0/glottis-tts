@@ -5,12 +5,10 @@
 | DATE:   8/11/2026-8/30/2026           |
 ---------------------------------------*/
 
-use core::f32::consts::PI;
 
 use crate::_vtm::vtm;
 use crate::_vtm::m_sr;
 use crate::_vtm::FN_INIT;
-use crate::_vtbl::vot_tbl;
 use crate::_vtbl::formant_tbl;
 use crate::_utt::PAU;
 
@@ -283,20 +281,10 @@ pub struct engine {
 	AF_reg_trg: f32,
 	AH_reg_trg: f32,
 	AV_reg_trg: f32,
-	end_early: bool,
 	slope: f32,
 	interp: f32,
-	silent_burst: bool,
 	master_fade: f32,
-	closure: f32,
-	burst_INIT: f32,
-	burst_VOT: f32,
-	burst_C: i32,
-	affric_swi: u8,
-	cltime: f32,
-	aftime: f32,
 	optime: f32,
-	brtime: f32,
 	glot_time: f32,
 	end_time: f32,
 	sib_time: f32,
@@ -455,20 +443,10 @@ impl engine {
 			/////////////////////////////
 			//         SLOPE           //
 			/////////////////////////////
-			end_early:    false,
 			slope:        0.0,
 			interp:       0.0,
-			silent_burst: false,
 			master_fade:  1.0,							// master fader for phrase-final trigger
-			closure:      1.0,							// multiplier for AF, AH, and AV
-			burst_INIT:   1.0,							// burst initiator fader
-			burst_VOT:    1.0,							// burst VOT fader
-			burst_C:      0,
-			affric_swi:   0,
-			cltime:       1.0 / five_ms  as f32,		// time it takes to make a closure before a burst
-			aftime:       1.0 / ten_ms   as f32,		// time it takes to fade in an affricate
-			optime:       1.0 / two_ms   as f32,		// time it takes for burst to open (1 to 2 ms)
-			brtime:       1.0 / five_ms  as f32,		// time it takes to fulfill a burst
+			optime:       1.0 / two_ms   as f32,		// time the master fader takes to come back
 			glot_time:    1.0 / ten_ms   as f32,		// glottalization timing
 			end_time:     1.0 / fifty_ms as f32,		// phrase-final fade time
 			sib_time:     1.0 / sixty_ms as f32,
@@ -632,16 +610,9 @@ impl engine {
 		/////////////////////////////
 		//         SLOPE           //
 		/////////////////////////////
-		self.end_early =    false;
 		self.slope =        0.0;
 		self.interp =       0.0;
-		self.silent_burst = false;
 		self.master_fade =  1.0;
-		self.closure =      1.0;
-		self.burst_INIT =   1.0;
-		self.burst_VOT =    1.0;
-		self.burst_C =      0;
-		self.affric_swi =   0;
 		self.sib_ramp =     0.0;
 		/////////////////////////////
 		//         SOURCE          //
@@ -718,7 +689,7 @@ impl engine {
 		self.pwi_r1 = w;
 	}
 	pub fn is_running(&mut self) -> bool {
-		if self.end_early || self.counter >= self.marker_B { return false; }
+		if self.counter >= self.marker_B { return false; }
 		true
 	}
 	pub fn is_ready(&mut self) -> bool {
@@ -791,22 +762,6 @@ impl engine {
 			self.B2_B_src = self.B2_reg;
 			self.B3_B_src = self.B3_reg;
 		}
-	}
-	fn fetch_vot(&mut self) -> (i32, i32) {
-		// phoneme id to VOT selector
-		let offset: usize = match self.phn_c {
-			36 => 1,
-			23 => 2,
-			9  => 3,
-			11 => 4,
-			17 => 5,
-			_  => 0,
-		} * 2;
-
-		// retrieve VOT data and return
-		let b_onset = self.ms_to_samples(vot_tbl[offset+0]);
-		let t_onset = self.ms_to_samples(vot_tbl[offset+1]);
-		(b_onset, t_onset)
 	}
 	fn fetch_nsl(&mut self) -> f32 {
 		match self.pft_c {
@@ -964,13 +919,6 @@ impl engine {
 			// phoneme is a sibilant, lower AF_reg so we can ramp it up during synthesis
 			self.sib_ramp = 0.95;
 		}
-
-		// deal whether plosive should be silent
-		self.silent_burst = false;
-		if self.pft_c & 0x8040 != 0 && self.pft_r1 & 0x50 != 0 {
-			// silent burst if another burst is next or nasal
-			self.silent_burst = true;
-		}
 	}
 	fn reduce(&mut self) {
 		// move vowel targets toward the neutral vowel (AX) as the vowel gets shorter
@@ -1019,7 +967,6 @@ impl engine {
 		self.AF_reg_src  = 0.0;
 		self.AH_reg_src  = 0.0;
 		self.AV_reg_src  = 0.0;
-		if self.pft_c & 0x40 != 0 { self.closure = 0.0; }
 		// target
 		self.RD_reg_trg  = self.RD_reg_src;
 		self.NZP_reg_trg = self.NZP_reg_src;
@@ -1047,14 +994,6 @@ impl engine {
 		// linear to smooth mapping
 		// used by interpolator for smoothing
 		x * x * (3.0 - 2.0 * x)
-	}
-	fn lin2decay(&mut self, x: f32) -> f32 {
-		// map linear map to exponential decay curve
-		// for use with burst rendering
-		let mut xx = x;
-		if xx > 1.0 { xx = 1.0; }
-		if xx <= 0.0 { return 0.0; }
-		(-2.0 * PI * (1.0 - xx)).exp()
 	}
 	fn update_registers(&mut self) {
 		// x is interpolation factor (0 < x < 1)
@@ -1106,9 +1045,7 @@ impl engine {
 
 		// update the interpolator for main amps
 		self.AB_reg = lerp_db_gain(self.AB_reg_src, self.AB_reg_trg, y);
-		let burst_init = self.lin2decay(self.burst_INIT);
-		let burst_vot = self.lin2decay(self.burst_VOT);
-		let (mut g_af, mut g_ah, mut g_av) = (self.closure * burst_init * self.sib_ramp, self.closure * burst_vot, self.closure);
+		let (mut g_af, mut g_ah, mut g_av) = (self.sib_ramp, 1.0, 1.0);
 		if self.asp_db > 0.0 && c < 0 {
 			// aspiration rises over 2 ms after the burst
 			let rise = ((c - self.asp_start) as f32 / two_ms as f32).min(1.0);
@@ -1230,13 +1167,6 @@ impl engine {
 		// s is stress
 		// seg is the segment's stream index (reported back by position)
 		// w is true if x starts a word
-
-		// reset end early flag
-		self.end_early = false;
-		
-		// init vot variables here
-		let mut b_onset: i32 = 0;
-		let mut t_onset: i32 = 0;
 
 		self.advance(x, d, s, seg, w);
 		if self.is_ready() {
@@ -1375,97 +1305,15 @@ impl engine {
 	}
 	pub fn position(&self) -> (usize, f32) {
 		// the playing segment and how far through it we are (0..1)
-		if self.end_early { return (self.seg_c, 1.0); }
 		// the aspiration still belongs to the stop
 		if self.asp_db > 0.0 && self.counter < 0 { return (self.asp_seg, 1.0); }
 		let len = self.marker_B - self.seg_start;
 		let frac = if len > 0 { (self.counter - self.seg_start) as f32 / len as f32 } else { 1.0 };
 		(self.seg_c, frac.clamp(0.0, 1.0))
 	}
-	fn step_plosive(&mut self) {
-		// make plosive rendering easier by having the code here
-		if self.stop_on {
-			// voiceless stops are shaped in update_amp_registers
-			if self.counter == 0 {
-				self.closure    = 1.0;
-				self.burst_INIT = 1.0;
-				self.burst_VOT  = 1.0;
-			}
-			return;
-		}
-		if self.counter == 0 {
-			if self.pft_c & 0x8040 != 0 {
-				// if plosive or affricate, reset variables
-				self.burst_C    = 0;
-				self.burst_INIT = 1.0;
-				self.burst_VOT  = 0.0;
-				if self.affric_swi != 0 { self.affric_swi = 0; }
-				if self.pft_c & 0x2 != 0 {
-					// voiced stops
-					self.closure = 0.8;
-				} else {
-					// otherwise
-					self.closure = 0.0;
-				}
-			} else {
-				// if not a plosive, move the faders back to default positions
-				self.closure    = 1.0;
-				self.burst_INIT = 1.0;
-				self.burst_VOT  = 1.0;
-			}
-		} else if self.counter == self.marker_A {
-			// bring self.closure back to 1.0 if less than
-			self.closure = 1.0;
-		} else if self.pft_c & 0x8040 != 0 && self.counter > self.marker_A {
-			if self.silent_burst == false {
-				// render unvoiced burst/affricate
-				//
-				// + start with burst onset first
-				//
-				// + then fade into burst VOT for aspiration
-				//   - this can be turned off if say a sibilant was before
-				//     an unvoiced stop. trigger the end_early flag if so.
-				//
-				if self.pft_c & 0x2 == 0 {
-					self.burst_C += 1;
-					if self.pft_l1 & 0x200 != 0 || self.pst_l1 || self.pst_r1 {
-						// if sibilant is before, or burst is surrounded by unstressed vowels
-						// reduce the aspiration, and end the burst early.
-						if self.burst_C > ten_ms {
-							self.marker_BA = self.counter;
-							self.end_early = true;
-						}
-					}
-					if self.affric_swi == 0 {
-						self.burst_INIT -= self.brtime;
-						if self.pft_c & 0x8000 != 0 && self.burst_INIT < 0.75 {
-							self.affric_swi = 1;
-						} else if self.burst_INIT < 0.0 {
-							self.burst_INIT = 0.0;
-						}
-					} else if self.affric_swi == 1 {
-						self.burst_INIT += self.brtime;
-						if self.burst_INIT > 1.0 { self.burst_INIT = 1.0; }
-					}
-					if self.pft_c & 0x8000 == 0 {
-						self.burst_VOT += self.brtime;
-						if self.burst_VOT > 1.0 { self.burst_VOT = 1.0; }
-					}
-				} else {
-					if self.burst_INIT < 1.0  { self.burst_INIT = 1.0; }
-					if self.burst_VOT < 1.0   { self.burst_VOT  = 1.0; }
-				}
-			} else {
-				// silence burst if another burst or nasal is next
-				if self.burst_INIT > 0.0 { self.burst_INIT = 0.0; }
-				if self.burst_VOT  > 0.0 { self.burst_VOT  = 0.0; }
-			}
-		}
-	}
 	fn step(&mut self) {
 		self.counter += 1;
 		self.update_amp_registers(self.counter, self.amp_len);
-		self.step_plosive();
 		if self.counter == self.marker_A {
 			
 			// update registers for diphthongnization (all phonemes)

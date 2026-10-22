@@ -1,30 +1,5 @@
 /*
 
-plosive VOT table
-=============================================
- defined here to make maintainability easier
- for adjusting voice onset times, and for us
- to leave the formant table alone
-=============================================
-
-columns:
-	+ control_A  (burst onset      - ms)
-	+ control_B  (transition onset - ms)
-
-*/
-
-pub static vot_tbl: [i32; 12] = [
-	58, 53,     // p (31)
-	71, 66,     // t (36)
-	73, 68,     // k (23)
-	15, 10,     // b (9)
-	23, 17,     // d (11)
-	40, 25,     // g (17)
-];
-
-
-/*
-
 formant table
 ==============================
 stored as unsigned 16-bit
