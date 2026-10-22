@@ -23,7 +23,11 @@ const CASC_GAIN: f32 = 2328.0;
 const CASC_EMPH: f32 = 0.75;
 
 // frication noise: rolled off above this, so consonants are not too bright
-const FRIC_LP_HZ: f32 = 6000.0;
+const FRIC_LP_HZ: f32 = 4500.0;
+
+// low shelf on the cascade branch: this much more level (dB) below about LOW_SHELF_HZ
+const LOW_SHELF_DB: f32 = 4.0;
+const LOW_SHELF_HZ: f32 = 250.0;
 
 // how much voicing modulates frication (1 is half-level noise in every other half period)
 const FRIC_MOD: f32 = 0.3;
@@ -390,6 +394,7 @@ pub struct vtm {
 	FR10:     resonator,
 	xp1:      f32,
 	ep1:      f32,
+	shelf_y1: f32,
 	fric_y1:  f32,		// frication noise lowpass state
 }
 impl vtm {
@@ -462,6 +467,7 @@ impl vtm {
 
 			// past sample for cascade emphasis filter
 			ep1: 0.0,
+			shelf_y1: 0.0,
 			fric_y1: 0.0,
 		}
 	}
@@ -518,6 +524,7 @@ impl vtm {
 		self.FR10.reset();
 		self.xp1 = 0.0;
 		self.ep1 = 0.0;
+		self.shelf_y1 = 0.0;
 		self.fric_y1 = 0.0;
 	}
 	fn db2lin(&mut self, gain: f32) -> f32 {
@@ -627,6 +634,12 @@ impl vtm {
 		let excess: f32 = a - CLIP_LIMIT;
 		sign * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
 	}
+	fn low_shelf(&mut self, x: f32) -> f32 {
+		// add a low-passed copy back on top, so only the bottom of the spectrum gains level
+		let a = (-2.0 * PI * LOW_SHELF_HZ / m_sr as f32).exp();
+		self.shelf_y1 = (1.0 - a) * x + a * self.shelf_y1;
+		x + (10.0_f32.powf(LOW_SHELF_DB / 20.0) - 1.0) * self.shelf_y1
+	}
 	fn emph(&mut self, x: f32) -> f32 {
 		// brighten the cascade output
 		let xx = x - CASC_EMPH * self.ep1;
@@ -674,6 +687,7 @@ impl vtm {
 		// pass them through the filters
 		let casc_out: f32 = self.cascade(casc_in);
 		let casc_out: f32 = self.emph(casc_out) * CASC_GAIN;
+		let casc_out: f32 = self.low_shelf(casc_out);
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
 		// add them together and return
@@ -683,3 +697,25 @@ impl vtm {
 }
 
 
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn low_shelf_lifts_only_the_bottom() {
+		// steady DC comes out LOW_SHELF_DB louder; an alternating (Nyquist) signal is nearly unchanged
+		let mut v = vtm::new();
+		let mut y = 0.0;
+		for _ in 0..20000 { y = v.low_shelf(1.0); }
+		assert!((20.0 * y.log10() - LOW_SHELF_DB).abs() < 0.1, "DC gain {} dB", 20.0 * y.log10());
+		let mut v = vtm::new();
+		let mut peak = 0.0f32;
+		for i in 0..20000 {
+			let x = if i % 2 == 0 { 1.0 } else { -1.0 };
+			let y = v.low_shelf(x);
+			if i > 10000 { peak = peak.max(y.abs()); }
+		}
+		assert!((20.0 * peak.log10()).abs() < 0.3, "Nyquist gain {} dB", 20.0 * peak.log10());
+	}
+}
