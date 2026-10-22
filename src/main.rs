@@ -58,15 +58,50 @@ struct Engines {
 	contour:  _f0::Contour,
 	next_seg: usize,		// stream index for the next segment
 	started:  bool,
+	last:     u8,			// last phone loaded
 }
 
 fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, seg: usize) {
 	// feed one phone into the synthesizer and write out what it plays
+	eng.last = phone;
 	if eng.synth.load(phone, dur_ms.round() as i32, stressed, seg) {
 		while eng.synth.is_running() {
 			let (s, f) = eng.synth.position();
 			let f0 = eng.contour.hz_at(s, f);
 			writer.write_sample(eng.synth.sample(f0)).unwrap();
+		}
+	}
+}
+
+fn new_engines() -> Engines {
+	let mut eng = Engines {
+		synth:    _synth::engine::new(),
+		contour:  _f0::Contour::new(),
+		next_seg: 0,
+		started:  false,
+		last:     0,
+	};
+	eng.synth.init();
+	eng.synth.reset();
+	eng
+}
+
+fn finish(eng: &mut Engines, writer: &mut Wav) {
+	// play out what is still in the synthesizer
+	let mut finish_off = true;
+	while eng.synth.is_not_last() {
+		let seg = take_seg(eng);
+		if finish_off {
+			finish_off = false;
+			if eng.last == PAU {
+				// the sentence already ended with its release and pause
+				play(eng, writer, PAU, 50.0, false, seg);
+			} else {
+				// unpunctuated end of input: this is its release
+				play(eng, writer, 48, 100.0, false, seg);
+			}
+		} else {
+			play(eng, writer, 0, 50.0, false, seg);
 		}
 	}
 }
@@ -172,16 +207,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	buf.write(0x00);
 
 	// initialize engines
-	let mut eng = Engines {
-		synth:    _synth::engine::new(),
-		contour:  _f0::Contour::new(),
-		next_seg: 0,
-		started:  false,
-	};
+	let mut eng = new_engines();
 	let mut text_engine  = _text::engine::new();
 	let mut lts_engine   = _lts::pvec::new();
-	eng.synth.init();
-	eng.synth.reset();
 
 	// current sentence: phone tokens and the text of each word
 	let mut tokens: Vec<u8>      = Vec::new();
@@ -303,19 +331,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	}
 
 	// if formant synth not done, let's finish up the synthesis
-	let mut finish_off = true;
-	while eng.synth.is_not_last() {
-		let seg = take_seg(&mut eng);
-		if finish_off {
-			finish_off = false;
-			play(&mut eng, &mut writer, 48, 100.0, false, seg);
-		} else {
-			play(&mut eng, &mut writer, 0, 50.0, false, seg);
-		}
-	}
+	finish(&mut eng, &mut writer);
 
 	// flush WAV file and write to it
 	writer.finalize()?;
 
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// render one sentence of tokens through the driver into samples
+	fn render(tokens: &[u8], texts: &[&str]) -> Vec<f32> {
+		let path = env::temp_dir().join(format!("tts_synth_test_{}.wav", std::process::id()));
+		let spec = hound::WavSpec { channels: 1, sample_rate: m_sr as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+		let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false };
+		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
+		let mut eng = new_engines();
+		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);
+		finish(&mut eng, &mut writer);
+		writer.finalize().unwrap();
+		let out: Vec<f32> = hound::WavReader::open(&path).unwrap().samples::<f32>().map(|x| x.unwrap()).collect();
+		let _ = std::fs::remove_file(&path);
+		out
+	}
+
+	#[test]
+	fn nothing_sounds_after_the_final_pause() {
+		// it is .
+		let out = render(&[95, 53, 76, 95, 53, 87, 92], &["it", "is"]);
+		// the final pause: the last run of silence longer than 300 ms
+		let silent = |x: &f32| x.abs() < 1e-4;
+		let mut run = 0;
+		let mut pause_end = None;
+		for (i, x) in out.iter().enumerate() {
+			if silent(x) { run += 1; } else { if run > 9600 { pause_end = Some(i); } run = 0; }
+		}
+		if let Some(i) = pause_end {
+			let peak = out[i..].iter().fold(0.0f32, |m, x| m.max(x.abs()));
+			panic!("sound after the final pause, peak {}", peak);
+		}
+	}
 }
