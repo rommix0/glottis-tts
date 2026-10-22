@@ -766,12 +766,8 @@ impl engine {
 		}
 	}
 	fn fetch_nsl(&mut self) -> f32 {
-		match self.pft_c {
-			0x0092        => 1000.0,	// M
-			0x0032        => 1700.0,	// N
-			0x0112        => 3000.0,	// NG
-			_             => 0.0,		// otherwise
-		}
+		// nasal coupling: 1 for a nasal consonant, 0 otherwise
+		if self.pft_c & 0x10 != 0 { 1.0 } else { 0.0 }
 	}
 	fn ptar(&mut self) {
 		if self.phn_c == 24 && self.pft_r1 & 0x42 == 0x40 {
@@ -1374,7 +1370,7 @@ impl engine {
 		self.vtm_eng.B2  = self.B2_reg;
 		self.vtm_eng.B3  = self.B3_reg;
 		self.vtm_eng.RD  = self.RD_reg;
-		self.vtm_eng.FNP = self.NZP_reg;
+		self.vtm_eng.NC  = self.NZP_reg;
 		self.vtm_eng.A2  = self.A2_reg;
 		self.vtm_eng.A3  = self.A3_reg;
 		self.vtm_eng.A4  = self.A4_reg;
@@ -1735,6 +1731,63 @@ mod tests {
 		let t_closure = marks[3].0;
 		for x in out.iter().filter(|x| (x.0 == 23 && x.1 >= 0) || (x.0 == 36 && x.1 >= 0 && x.1 < t_closure)) {
 			assert_eq!(x.2, 0.0, "AF {} in phone {} at {}", x.2, x.0, x.1);
+		}
+	}
+
+	// mean power (dB) of x around f (+-100 Hz), Hann-windowed
+	fn band_db(x: &[f32], f: f32) -> f32 {
+		let n = x.len();
+		let mut sum = 0.0f64;
+		let mut k = 0;
+		let mut g = f - 100.0;
+		while g <= f + 100.0 {
+			let (mut re, mut im) = (0.0f64, 0.0f64);
+			for (i, v) in x.iter().enumerate() {
+				let w = 0.5 - 0.5 * (2.0 * PI64 * i as f64 / n as f64).cos();
+				let ph = 2.0 * PI64 * g as f64 * i as f64 / m_sr as f64;
+				re += *v as f64 * w * ph.cos();
+				im -= *v as f64 * w * ph.sin();
+			}
+			sum += re * re + im * im;
+			k += 1;
+			g += 10.0;
+		}
+		(10.0 * (sum / k as f64).log10()) as f32
+	}
+	const PI64: f64 = std::f64::consts::PI;
+
+	#[test]
+	fn nasal_murmur_keeps_its_upper_formants() {
+		// AA-M-AA: the murmur's F2 region is not buried under a doubled low resonance
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut m: Vec<f32> = Vec::new();
+		for &(p, d) in &[(PAU, 50), (1, 150), (26, 120), (1, 150), (48, 100), (0, 50)] {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					let y = e.sample(120.0);
+					if e.phn_c == 26 && e.counter >= ms(40.0) && e.counter < ms(100.0) { m.push(y); }
+				}
+			}
+		}
+		let low = band_db(&m, 250.0);
+		let f2 = band_db(&m, 1100.0);
+		assert!(f2 - low > -35.0, "murmur F2 region {} dB under its low peak", low - f2);
+	}
+
+	#[test]
+	fn nasal_zero_moves_smoothly() {
+		// the zero sits on the nasal pole for oral sounds, on F1 for a nasal, and moves without jumps in between
+		use crate::_vtm::{nasal_zero, FN_INIT};
+		assert_eq!(nasal_zero(700.0, 0.0), FN_INIT);
+		assert_eq!(nasal_zero(250.0, 1.0), 250.0);
+		assert_eq!(nasal_zero(400.0, 1.0), 400.0);
+		let mut last = nasal_zero(500.0, 0.0);
+		for i in 1..=100 {
+			let z = nasal_zero(500.0, i as f32 / 100.0);
+			assert!((z - last).abs() < 10.0, "zero jumps {} -> {}", last, z);
+			last = z;
 		}
 	}
 }

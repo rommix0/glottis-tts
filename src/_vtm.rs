@@ -55,6 +55,15 @@ const F10_INIT: f32 = 9500.0;
 const B10_INIT: f32 = 4750.0;
 pub const FN_INIT: f32 = 250.0;
 const BN_INIT: f32 = 100.0;
+// bandwidth of the nasal pole when it is a nasal consonant's murmur
+const BN_MURMUR: f32 = 200.0;
+
+// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
+// sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at a vowel's nasalized edge
+pub fn nasal_zero(f1: f32, k: f32) -> f32 {
+	let k = k.clamp(0.0, 1.0);
+	FN_INIT + k * (f1 - FN_INIT)
+}
 
 // noise generator
 struct noise { alpha: f32, nxt: u16, xp1: f32 }
@@ -338,7 +347,7 @@ pub struct vtm {
 	pub B2:   f32,		// this can be accessed by _synth.rs
 	pub F3:   f32,		// this can be accessed by _synth.rs
 	pub B3:   f32,		// this can be accessed by _synth.rs
-	pub FNP:  f32,		// this can be accessed by _synth.rs
+	pub NC:   f32,		// nasal coupling, 0 (oral) to 1 (nasal consonant); set by _synth.rs
 	FNZ:      f32,
 	pub A2:   f32,		// this can be accessed by _synth.rs
 	pub A3:   f32,		// this can be accessed by _synth.rs
@@ -403,7 +412,7 @@ impl vtm {
 			F3     : F3_INIT,			// Frequency of 3rd formant, in Hz
 			B3     : B3_INIT,			// Bandwidth of 3rd formant, in Hz
 			FNZ    : FN_INIT,			// Frequency of nasal zero, in Hz
-			FNP    : FN_INIT,			// Frequency of nasal pole, in Hz
+			NC     : 0.0,				// nasal coupling
 			A2     : 0.0,				// Amp of parallel 2nd formant, in dB
 			A3     : 0.0,				// Amp of parallel 3rd formant, in dB
 			A4     : 0.0,				// Amp of parallel 4th formant, in dB
@@ -592,13 +601,12 @@ impl vtm {
 		if bb3 < 40.0 { bb3 = 40.0; }
 
 		// nasal coupling (Hawkins & Stevens 1985)
-		if self.FNP < self.F1 {
-			self.FNZ = FN_INIT;
-		} else {
-			self.FNZ = (self.FNP + self.F1) / 2.0;
-		}
+		let k = self.NC.clamp(0.0, 1.0);
+		self.FNZ = nasal_zero(self.F1, k);
+		let bnz = BN_INIT + k * (bb1 - BN_INIT);
+		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 
-		yy = self.NPR.step(self.NZR.step(x, self.FNZ, 0.0), 0.0, 0.0);		// NASAL TRACT
+		yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT, bnp);	// NASAL TRACT
 		yy = self.VR1.step(yy, self.F1, bb1);								// F1 - tongue height
 		yy = self.VR2.step(yy, self.F2, bb2);								// F2 - tongue fronting
 		yy = self.VR3.step(yy, self.F3, bb3);								// F3 - R-coloring
