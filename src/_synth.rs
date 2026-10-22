@@ -24,6 +24,9 @@ const fifty_ms:  i32 = (m_sr as f32 * 0.050) as i32;
 const sixty_ms:  i32 = (m_sr as f32 * 0.060) as i32;
 const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
 
+// shortest plosive closure before the burst
+const min_closure: i32 = thirty_ms;
+
 pub struct engine {
 	vtm_eng: vtm,
 	marker_A: i32,
@@ -1077,7 +1080,8 @@ impl engine {
 				// is plosive
 				// get data from VOT table
 				(b_onset, t_onset) = self.fetch_vot();
-				//if self.pdr_c < b_onset { self.pdr_c = b_onset; }
+				// lengthen the plosive if it's too short to fit a closure before the burst
+				if self.pdr_c < b_onset + min_closure { self.pdr_c = b_onset + min_closure; }
 				self.marker_A = self.pdr_c - b_onset;
 				self.marker_B = self.pdr_c - t_onset;
 			}
