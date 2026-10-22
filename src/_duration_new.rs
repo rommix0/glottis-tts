@@ -1,3 +1,6 @@
+// highest pitch target the model may output (Hz)
+const F0_MAX: f32 = 250.0;
+
 pub struct model {
 	dur_mn: f32,
 	dur_sd: f32,
@@ -349,6 +352,7 @@ impl model {
 		let mut pdur: f32 = (self.dur_mn + self.CU_DURAT * self.dur_sd) + self.DUR_ADD;
 		let mut pitch: f32 = self.pit_mn + self.F0 * self.pit_sd;
 		if pitch < 50.0 { pitch = 50.0; }
+		if pitch > F0_MAX { pitch = F0_MAX; }
 
 		let mindur: f32 = self.getmin();
 		if self.CU_CURR_ACCENT == 0 { pdur *= 0.85; }
