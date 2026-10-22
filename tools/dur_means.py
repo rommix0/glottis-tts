@@ -2,9 +2,12 @@
 
 usage: python tools/dur_means.py trace.txt > table.rs
 
-Each TRACE line is "TRACE <phone> <stress> dur=<ms> f0=<hz>". The mean duration of a phone becomes its inherent
-duration and 45 % of it its minimum. Phones never seen get the mean of their class. Stop minimums are raised to the
-length the synthesizer plays a stop at least (burst onset + minimum closure).
+Each TRACE line is "TRACE <phone> <stress> [seg=<n>] dur=<ms> ...". The mean duration of a phone becomes its
+inherent duration and 45 % of it its minimum. Phones never seen get the mean of their class. Stop minimums are
+raised to the length the synthesizer plays a stop at least (burst onset + minimum closure).
+
+The table in src/_dur.rs was seeded from a trace of the earlier trained model; a trace of the current build
+reflects the duration rules themselves.
 """
 import re
 import sys
@@ -29,14 +32,14 @@ MIN_SHARE = 0.45
 def main(path):
     durs = defaultdict(list)
     for line in open(path, encoding='utf-8'):
-        m = re.match(r'TRACE (\d+) \d+ dur=(-?\d+)', line)
+        m = re.match(r'TRACE (\d+) \d+ (?:seg=\d+ )?dur=(-?\d+)', line)
         if m and int(m.group(1)) in NAMES:
             durs[int(m.group(1))].append(int(m.group(2)))
     mean = {p: sum(v) / len(v) for p, v in durs.items()}
     class_mean = {}
     for name, members in CLASSES.items():
         seen = [mean[p] for p in members if p in mean]
-        class_mean[name] = sum(seen) / len(seen)
+        class_mean[name] = sum(seen) / len(seen) if seen else 80.0
     print('\t\t// phone => inherent, min (ms); seeded by tools/dur_means.py, then tuned by ear')
     for p in sorted(NAMES):
         cls = next(c for c, members in CLASSES.items() if p in members)
