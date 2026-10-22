@@ -11,6 +11,7 @@ mod _synth;
 mod _dict;
 mod _dread;
 mod _utt;
+mod _dur;
 
 use std::env;
 use std::fs::File;
@@ -22,7 +23,7 @@ use crate::_utils::cbuf;
 use crate::_utils::PHNIDToPhoneme;
 use crate::_dread::dictreader;
 use crate::_lts::lts;
-use crate::_utt::Utterance;
+use crate::_utt::{Utterance, Boundary, PAU};
 
 type Wav = hound::WavWriter<BufWriter<File>>;
 
@@ -55,32 +56,32 @@ fn parse_args() -> Result<Opts, String> {
 
 // the engines that run across sentences
 struct Engines {
-	synth: _synth::engine,
-	dur:   _duration_new::model,
-	pit:   _smooth::model,
+	synth:   _synth::engine,
+	dur:     _duration_new::model,
+	pit:     _smooth::model,
+	started: bool,
 }
 
-fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engines, writer: &mut Wav) {
-	// synthesize one sentence of phone tokens
-	let mut tk: Vec<u8> = tokens.to_vec();
-	tk.push(90);
-
-	if opts.trace {
-		let utt = Utterance::build(&tk, texts);
-		for w in &utt.words {
-			eprintln!("WORD {} fn={} phrase={} syls={}", w.text, w.function as u8, w.phrase, w.syls.len());
+fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, pitch: f32) {
+	// feed one phone into the synthesizer and write out what it plays
+	if eng.synth.load(phone, dur_ms.round() as i32, stressed, pitch) {
+		while eng.synth.is_running() {
+			eng.pit.set(eng.synth.pit_c);
+			let f0 = eng.pit.step();
+			writer.write_sample(eng.synth.sample(f0)).unwrap();
 		}
 	}
+}
 
+fn cart_pitch(tokens: &[u8], eng: &mut Engines) -> Vec<(u8, f32)> {
+	// run the trained model over the sentence for its pitch: (phone, pitch) per phone and punctuation
+	let mut tk: Vec<u8> = tokens.to_vec();
+	tk.push(90);
+	let mut out: Vec<(u8, f32)> = Vec::new();
 	let mut pa: u8;
 	let mut pb: u8;
 	let mut sa: u8;
 	let mut sb: u8;
-	let mut past_phone: u8;
-	let mut phone: u8;
-	let mut stress: u8;
-	let mut duration: i32;
-	let mut cart_pitch: f32;
 	let mut past_accent: u8 = 0;
 	let mut curr_accent: u8 = 0;
 	let phn_sz: usize = tk.len();
@@ -98,48 +99,72 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 			phn_cnt += 1;
 		}
 		loop {
-			// feed phoneme, stress, and last_syl trigger into model
 			eng.dur.step(pa, sa, past_accent, curr_accent, phn_cnt, phn_sz);
-
-			// fetch result when ready
 			if eng.dur.is_ready() {
-				(past_phone, phone, stress, duration, cart_pitch) = eng.dur.fetch();
-
+				let (_, phone, _, _, pitch) = eng.dur.fetch();
 				if phone != 50 && phone != 55 {
-					// output phoneme, stress, and duration
-					// when phoneme is not a word boundary
-
-					// convert phrase boundaries to release phoneme (AXP or IXP)
-					if phone == 51 || phone == 52 || phone == 53 || phone == 54 {
-						phone = match past_phone {
-							11|36 => 49,			// is alveolar. use IXP release
-							_     => 48,			// otherwise, use AXP release
-						};
-					}
-
-					if opts.trace { eprintln!("TRACE {} {} dur={} f0={:.0}", phone, stress, duration, cart_pitch); }
-
-					// feed phoneme and duration into synthesizer
-					// and write out to WAV file
-					if eng.synth.load(phone, duration, stress != 0, cart_pitch) {
-						while eng.synth.is_running() {
-							eng.pit.set(eng.synth.pit_c);
-							let f0 = eng.pit.step();
-							writer.write_sample(eng.synth.sample(f0)).unwrap();
-						}
-					}
+					out.push((phone, pitch));
 				} else {
 					past_accent = curr_accent;
 					// content words are accented, function words are left alone
 					curr_accent = if phone == 50 { 1 } else { 0 };
 				}
 			}
-			// assign pb and sb to pa and sa to process those next
 			pa = pb;
 			sa = sb;
 			pb = 0;
 			sb = 0;
 			if pa == 0 { break; }
+		}
+	}
+	out
+}
+
+fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engines, writer: &mut Wav) {
+	// synthesize one sentence of phone tokens
+	let mut utt = Utterance::build(tokens, texts);
+	_dur::assign(&mut utt, opts.rate);
+	let pitches = cart_pitch(tokens, eng);
+
+	if opts.trace {
+		for w in &utt.words {
+			eprintln!("WORD {} fn={} phrase={} syls={}", w.text, w.function as u8, w.phrase, w.syls.len());
+		}
+	}
+
+	// pitch for each segment, and for each phrase end, from the trained model's output order
+	let mut seg_pitch: Vec<f32> = Vec::new();
+	let mut end_pitch: Vec<f32> = Vec::new();
+	for &(phone, pitch) in &pitches {
+		if (51..=54).contains(&phone) { end_pitch.push(pitch); } else if phone != 0 { seg_pitch.push(pitch); }
+	}
+	let last_pitch = seg_pitch.last().copied().unwrap_or(110.0);
+
+	if !eng.started {
+		eng.started = true;
+		play(eng, writer, PAU, _dur::START_PAUSE_MS, false, seg_pitch.first().copied().unwrap_or(110.0));
+	}
+
+	for (pi, ph) in utt.phrases.iter().enumerate() {
+		let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
+		for i in segs.clone() {
+			let s = &utt.segs[i];
+			let pitch = seg_pitch.get(i).copied().unwrap_or(last_pitch);
+			if opts.trace { eprintln!("TRACE {} {} dur={:.0} f0={:.0} rules={}", s.phone, s.stress, s.dur_ms, pitch, s.rules.join(",")); }
+			play(eng, writer, s.phone, s.dur_ms, s.stress != 0, pitch);
+		}
+		if ph.end != Boundary::None {
+			// phrase-end release, then the pause
+			let pitch = end_pitch.get(pi).copied().unwrap_or(last_pitch);
+			let release = match utt.segs[segs.end - 1].phone {
+				11|36 => 49,			// is alveolar. use IXP release
+				_     => 48,			// otherwise, use AXP release
+			};
+			let pause = _dur::pause_after(ph.end, opts.rate);
+			if opts.trace { eprintln!("TRACE {} 0 dur={:.0} f0={:.0} rules=release", release, _dur::RELEASE_MS, pitch); }
+			if opts.trace { eprintln!("TRACE {} 0 dur={:.0} f0={:.0} rules=pause", PAU, pause, pitch); }
+			play(eng, writer, release, _dur::RELEASE_MS, false, pitch);
+			play(eng, writer, PAU, pause, false, pitch);
 		}
 	}
 }
@@ -182,6 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		synth: _synth::engine::new(),
 		dur:   _duration_new::model::new(),
 		pit:   _smooth::model::new(),
+		started: false,
 	};
 	let mut text_engine  = _text::engine::new();
 	let mut lts_engine   = _lts::pvec::new();

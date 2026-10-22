@@ -63,6 +63,7 @@ pub struct Seg {
 	pub word:   usize,		// index into Utterance::words
 	pub syl:    usize,		// index into Utterance::syls
 	pub dur_ms: f32,		// set by the duration rules
+	pub rules:  Vec<&'static str>,	// duration rules that fired (for --trace)
 }
 pub struct Syl {
 	pub segs:    Range<usize>,
@@ -132,7 +133,7 @@ impl Utterance {
 					let w = u.words.len() - 1;
 					for (p, s) in [(pa, sa), (pb, sb)] {
 						if p == 0 { continue; }
-						u.segs.push(Seg { phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0 });
+						u.segs.push(Seg { phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new() });
 						u.words[w].segs.end = u.segs.len();
 					}
 				},

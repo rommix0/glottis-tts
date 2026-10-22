@@ -621,8 +621,9 @@ impl engine {
 		if self.B2_B_src == 0.0 { self.B2_B_src = self.B2_A_src; }
 		if self.B3_B_src == 0.0 { self.B3_B_src = self.B3_A_src; }
 
-		if self.phn_c == PAU {
+		if self.phn_c == PAU && !self.is_first {
 			// hold the formants where they are during a pause
+			// (a first pause has nothing to hold and keeps the silent row's values)
 			self.F1_A_src = self.F1_reg;
 			self.F2_A_src = self.F2_reg;
 			self.F3_A_src = self.F3_reg;
@@ -1300,6 +1301,13 @@ mod tests {
 			}
 		}
 		out
+	}
+
+	#[test]
+	fn pause_first_is_finite() {
+		// a pause as the very first phone has no formants to hold yet
+		let out = render(&[(PAU, 50), (1, 150)]);
+		assert!(out.iter().all(|x| x.is_finite()));
 	}
 
 	#[test]
