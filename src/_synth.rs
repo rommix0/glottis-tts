@@ -54,8 +54,9 @@ pub struct engine {
 	pdr_c:  i32,
 	pdr_r1: i32,
 	pst_l1: bool,
-	pub pit_c: f32,
-	pit_r1: f32,
+	seg_c: usize,		// stream index of the playing segment
+	seg_r1: usize,
+	seg_start: i32,	// counter value when the playing segment started
 	pub pst_c: bool,
 	pst_r1: bool,
 	GL: f32,
@@ -202,8 +203,9 @@ impl engine {
 			pst_l1: false,
 			pst_c:  false,
 			pst_r1: false,
-			pit_c: 0.0,
-			pit_r1: 0.0,
+			seg_c: 0,
+			seg_r1: 0,
+			seg_start: 0,
 			/////////////////////////////
 			//        REGISTERS        //
 			/////////////////////////////
@@ -363,8 +365,9 @@ impl engine {
 		self.pst_l1 = false;
 		self.pst_c =  false;
 		self.pst_r1 = false;
-		self.pit_c = 0.0;
-		self.pit_r1 = 0.0;
+		self.seg_c = 0;
+		self.seg_r1 = 0;
+		self.seg_start = 0;
 		/////////////////////////////
 		//        REGISTERS        //
 		/////////////////////////////
@@ -540,7 +543,7 @@ impl engine {
 		// convert milliseconds to samples
 		((x as f32 / 1000.0) * m_sr as f32) as i32
 	}
-	fn advance(&mut self, x: u8, d: i32, s: bool, cp: f32) {
+	fn advance(&mut self, x: u8, d: i32, s: bool, seg: usize) {
 		// x is phone_id
 		// d is duration
 		// s is stress
@@ -568,10 +571,10 @@ impl engine {
 		self.pst_c  = self.pst_r1;
 		self.pst_r1 = s;
 		/////////////////////////////
-		//    PITCH PASSTHROUGH    //
+		//     STREAM POSITION     //
 		/////////////////////////////
-		self.pit_c = self.pit_r1;
-		self.pit_r1 = cp;
+		self.seg_c  = self.seg_r1;
+		self.seg_r1 = seg;
 	}
 	pub fn is_running(&mut self) -> bool {
 		if self.end_early || self.counter >= self.marker_B { return false; }
@@ -1032,11 +1035,11 @@ impl engine {
 		self.AH_reg_trg  = self.AH_src;
 		self.AV_reg_trg  = self.AV_src;
 	}
-	pub fn load(&mut self, x: u8, d: i32, s: bool, cp: f32) -> bool {
+	pub fn load(&mut self, x: u8, d: i32, s: bool, seg: usize) -> bool {
 		// x is phoneme
 		// d is duration (ms)
 		// s is stress
-		// cp is CART pitch passthrough
+		// seg is the segment's stream index (reported back by position)
 
 		// reset end early flag
 		self.end_early = false;
@@ -1045,7 +1048,7 @@ impl engine {
 		let mut b_onset: i32 = 0;
 		let mut t_onset: i32 = 0;
 
-		self.advance(x, d, s, cp);
+		self.advance(x, d, s, seg);
 		if self.is_ready() {
 			// do ptar before anything else
 			self.ptar();
@@ -1139,8 +1142,16 @@ impl engine {
 				// no transition carried into the next phone, so the pause keeps its length
 				self.marker_BA = 0;
 			}
+			self.seg_start = self.counter;
 		}
 		self.is_ready()
+	}
+	pub fn position(&self) -> (usize, f32) {
+		// the playing segment and how far through it we are (0..1)
+		if self.end_early { return (self.seg_c, 1.0); }
+		let len = self.marker_B - self.seg_start;
+		let frac = if len > 0 { (self.counter - self.seg_start) as f32 / len as f32 } else { 1.0 };
+		(self.seg_c, frac.clamp(0.0, 1.0))
 	}
 	fn step_plosive(&mut self) {
 		// make plosive rendering easier by having the code here
@@ -1265,7 +1276,7 @@ impl engine {
 	}*/
 	pub fn sample(&mut self, f0: f32) -> f32 {
 		self.step();
-		self.vtm_eng.F0  = f0 * self.GL;
+		self.vtm_eng.F0  = f0;
 		self.vtm_eng.F1  = self.F1_reg;
 		self.vtm_eng.F2  = self.F2_reg;
 		self.vtm_eng.F3  = self.F3_reg;
@@ -1303,18 +1314,40 @@ mod tests {
 		e.reset();
 		let mut out: Vec<f32> = Vec::new();
 		for &(p, d) in phones {
-			if e.load(p, d, true, 120.0) {
+			if e.load(p, d, true, 0) {
 				while e.is_running() { out.push(e.sample(120.0)); }
 			}
 		}
 		let mut first = true;
 		while e.is_not_last() {
-			let ready = if first { first = false; e.load(48, 100, false, 120.0) } else { e.load(0, 50, false, 120.0) };
+			let ready = if first { first = false; e.load(48, 100, false, 0) } else { e.load(0, 50, false, 0) };
 			if ready {
 				while e.is_running() { out.push(e.sample(120.0)); }
 			}
 		}
 		out
+	}
+
+	#[test]
+	fn position_advances() {
+		// the reported segment follows the loaded order, and each runs to its end
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut seen: Vec<(usize, f32)> = Vec::new();
+		for &(p, d, seg) in &[(1u8, 150, 7usize), (21, 150, 8), (1, 150, 9), (48, 100, 10), (0, 50, 11)] {
+			if e.load(p, d, false, seg) {
+				while e.is_running() {
+					e.sample(120.0);
+					seen.push(e.position());
+				}
+			}
+		}
+		let order: Vec<usize> = seen.iter().map(|x| x.0).fold(Vec::new(), |mut v, s| { if v.last() != Some(&s) { v.push(s); } v });
+		assert_eq!(order, vec![7, 8, 9, 10]);
+		for w in seen.windows(2) {
+			if w[0].0 == w[1].0 { assert!(w[1].1 >= w[0].1); } else { assert!(w[0].1 >= 0.95, "seg {} ended at {}", w[0].0, w[0].1); }
+		}
 	}
 
 	#[test]
@@ -1333,7 +1366,7 @@ mod tests {
 		e.init();
 		e.reset();
 		for &(p, d) in &[(1, 150), (6, 60), (1, 150)] {
-			if e.load(p, d, false, 120.0) {
+			if e.load(p, d, false, 0) {
 				if e.phn_c == 6 { break; }
 				while e.is_running() { e.sample(120.0); }
 			}

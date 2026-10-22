@@ -21,7 +21,6 @@ use _vtm::m_sr;
 use hound;
 
 use crate::_utils::cbuf;
-use crate::_utils::PHNIDToPhoneme;
 use crate::_dread::dictreader;
 use crate::_lts::lts;
 use crate::_utt::{Utterance, Boundary, PAU};
@@ -57,75 +56,33 @@ fn parse_args() -> Result<Opts, String> {
 
 // the engines that run across sentences
 struct Engines {
-	synth:   _synth::engine,
-	dur:     _duration_new::model,
-	pit:     _smooth::model,
-	started: bool,
+	synth:    _synth::engine,
+	contour:  _f0::Contour,
+	next_seg: usize,		// stream index for the next segment
+	started:  bool,
 }
 
-fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, pitch: f32) {
+fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: bool, seg: usize) {
 	// feed one phone into the synthesizer and write out what it plays
-	if eng.synth.load(phone, dur_ms.round() as i32, stressed, pitch) {
+	if eng.synth.load(phone, dur_ms.round() as i32, stressed, seg) {
 		while eng.synth.is_running() {
-			eng.pit.set(eng.synth.pit_c);
-			let f0 = eng.pit.step();
+			let (s, f) = eng.synth.position();
+			let f0 = eng.contour.hz_at(s, f);
 			writer.write_sample(eng.synth.sample(f0)).unwrap();
 		}
 	}
 }
 
-fn cart_pitch(tokens: &[u8], eng: &mut Engines) -> Vec<(u8, f32)> {
-	// run the trained model over the sentence for its pitch: (phone, pitch) per phone and punctuation
-	let mut tk: Vec<u8> = tokens.to_vec();
-	tk.push(90);
-	let mut out: Vec<(u8, f32)> = Vec::new();
-	let mut pa: u8;
-	let mut pb: u8;
-	let mut sa: u8;
-	let mut sb: u8;
-	let mut past_accent: u8 = 0;
-	let mut curr_accent: u8 = 0;
-	let phn_sz: usize = tk.len();
-	let mut phn_cnt: usize = 0;
-	let mut next = tk.iter();
-
-	eng.dur.reset();
-	while eng.dur.is_not_last() {
-		pa = 0;
-		pb = 0;
-		sa = 0;
-		sb = 0;
-		if let Some(&t) = next.next() {
-			(pa, pb, sa, sb) = PHNIDToPhoneme(t);
-			phn_cnt += 1;
-		}
-		loop {
-			eng.dur.step(pa, sa, past_accent, curr_accent, phn_cnt, phn_sz);
-			if eng.dur.is_ready() {
-				let (_, phone, _, _, pitch) = eng.dur.fetch();
-				if phone != 50 && phone != 55 {
-					out.push((phone, pitch));
-				} else {
-					past_accent = curr_accent;
-					// content words are accented, function words are left alone
-					curr_accent = if phone == 50 { 1 } else { 0 };
-				}
-			}
-			pa = pb;
-			sa = sb;
-			pb = 0;
-			sb = 0;
-			if pa == 0 { break; }
-		}
-	}
-	out
+fn take_seg(eng: &mut Engines) -> usize {
+	let s = eng.next_seg;
+	eng.next_seg += 1;
+	s
 }
 
 fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engines, writer: &mut Wav) {
 	// synthesize one sentence of phone tokens
 	let mut utt = Utterance::build(tokens, texts);
 	_dur::assign(&mut utt, opts.rate);
-	let pitches = cart_pitch(tokens, eng);
 
 	if opts.trace {
 		for w in &utt.words {
@@ -133,39 +90,52 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 		}
 	}
 
-	// pitch for each segment, and for each phrase end, from the trained model's output order
-	let mut seg_pitch: Vec<f32> = Vec::new();
-	let mut end_pitch: Vec<f32> = Vec::new();
-	for &(phone, pitch) in &pitches {
-		if (51..=54).contains(&phone) { end_pitch.push(pitch); } else if phone != 0 { seg_pitch.push(pitch); }
-	}
-	let last_pitch = seg_pitch.last().copied().unwrap_or(110.0);
-
 	if !eng.started {
 		eng.started = true;
-		play(eng, writer, PAU, _dur::START_PAUSE_MS, false, seg_pitch.first().copied().unwrap_or(110.0));
+		let seg = take_seg(eng);
+		play(eng, writer, PAU, _dur::START_PAUSE_MS, false, seg);
 	}
 
-	for (pi, ph) in utt.phrases.iter().enumerate() {
+	// stream indices: the segments of each phrase, then its release and pause
+	let mut stream: Vec<usize> = vec![0; utt.segs.len()];
+	let mut ends: Vec<(usize, usize)> = Vec::new();		// (release, pause) per phrase
+	for ph in &utt.phrases {
+		let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
+		for i in segs { stream[i] = take_seg(eng); }
+		if ph.end != Boundary::None {
+			let r = take_seg(eng);
+			let p = take_seg(eng);
+			ends.push((r, p));
+		}
+	}
+	eng.contour.add_utterance(&utt, &stream);
+
+	let mut end_i = 0;
+	for ph in &utt.phrases {
 		let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 		for i in segs.clone() {
 			let s = &utt.segs[i];
-			let pitch = seg_pitch.get(i).copied().unwrap_or(last_pitch);
-			if opts.trace { eprintln!("TRACE {} {} dur={:.0} f0={:.0} rules={}", s.phone, s.stress, s.dur_ms, pitch, s.rules.join(",")); }
-			play(eng, writer, s.phone, s.dur_ms, s.stress != 0, pitch);
+			if opts.trace {
+				let tg: Vec<String> = eng.contour.targets_of(stream[i]).iter().map(|t| format!("{:?}@{:.2}:{:+.1}", t.kind, t.frac, t.st)).collect();
+				eprintln!("TRACE {} {} seg={} dur={:.0} rules={} targets={}", s.phone, s.stress, stream[i], s.dur_ms, s.rules.join(","), tg.join(" "));
+			}
+			play(eng, writer, s.phone, s.dur_ms, s.stress != 0, stream[i]);
 		}
 		if ph.end != Boundary::None {
 			// phrase-end release, then the pause
-			let pitch = end_pitch.get(pi).copied().unwrap_or(last_pitch);
+			let (r, p) = ends[end_i];
+			end_i += 1;
 			let release = match utt.segs[segs.end - 1].phone {
 				11|36 => 49,			// is alveolar. use IXP release
 				_     => 48,			// otherwise, use AXP release
 			};
 			let pause = _dur::pause_after(ph.end, opts.rate);
-			if opts.trace { eprintln!("TRACE {} 0 dur={:.0} f0={:.0} rules=release", release, _dur::RELEASE_MS, pitch); }
-			if opts.trace { eprintln!("TRACE {} 0 dur={:.0} f0={:.0} rules=pause", PAU, pause, pitch); }
-			play(eng, writer, release, _dur::RELEASE_MS, false, pitch);
-			play(eng, writer, PAU, pause, false, pitch);
+			if opts.trace {
+				eprintln!("TRACE {} 0 seg={} dur={:.0} rules=release", release, r, _dur::RELEASE_MS);
+				eprintln!("TRACE {} 0 seg={} dur={:.0} rules=pause", PAU, p, pause);
+			}
+			play(eng, writer, release, _dur::RELEASE_MS, false, r);
+			play(eng, writer, PAU, pause, false, p);
 		}
 	}
 }
@@ -205,15 +175,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// initialize engines
 	let mut eng = Engines {
-		synth: _synth::engine::new(),
-		dur:   _duration_new::model::new(),
-		pit:   _smooth::model::new(),
-		started: false,
+		synth:    _synth::engine::new(),
+		contour:  _f0::Contour::new(),
+		next_seg: 0,
+		started:  false,
 	};
 	let mut text_engine  = _text::engine::new();
 	let mut lts_engine   = _lts::pvec::new();
 	eng.synth.init();
-	eng.pit.reset();
 	eng.synth.reset();
 
 	// current sentence: phone tokens and the text of each word
@@ -338,17 +307,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// if formant synth not done, let's finish up the synthesis
 	let mut finish_off = true;
 	while eng.synth.is_not_last() {
-		let ready = if finish_off {
+		let seg = take_seg(&mut eng);
+		if finish_off {
 			finish_off = false;
-			eng.synth.load(48, 100, false, 50.0)
+			play(&mut eng, &mut writer, 48, 100.0, false, seg);
 		} else {
-			eng.synth.load(0, 50, false, 50.0)
-		};
-		if ready {
-			while eng.synth.is_running() {
-				let f0 = eng.pit.step();
-				writer.write_sample(eng.synth.sample(f0)).unwrap();
-			}
+			play(&mut eng, &mut writer, 0, 50.0, false, seg);
 		}
 	}
 

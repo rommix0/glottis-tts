@@ -177,10 +177,12 @@ impl Contour {
 	pub fn hz_at(&self, seg: usize, frac: f32) -> f32 {
 		let pos = seg as f32 + frac;
 		// order by segment first, so the end of one segment comes before the start of the next
-		let st = match self.targets.iter().position(|t| (t.seg, t.frac) > (seg, frac)) {
-			None => self.targets.last().map(|t| t.st).unwrap_or(0.0),
-			Some(0) => self.targets[0].st,
-			Some(j) => {
+		let j = self.targets.partition_point(|t| (t.seg, t.frac) <= (seg, frac));
+		let st = match j {
+			_ if self.targets.is_empty() => 0.0,
+			_ if j == self.targets.len() => self.targets[j - 1].st,
+			0 => self.targets[0].st,
+			j => {
 				let (a, b) = (&self.targets[j - 1], &self.targets[j]);
 				if a.hold {
 					a.st
@@ -191,7 +193,8 @@ impl Contour {
 				}
 			},
 		};
-		let bump = self.bumps.iter().find(|b| b.seg == seg && frac < b.frac_end).map(|b| b.st * (1.0 - frac / b.frac_end)).unwrap_or(0.0);
+		let k = self.bumps.partition_point(|b| b.seg < seg);
+		let bump = self.bumps.get(k).filter(|b| b.seg == seg && frac < b.frac_end).map(|b| b.st * (1.0 - frac / b.frac_end)).unwrap_or(0.0);
 		(REF_HZ * 2.0_f32.powf((st + bump) / 12.0)).clamp(MIN_HZ, MAX_HZ)
 	}
 }
