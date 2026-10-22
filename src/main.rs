@@ -1,9 +1,7 @@
 mod _utils;
 mod _text;
-mod _duration_new;
 //mod _duration;
 //mod _pitch;
-mod _smooth;
 mod _lts;
 mod _vtm;
 mod _vtbl;
@@ -116,7 +114,7 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 		for i in segs.clone() {
 			let s = &utt.segs[i];
 			if opts.trace {
-				let tg: Vec<String> = eng.contour.targets_of(stream[i]).iter().map(|t| format!("{:?}@{:.2}:{:+.1}", t.kind, t.frac, t.st)).collect();
+				let tg: Vec<String> = eng.contour.targets_of(stream[i]).iter().map(|t| format!("{:?}@{:.2}:{:+.1}/{:+.1}", t.kind, t.frac, t.st, t.base)).collect();
 				eprintln!("TRACE {} {} seg={} dur={:.0} rules={} targets={}", s.phone, s.stress, stream[i], s.dur_ms, s.rules.join(","), tg.join(" "));
 			}
 			play(eng, writer, s.phone, s.dur_ms, s.stress != 0, stream[i]);

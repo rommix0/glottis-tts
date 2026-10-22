@@ -42,7 +42,7 @@ fn is_legal_onset(c: &[u8]) -> bool {
 		[S, P | T | K | M | N | L | W | F] => true,
 		[P | B | K | G | F, L | R] => true,
 		[T | D | TH | SH, R] => true,
-		[T | D | K | G | TH | S, W] => true,
+		[T | D | K | G | TH, W] => true,
 		[P | B | K | G | F | V | M | HH, Y] => true,
 		[S, P, L | R | Y] => true,
 		[S, T, R] => true,
