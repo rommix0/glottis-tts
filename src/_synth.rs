@@ -31,6 +31,13 @@ const min_closure: i32 = thirty_ms;
 // longest share of a vowel the transition into it may take
 const ramp_share: f32 = 0.6;
 
+fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
+	// interpolate two amplitudes (dB, 0 is off) in linear gain, the same scale the VTM uses
+	let gain = |db: f32| if db <= 0.0 { 0.0 } else { 0.5_f32.powf((87.0 - db) / 6.0) };
+	let g = gain(a) * (1.0 - y) + gain(b) * y;
+	if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * g.log2() }
+}
+
 pub struct engine {
 	vtm_eng: vtm,
 	marker_A: i32,
@@ -943,7 +950,7 @@ impl engine {
 		self.AB_reg = self.AB_reg_src * (1.0 - y) + self.AB_reg_trg * y;
 		self.AF_reg = (self.AF_reg_src * (1.0 - y) + self.AF_reg_trg  * y) * self.master_fade * self.closure * self.lin2decay(self.burst_INIT) * self.sib_ramp;
 		self.AH_reg = (self.AH_reg_src * (1.0 - y) + self.AH_reg_trg  * y) * self.master_fade * self.closure * self.lin2decay(self.burst_VOT);
-		self.AV_reg = (self.AV_reg_src * (1.0 - y) + self.AV_reg_trg  * y) * self.master_fade * self.closure;
+		self.AV_reg = lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, y) * self.master_fade * self.closure;
 	}
 	fn update_A_to_B(&mut self) {
 		let mut dist = self.marker_B - self.marker_A;
@@ -1308,6 +1315,15 @@ mod tests {
 			}
 		}
 		out
+	}
+
+	#[test]
+	fn amp_ramp_is_linear_in_gain() {
+		// halfway from silence to 60 dB is half the gain (54 dB), not 30 dB
+		assert!((lerp_db_gain(0.0, 60.0, 0.5) - 54.0).abs() < 0.01);
+		assert_eq!(lerp_db_gain(0.0, 60.0, 0.0), 0.0);
+		assert!((lerp_db_gain(0.0, 60.0, 1.0) - 60.0).abs() < 0.01);
+		assert!((lerp_db_gain(50.0, 50.0, 0.3) - 50.0).abs() < 0.01);
 	}
 
 	#[test]
