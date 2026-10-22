@@ -62,6 +62,9 @@ const ASP_BEFORE_SONORANT: f32 = 0.5;
 // after aspiration, voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it (ms)
 const VOICE_ONSET_MS: f32 = 10.0;
 const ASP_OVERLAP_MS: f32 = 20.0;
+// the open glottis damps F1 and F2 during aspiration: bandwidth added (Hz), fading out with the aspiration
+const ASP_B1_WIDEN: f32 = 400.0;
+const ASP_B2_WIDEN: f32 = 70.0;
 // voiced stop closure after a voiced sound: the voice bar fades this much (dB) over the closure
 const VOICE_BAR_FADE_DB: f32 = 6.0;
 
@@ -87,7 +90,7 @@ fn locus(x: u8) -> Option<(f32, f32)> {
 		37 | 12                    => Some((0.5, 900.0)),		// dental: th dh
 		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0)),	// alveolar: d t n s z dx
 		35 | 44 | 10 | 22          => Some((0.3, 1500.0)),		// postalveolar: sh zh ch jh
-		17 | 23 | 28               => Some((0.75, 600.0)),		// velar: g k ng
+		17 | 23 | 28               => Some((0.5, 1100.0)),		// velar: g k ng
 		_                          => None,
 	}
 }
@@ -1456,8 +1459,12 @@ impl engine {
 		self.vtm_eng.F1  = self.F1_reg;
 		self.vtm_eng.F2  = self.F2_reg;
 		self.vtm_eng.F3  = self.F3_reg;
-		self.vtm_eng.B1  = self.B1_reg;
-		self.vtm_eng.B2  = self.B2_reg;
+		// aspiration: the open glottis damps F1 and F2, less so as voicing takes over
+		let damp = if self.asp_db <= 0.0 { 0.0 } else if self.counter < 0 { 1.0 } else {
+			(1.0 - self.counter as f32 / samples(ASP_OVERLAP_MS) as f32).max(0.0)
+		};
+		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
+		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN;
 		self.vtm_eng.B3  = self.B3_reg;
 		if self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A {
 			// a lip release: low and falling whatever the vowel
@@ -1935,7 +1942,8 @@ mod tests {
 	fn consonant_f2_follows_the_vowel() {
 		// the consonant's F2 on each side moves with the neighbouring vowel's F2, by its place's slope
 		let f2 = |v: u8| formant_tbl[v as usize * 31 + 6] as f32;
-		for &(c, slope) in &[(9u8, 0.8f32), (11, 0.4), (17, 0.75), (26, 0.8), (27, 0.4), (34, 0.4)] {
+		for &c in &[9u8, 11, 17, 26, 27, 34] {
+			let slope = locus(c).unwrap().0;
 			let (_, b_iy, _) = cons_targets(6, c, 21);
 			let (_, b_uw, _) = cons_targets(6, c, 39);
 			let want = slope * (f2(21) - f2(39));
@@ -2056,5 +2064,27 @@ mod tests {
 		};
 		let (b, d) = (peak(9), peak(11));
 		assert!(b < 1.15 * d, "peak {} after b, {} after d", b, d);
+	}
+
+	#[test]
+	fn aspiration_damps_f1() {
+		// the open glottis damps F1 (and a little F2) during aspiration; the vowel's own part is back to normal
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let (mut asp, mut voiced) = (Vec::new(), Vec::new());
+		for &(p, d) in &[(PAU, 50), (23, 100), (1, 200), (48, 100), (0, 50)] {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					let wide = (e.vtm_eng.B1 - e.B1_reg, e.vtm_eng.B2 - e.B2_reg);
+					if e.phn_c == 1 && e.counter < 0 { asp.push(wide); }
+					if e.phn_c == 1 && e.counter > ms(ASP_OVERLAP_MS + 5.0) { voiced.push(wide); }
+				}
+			}
+		}
+		assert!(!asp.is_empty());
+		assert!(asp.iter().all(|w| w.0 >= ASP_B1_WIDEN - 20.0 && w.1 >= ASP_B2_WIDEN - 20.0), "aspiration not damped: {:?}", asp[0]);
+		assert!(voiced.iter().all(|w| w.0 < ASP_B1_WIDEN / 2.0), "voiced vowel still damped: {:?}", voiced[0]);
 	}
 }
