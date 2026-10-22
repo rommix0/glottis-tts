@@ -146,6 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					lts_engine.reset();
 					wbuf.setcurs(yyreset);
 					prev = 0;
+					let mut wb_written: bool = false;
 					while lts_engine.is_not_last() {
 						cin = wbuf.read();
 						wbuf.advance();
@@ -169,9 +170,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 								pbuf.write(93);
 							} else {
 								// normal case
-								pbuf.write(90);
 								pout = lts(l4, l3, l2, l1, c, r1, r2, r3, r4);
 								if pout != 31 && pout != prev {
+									// content word boundary once, before the word's first phoneme
+									if !wb_written {
+										pbuf.write(90);
+										wb_written = true;
+									}
 									// write out phoneme when not null and not a run-on
 									pbuf.write(pout);
 									prev = pout;
