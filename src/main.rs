@@ -12,6 +12,7 @@ mod _dict;
 mod _dread;
 mod _utt;
 mod _dur;
+mod _f0;
 
 use std::env;
 use std::fs::File;
