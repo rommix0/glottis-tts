@@ -44,6 +44,10 @@ const BURST_SIBILANT_DB: f32 = -6.0;
 const UNRELEASED_SHARE: f32 = 0.5;
 // sibilant fricatives fade in and out over this long (ms), centred on their boundary with a vowel or sonorant
 const SIB_RAMP_MS: f32 = 40.0;
+// a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
+const NASAL_EDGE_MS: f32 = 15.0;
+// the vowel after a nasal reaches its formants this long (ms) after the release
+const NASAL_RELEASE_MS: f32 = 30.0;
 // aspiration level (AH, dB) by place
 const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
 // aspiration's share before an unstressed vowel or a sonorant (none after a sibilant in the same word)
@@ -1001,7 +1005,6 @@ impl engine {
 
 		// update the interpolator (except amps, those will be done elsewhere)
 		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;
-		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
 		self.F1_reg  = self.F1_reg_src  * (1.0 - y) + self.F1_reg_trg  * y;
 		self.F2_reg  = self.F2_reg_src  * (1.0 - y) + self.F2_reg_trg  * y;
 		self.F3_reg  = self.F3_reg_src  * (1.0 - y) + self.F3_reg_trg  * y;
@@ -1019,6 +1022,9 @@ impl engine {
 			y = self.lin2smooth(rr);
 		}
 
+
+		// the nasal coupling switches with the amplitudes
+		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
 
 		// update the interpolator for the parallel amps
 		self.A2_reg  = lerp_db_gain(self.A2_reg_src, self.A2_reg_trg, y);
@@ -1076,7 +1082,6 @@ impl engine {
 		self.interp = 0.0;
 		// source (A)
 		self.RD_reg_src  = self.RD_reg;
-		self.NZP_reg_src = self.NZP_reg;
 		self.F1_reg_src  = self.F1_reg;
 		self.F2_reg_src  = self.F2_reg;
 		self.F3_reg_src  = self.F3_reg;
@@ -1085,7 +1090,6 @@ impl engine {
 		self.B3_reg_src  = self.B3_reg;
 		// target (B)
 		self.RD_reg_trg  = self.RD_B_src;
-		self.NZP_reg_trg = self.NZP_B_src;
 		self.F1_reg_trg  = self.F1_B_src;
 		self.F2_reg_trg  = self.F2_B_src;
 		self.F3_reg_trg  = self.F3_B_src;
@@ -1198,7 +1202,10 @@ impl engine {
 				//   + fric  -> 40 ms (~30-50ms)
 				//   + sonor -> 50 ms (~40-60ms) [default]
 				//==============================================
-				if self.pft_c & 0x1 == 0 {
+				if self.pft_c & 0x10 != 0 {
+					// nasal: the formants arrive by the closure, the murmur holds
+					self.marker_A = 0;
+				} else if self.pft_c & 0x1 == 0 {
 					// fricative transition
 					if self.pft_r1 & 0x1C10 != 0 {
 						// shorten if fricative follows sonorant (-20ms)
@@ -1210,14 +1217,8 @@ impl engine {
 						self.marker_A = forty_ms;
 					}
 				} else if self.pft_c & 0x1C11 != 0 {
-					// vowel/sonorant transition
-					if self.pft_c & 0x10 != 0 {
-						// if phoneme is a nasal, set marker_A to 0
-						self.marker_A = 0;
-					} else {
-						// otherwise
-						self.marker_A = fifty_ms;
-					}
+					// vowel transition, quicker after a nasal's release
+					self.marker_A = if self.pft_l1 & 0x10 != 0 { samples(NASAL_RELEASE_MS) } else { fifty_ms };
 				} else {
 					// otherwise, get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
@@ -1282,6 +1283,11 @@ impl engine {
 			if self.after_stop {
 				// voicing builds up quickly after a release
 				self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
+			}
+			let nasal = |f: u16| f & 0x10 != 0;
+			if nasal(self.pft_c) || nasal(self.pft_l1) {
+				// a nasal's closure and release are quick
+				self.amp_len = samples(NASAL_EDGE_MS);
 			}
 			self.amp_start = 0;
 			let sibilant = |f: u16| f & 0x8200 == 0x200;
@@ -1789,5 +1795,36 @@ mod tests {
 			assert!((z - last).abs() < 10.0, "zero jumps {} -> {}", last, z);
 			last = z;
 		}
+	}
+
+	#[test]
+	fn nasal_edges_are_fast() {
+		// AA-M-AA: the nasal coupling and the voicing level switch within NASAL_EDGE_MS of each boundary
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut tr: Vec<(u8, i32, f32, f32)> = Vec::new();		// (phone, counter, coupling, AV)
+		let mut f1: Vec<(u8, i32, f32, f32)> = Vec::new();		// (phone, counter, F1, the phone's F1 target)
+		for &(p, d) in &[(PAU, 50), (1, 150), (26, 120), (1, 150), (48, 100), (0, 50)] {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					tr.push((e.phn_c, e.counter, e.vtm_eng.NC, e.AV_reg));
+					f1.push((e.phn_c, e.counter, e.F1_reg, e.F1_A_src));
+				}
+			}
+		}
+		let at = |p: u8, c: i32| *tr.iter().find(|x| x.0 == p && x.1 == c).unwrap();
+		let edge = ms(NASAL_EDGE_MS);
+		assert!(at(26, edge).2 > 0.99, "coupling {} at {} ms into the nasal", at(26, edge).2, NASAL_EDGE_MS);
+		// the vowel after the nasal: the later of the two AA samples at each counter value
+		let at_v = |c: i32| *tr.iter().filter(|x| x.0 == 1 && x.1 == c).last().unwrap();
+		assert!(at_v(edge).2 < 0.01, "coupling {} at {} ms into the vowel", at_v(edge).2, NASAL_EDGE_MS);
+		assert!((at_v(ms(40.0)).3 - at_v(edge).3).abs() < 1.0, "voicing {} at {} ms vs {} later", at_v(edge).3, NASAL_EDGE_MS, at_v(ms(40.0)).3);
+		// the formants reach the nasal by its closure, and the vowel's after its release
+		let m0 = f1.iter().find(|x| x.0 == 26 && x.1 == 1).unwrap();
+		assert!((m0.2 - m0.3).abs() < 10.0, "F1 {} at the closure, nasal's {}", m0.2, m0.3);
+		let v = f1.iter().filter(|x| x.0 == 1 && x.1 == ms(NASAL_RELEASE_MS)).last().unwrap();
+		assert!((v.2 - v.3).abs() < 10.0, "F1 {} {} ms after the release, vowel's {}", v.2, NASAL_RELEASE_MS, v.3);
 	}
 }
