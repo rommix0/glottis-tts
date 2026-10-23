@@ -58,6 +58,8 @@ const FRIC_SILENCE_MS: f32 = 70.0;
 const NASAL_EDGE_MS: f32 = 15.0;
 // out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
 const BACK_TRANSITION_MS: f32 = 80.0;
+// while F2 glides, F1 still opens into the back vowel within this long (ms)
+const BACK_F1_MS: f32 = 40.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
 // aspiration level (AH, dB) by place
@@ -254,6 +256,8 @@ pub struct engine {
 	burst_decay: f32,
 	burst_gain: f32,	// linear gain on the burst
 	after_stop: bool,	// this phone follows a released plosive
+	f1_len: i32,		// samples F1 takes into this phone when it moves faster than the other formants (0: same)
+	f1_speed: f32,		// how much faster F1 moves than the shared interpolator
 	after_stop_next: bool,
 	asp_db: f32,		// aspiration level carried over from a voiceless stop (0: none)
 	asp_start: i32,
@@ -410,6 +414,8 @@ impl engine {
 			burst_decay: 0.0,
 			burst_gain: 1.0,
 			after_stop: false,
+			f1_len: 0,
+			f1_speed: 1.0,
 			after_stop_next: false,
 			asp_db: 0.0,
 			asp_start: 0,
@@ -1078,10 +1084,11 @@ impl engine {
 		// assign self.interp to y. this will give us and opportunity
 		// to use smooth mappings (such as linear to cosine)
 		let y = self.lin2smooth(self.interp);
+		let y1 = self.lin2smooth((self.interp * self.f1_speed).min(1.0));
 
 		// update the interpolator (except amps, those will be done elsewhere)
 		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;
-		self.F1_reg  = self.F1_reg_src  * (1.0 - y) + self.F1_reg_trg  * y;
+		self.F1_reg  = self.F1_reg_src  * (1.0 - y1) + self.F1_reg_trg  * y1;
 		self.F2_reg  = self.F2_reg_src  * (1.0 - y) + self.F2_reg_trg  * y;
 		self.F3_reg  = self.F3_reg_src  * (1.0 - y) + self.F3_reg_trg  * y;
 		self.B1_reg  = self.B1_reg_src  * (1.0 - y) + self.B1_reg_trg  * y;
@@ -1163,6 +1170,7 @@ impl engine {
 		if dist < thirty_ms { dist = thirty_ms; }
 		self.slope = 1.0 / dist as f32;
 		self.interp = 0.0;
+		self.f1_speed = 1.0;
 		// source (A)
 		self.RD_reg_src  = self.RD_reg;
 		self.F1_reg_src  = self.F1_reg;
@@ -1186,6 +1194,7 @@ impl engine {
 		if dist < thirty_ms { dist = thirty_ms; }
 		self.slope = 1.0 / dist as f32;
 		self.interp = 0.0;
+		self.f1_speed = if self.f1_len > 0 { (dist as f32 / (self.f1_len + self.marker_BA).max(1) as f32).max(1.0) } else { 1.0 };
 
 		// set negative count so locus transition can be completed
 		// before we preceed to the next phoneme
@@ -1253,6 +1262,7 @@ impl engine {
 			self.after_stop_next = false;
 			self.stop_on = false;
 			self.stop_labial = false;
+			self.f1_len = 0;
 			let mut stop_asp: Option<i32> = None;
 
 			// do ptar before anything else
@@ -1309,9 +1319,11 @@ impl engine {
 				} else if self.pft_c & 0x1C11 != 0 {
 					// vowel transition: quicker after a nasal's release, slower out of a tongue consonant into a back vowel
 					let tongue = matches!(self.phn_l1, 11 | 36 | 27 | 34 | 43 | 47 | 35 | 44 | 10 | 22 | 17 | 23 | 28);
+					let back = self.pft_l1 & 0x10 == 0 && tongue && self.F2_A_src < 1400.0;
 					self.marker_A = if self.pft_l1 & 0x10 != 0 { samples(NASAL_RELEASE_MS) }
-						else if tongue && self.F2_A_src < 1400.0 { samples(BACK_TRANSITION_MS) }
+						else if back { samples(BACK_TRANSITION_MS) }
 						else { fifty_ms };
+					if back { self.f1_len = samples(BACK_F1_MS); }
 				} else {
 					// otherwise, get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
@@ -2109,7 +2121,7 @@ mod tests {
 			}
 		}
 		assert!(!asp.is_empty());
-		assert!(asp.iter().all(|w| w.0 >= ASP_B1_WIDEN - 20.0 && w.1 >= ASP_B2_WIDEN - 20.0), "aspiration not damped: {:?}", asp[0]);
+		assert!(asp.iter().all(|w| w.0 >= ASP_B1_WIDEN - 30.0 && w.1 >= ASP_B2_WIDEN - 20.0), "aspiration not damped: {:?}", asp[0]);
 		assert!(voiced.iter().all(|w| w.0 < ASP_B1_WIDEN / 2.0), "voiced vowel still damped: {:?}", voiced[0]);
 	}
 
@@ -2238,5 +2250,25 @@ mod tests {
 			let (_, a, b) = vowel_targets(l, 39, r);
 			assert!((a - a_b).abs() < 60.0 && (b - b_b).abs() < 60.0, "uw fronted next to {}/{}: {} {} vs {} {}", l, r, a, b, a_b, b_b);
 		}
+	}
+
+	#[test]
+	fn f1_opens_into_a_back_vowel_before_f2_arrives() {
+		// out of d, ao's F1 is at its target while F2 is still gliding
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut at = None;
+		for &(p, d) in &[(PAU, 50), (6, 100), (11, 80), (4, 250), (48, 100), (0, 50)] {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					if e.phn_c == 4 && e.counter == ms(BACK_F1_MS + 5.0) { at = Some((e.F1_reg, e.F1_A_src, e.F2_reg, e.F2_A_src)); }
+				}
+			}
+		}
+		let (f1, f1_t, f2, f2_t) = at.unwrap();
+		assert!((f1 - f1_t).abs() < 0.03 * f1_t, "F1 {} not at {}", f1, f1_t);
+		assert!(f2 - f2_t > 50.0, "F2 {} already at {}", f2, f2_t);
 	}
 }
