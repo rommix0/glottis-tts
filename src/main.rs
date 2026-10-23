@@ -3,6 +3,7 @@
 
 mod _utils;
 mod _text;
+mod _text_rules;
 mod _lts;
 mod _lts_tree;
 mod _morph;
