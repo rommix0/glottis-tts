@@ -56,6 +56,8 @@ const FRIC_SILENCE_MS: f32 = 70.0;
 const NASAL_EDGE_MS: f32 = 15.0;
 // out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
 const BACK_TRANSITION_MS: f32 = 80.0;
+// a vowel's F3 is this much (Hz) lower at its end before an r
+const RHOTIC_F3: f32 = 200.0;
 // while F2 glides, F1 still opens into the back vowel within this long (ms)
 const BACK_F1_MS: f32 = 40.0;
 // a back vowel whose own targets move this much (Hz, F1 or F2) starts that glide on time, not after the slow F2
@@ -854,7 +856,7 @@ impl engine {
 			if self.pft_l1 & 0x1C00 != 0 {
 				self.F3_A_src -= 150.0 * factor;
 			}
-			if self.pft_r1 & 0x1C00 != 0 {
+			if self.pft_r1 & 0x1C00 != 0 && self.pft_r1 & 0x800 == 0 {
 				self.F3_B_src -= 150.0 * factor;
 			}
 
@@ -897,9 +899,9 @@ impl engine {
 
 			// VOWEL RHOTICIZATION
 			if self.pft_r1 & 0x800 != 0 {
-				// rhoticize vowel
-				self.F3_A_src -= 250.0 * factor;
-				self.F3_B_src -= 250.0 * factor;
+				// the vowel takes on r-coloring as it moves into the r, not from its start, by the same amount
+				// stressed or not
+				self.F3_B_src -= RHOTIC_F3;
 			}
 
 			// WIDEN BANDWIDTH AFTER UNVOICED PLOSIVE
@@ -2326,6 +2328,31 @@ mod tests {
 			let o = v as usize * 31;
 			let (a, b) = (formant_tbl[o + 2], formant_tbl[o + 3]);
 			assert!(a >= 80 && b >= 75, "vowel {} Rd {} / {}", v, a, b);
+		}
+	}
+
+	#[test]
+	fn r_colors_only_the_end_of_a_vowel() {
+		// before r a vowel starts as before t and its F3 is RHOTIC_F3 lower only at its end, stressed or not
+		let f3 = |v: u8, c2: u8, st: bool| {
+			let mut e = engine::new();
+			e.init();
+			e.reset();
+			for &(q, d, s) in &[(PAU, 50, false), (6, 100, false), (23, 80, false), (v, 200, st), (c2, 80, false), (6, 100, false)] {
+				if e.load(q, d, s, 0, true) {
+					if e.phn_c == v { break; }
+					while e.is_running() { e.sample(120.0); }
+				}
+			}
+			(e.F3_A_src, e.F3_B_src)
+		};
+		for &v in &[1u8, 13, 21, 4] {
+			for &st in &[true, false] {
+				let ((ra, rb), (ta, tb)) = (f3(v, 33, st), f3(v, 36, st));
+				assert!((ra - ta).abs() < 1.0, "vowel {} starts at F3 {} before r, {} before t", v, ra, ta);
+				// reduction toward the neutral vowel scales the shift a little
+				assert!((tb - rb - RHOTIC_F3).abs() < 5.0, "vowel {} ends at F3 {} before r, {} before t", v, rb, tb);
+			}
 		}
 	}
 }
