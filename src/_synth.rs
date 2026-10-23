@@ -58,6 +58,8 @@ const NASAL_EDGE_MS: f32 = 15.0;
 const BACK_TRANSITION_MS: f32 = 80.0;
 // a vowel's F3 is this much (Hz) lower at its end before an r
 const RHOTIC_F3: f32 = 200.0;
+// out of a vowel an r reaches its formants within this long (ms)
+const R_ONSET_MS: f32 = 50.0;
 // while F2 glides, F1 still opens into the back vowel within this long (ms)
 const BACK_F1_MS: f32 = 40.0;
 // a back vowel whose own targets move this much (Hz, F1 or F2) starts that glide on time, not after the slow F2
@@ -1195,6 +1197,10 @@ impl engine {
 	fn update_B_to_Next(&mut self) {
 		// calculate transition slope here
 		let mut dist = self.marker_A + self.marker_BA;
+		if self.pft_c & 0x800 != 0 && self.pft_l1 & 0x1 != 0 {
+			// out of a vowel the tongue moves into an r quickly
+			dist = dist.min(samples(R_ONSET_MS));
+		}
 		if dist < thirty_ms { dist = thirty_ms; }
 		self.slope = 1.0 / dist as f32;
 		self.interp = 0.0;
@@ -2355,4 +2361,33 @@ mod tests {
 			}
 		}
 	}
+
+	// per sample (phone, F3, AV, the phone's own F3 A target) while rendering (phone, ms, stressed)
+	fn trace_f3(phones: &[(u8, i32, bool)]) -> Vec<(u8, f32, f32, f32)> {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut out = Vec::new();
+		for &(p, d, st) in phones {
+			if e.load(p, d, st, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					out.push((e.phn_c, e.F3_reg, e.AV_reg, e.F3_A_src));
+				}
+			}
+		}
+		out
+	}
+
+	#[test]
+	fn r_arrives_quickly_after_a_vowel() {
+		// out of a vowel, an r (final or not) reaches its F3 within R_ONSET_MS of its start
+		for &(v, r, next) in &[(4u8, 33u8, 48u8), (1, 33, 20), (1, 32, 21)] {
+			let out = trace_f3(&[(PAU, 50, false), (35, 90, false), (v, 140, true), (r, 110, false), (next, 80, false), (0, 50, false)]);
+			let rr: Vec<_> = out.iter().filter(|x| x.0 == r).collect();
+			let n = rr.iter().position(|x| x.1 <= x.3 + 10.0).unwrap();
+			assert!(n as i32 <= samples(R_ONSET_MS) + 1, "r {} after vowel {} reaches F3 {} after {} ms", r, v, rr[0].3, n as f32 * 1000.0 / m_sr as f32);
+		}
+	}
+
 }
