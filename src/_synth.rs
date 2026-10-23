@@ -884,7 +884,6 @@ impl engine {
 					self.F2_B_src -= 150.0 * factor;
 				}
 				if self.pft_l1 & 0x100 != 0 {
-					self.F1_A_src += 70.0 * factor;
 					self.F2_A_src += 50.0 * factor;
 				}
 			}
@@ -902,12 +901,13 @@ impl engine {
 				self.B2_A_src += 50.0 * factor;
 			}
 
-			// BACK VOWEL ALVEOLARIZATION
+			// BACK VOWEL ALVEOLARIZATION (next to alveolar stops, nasals and fricatives, not l or r)
 			if self.pft_c == 0x000B {
-				if self.pft_l1 & 0x20 != 0 {
+				let alveolar = |f: u16| f & 0x20 != 0 && f & 0x0C00 == 0;
+				if alveolar(self.pft_l1) {
 					self.F2_A_src += 250.0 * factor;
 				}
-				if self.pft_r1 & 0x20 != 0 {
+				if alveolar(self.pft_r1) {
 					self.F2_B_src += 250.0 * factor;
 				}
 			}
@@ -2205,5 +2205,38 @@ mod tests {
 		assert!(want > 3.0);
 		assert!(((asp_before(1) - asp_before(21)) - want).abs() < 0.3, "cut {} before iy, want {}", asp_before(1) - asp_before(21), want);
 		assert_eq!(asp_before(1), ASP_DB[1], "aspiration before aa changed");
+	}
+
+	// (F1 at A, F2 at A, F2 at B) of stressed vowel v between consonants c1 and c2
+	fn vowel_targets(c1: u8, v: u8, c2: u8) -> (f32, f32, f32) {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		for &(q, d, st) in &[(PAU, 50, false), (6, 100, false), (c1, 80, false), (v, 200, true), (c2, 80, false), (6, 100, false)] {
+			if e.load(q, d, st, 0, true) {
+				if e.phn_c == v { break; }
+				while e.is_running() { e.sample(120.0); }
+			}
+		}
+		(e.F1_A_src, e.F2_A_src, e.F2_B_src)
+	}
+
+	#[test]
+	fn velars_do_not_lower_front_vowels() {
+		// eh keeps its height after a velar, so it stays apart from ae
+		let (f1_b, _, _) = vowel_targets(9, 13, 9);
+		let (f1_g, _, _) = vowel_targets(17, 13, 17);
+		assert!((f1_g - f1_b).abs() < 5.0, "eh F1 {} after g, {} after b", f1_g, f1_b);
+	}
+
+	#[test]
+	fn only_alveolar_obstruents_front_uw() {
+		let (_, a_b, b_b) = vowel_targets(9, 39, 9);
+		let (_, a_d, b_d) = vowel_targets(11, 39, 11);
+		assert!(a_d > a_b + 100.0 && b_d > b_b + 100.0, "uw not fronted next to d: {} {} vs {} {}", a_d, b_d, a_b, b_b);
+		for &(l, r) in &[(24u8, 25u8), (32, 33)] {
+			let (_, a, b) = vowel_targets(l, 39, r);
+			assert!((a - a_b).abs() < 60.0 && (b - b_b).abs() < 60.0, "uw fronted next to {}/{}: {} {} vs {} {}", l, r, a, b, a_b, b_b);
+		}
 	}
 }
