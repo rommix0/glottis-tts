@@ -1343,10 +1343,10 @@ impl engine {
 				if self.pft_c & 0x10 != 0 {
 					// nasal: the formants arrive by the closure, the murmur holds
 					self.marker_A = 0;
-				} else if self.pft_c & 0x1 == 0 {
+				} else if self.pft_c & 0x1C01 == 0 {
 					// fricative transition
 					if self.pft_r1 & 0x1C10 != 0 {
-						// shorten if fricative follows sonorant (-20ms)
+						// shorten if a sonorant consonant follows (-20ms)
 						self.marker_A = twenty_ms;
 					} else if self.pft_c & 0x200 != 0 {
 						// length sibilant a bit
@@ -1354,7 +1354,7 @@ impl engine {
 					} else {
 						self.marker_A = forty_ms;
 					}
-				} else if self.pft_c & 0x1C11 != 0 {
+				} else if self.pft_c & 0x1 != 0 {
 					// vowel transition: quicker after a nasal's release, slower out of a tongue consonant into a back vowel
 					let tongue = matches!(self.phn_l1, 11 | 36 | 27 | 34 | 43 | 47 | 35 | 44 | 10 | 22 | 17 | 23 | 28);
 					let back = self.pft_l1 & 0x10 == 0 && tongue && self.F2_A_src < 1400.0;
@@ -1363,7 +1363,7 @@ impl engine {
 						else { fifty_ms };
 					if back { self.f1_len = samples(BACK_F1_MS); }
 				} else {
-					// otherwise, get transition from formant table
+					// l, r, w and y: get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				}
 				self.marker_B = self.get_control_B_duration(self.C_B_src, self.pdr_c);
@@ -2556,5 +2556,17 @@ mod tests {
 		}
 		let end = out.iter().filter(|x| x.0 == 1).last().unwrap().1;
 		assert!(out.iter().filter(|x| x.0 == 48).all(|x| (x.1 - end).abs() < 0.02), "Rd falls from {} in the release", end);
+	}
+
+	#[test]
+	fn a_short_liquid_or_glide_arrives_early() {
+		// l, r, w and y are heard by where their formants go, so even a short one is mostly there by its middle
+		for &c in &[24u8, 32, 41, 42] {
+			let out = trace_moves(&[(PAU, 50, false), (1, 140, true), (c, 40, false), (1, 140, false), (48, 80, false), (0, 50, false)]);
+			let start = out.iter().find(|x| x.0 == c).unwrap().3;
+			let own: Vec<_> = out.iter().filter(|x| x.0 == c && x.1 >= 0).collect();
+			let (mid, end) = (own[own.len() / 2].3, own[own.len() - 1].3);
+			assert!((mid - end).abs() <= 0.1 * (start - end).abs(), "phone {}: F2 {} -> {} at its middle, {} at its end", c, start, mid, end);
+		}
 	}
 }
