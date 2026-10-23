@@ -5,7 +5,7 @@
 #########################################
 
   author: anthony c. bartman (@rommix0)
-  date:   4/6/2026 - 8/31/2026
+  date:   4/6/2026 - 10/23/2026
 
 */
 use core::f32::consts::PI;
