@@ -29,6 +29,12 @@ use crate::_utt::{Utterance, Boundary, PAU};
 
 type Wav = hound::WavWriter<BufWriter<File>>;
 
+// mono at the synth's rate, as 16-bit integers or 32-bit floats
+fn wav_spec(pcm16: bool) -> hound::WavSpec {
+	let (bits, format) = if pcm16 { (16, hound::SampleFormat::Int) } else { (32, hound::SampleFormat::Float) };
+	hound::WavSpec { channels: 1, sample_rate: m_sr as u32, bits_per_sample: bits, sample_format: format }
+}
+
 // command line options
 struct Opts {
 	text:  String,
@@ -36,15 +42,18 @@ struct Opts {
 	trace: bool,
 	text_only: bool,	// print the normalized text instead of speaking
 	seg_dump: Option<String>,	// file for the playing segment index of every sample
+	pcm16: bool,	// write 16-bit integer samples instead of 32-bit float
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None };
+	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(a) = args.next() {
 		if a == "--trace" {
 			opts.trace = true;
+		} else if a == "--16bit" {
+			opts.pcm16 = true;
 		} else if a == "--text" {
 			opts.text_only = true;
 		} else if a == "--seg-dump" {
@@ -114,7 +123,12 @@ fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: b
 		while eng.synth.is_running() {
 			let (s, f) = eng.synth.position();
 			let f0 = eng.contour.hz_at(s, f);
-			writer.write_sample(eng.synth.sample(f0)).unwrap();
+			let x = eng.synth.sample(f0);
+			if writer.spec().sample_format == hound::SampleFormat::Int {
+				writer.write_sample((x.clamp(-1.0, 1.0) * 32767.0).round() as i16).unwrap();
+			} else {
+				writer.write_sample(x).unwrap();
+			}
 			if let Some(d) = eng.dump.as_mut() { d.write_all(&(s as u32).to_le_bytes()).unwrap(); }
 		}
 	}
@@ -238,13 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	}
 
 	// setup wav file stuff here
-	let spec = hound::WavSpec {
-		channels: 1,
-		sample_rate: m_sr as u32,
-		bits_per_sample: 32,
-		sample_format: hound::SampleFormat::Float,
-	};
-	let mut writer = hound::WavWriter::create("tts_demo.wav", spec)?;
+	let mut writer = hound::WavWriter::create("tts_demo.wav", wav_spec(opts.pcm16))?;
 
 	// initialize ring buffers
 	let mut buf  = cbuf::new();				// text stream buffer
@@ -378,18 +386,41 @@ mod tests {
 
 	// render one sentence of tokens through the driver into samples
 	fn render(tokens: &[u8], texts: &[&str]) -> Vec<f32> {
-		let path = env::temp_dir().join(format!("tts_synth_test_{}.wav", std::process::id()));
-		let spec = hound::WavSpec { channels: 1, sample_rate: m_sr as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-		let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None };
+		let path = render_file(tokens, texts, false, "f");
+		let out: Vec<f32> = hound::WavReader::open(&path).unwrap().samples::<f32>().map(|x| x.unwrap()).collect();
+		let _ = std::fs::remove_file(&path);
+		out
+	}
+
+	// render one sentence of tokens into a WAV file, 16-bit or float
+	fn render_file(tokens: &[u8], texts: &[&str], pcm16: bool, tag: &str) -> std::path::PathBuf {
+		let path = env::temp_dir().join(format!("tts_synth_test_{}_{}.wav", std::process::id(), tag));
+		let mut writer = hound::WavWriter::create(&path, wav_spec(pcm16)).unwrap();
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);
 		finish(&mut eng, &mut writer);
 		writer.finalize().unwrap();
-		let out: Vec<f32> = hound::WavReader::open(&path).unwrap().samples::<f32>().map(|x| x.unwrap()).collect();
-		let _ = std::fs::remove_file(&path);
-		out
+		path
+	}
+
+	#[test]
+	fn sixteen_bit_output_is_the_float_output_rounded() {
+		// it is .
+		let (tokens, texts) = (&[95, 53, 76, 95, 53, 87, 92], &["it", "is"]);
+		let fp = render_file(tokens, texts, false, "f32");
+		let ip = render_file(tokens, texts, true, "i16");
+		let mut r = hound::WavReader::open(&ip).unwrap();
+		assert_eq!((r.spec().bits_per_sample, r.spec().sample_format), (16, hound::SampleFormat::Int));
+		let ints: Vec<i16> = r.samples::<i16>().map(|x| x.unwrap()).collect();
+		let floats: Vec<f32> = hound::WavReader::open(&fp).unwrap().samples::<f32>().map(|x| x.unwrap()).collect();
+		let _ = (std::fs::remove_file(&fp), std::fs::remove_file(&ip));
+		assert_eq!(ints.len(), floats.len());
+		assert!(ints.iter().any(|&x| x != 0), "16-bit output is silent");
+		for (i, (&a, &b)) in ints.iter().zip(&floats).enumerate() {
+			assert!((a as f32 - b.clamp(-1.0, 1.0) * 32767.0).abs() <= 0.5, "sample {}: {} for {}", i, a, b);
+		}
 	}
 
 	#[test]
