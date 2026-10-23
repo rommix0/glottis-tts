@@ -74,6 +74,10 @@ const ASP_OVERLAP_MS: f32 = 20.0;
 // much (dB) per kHz of the next vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
 const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
 const ASP_FRONT_FROM_HZ: f32 = 700.0;
+// h's breath level (AH dB) before a vowel, cut like aspiration before front vowels
+const H_DB: f32 = 18.0;
+// h's breath and the neighbouring vowel's voicing crossfade over this long (ms)
+const H_EDGE_MS: f32 = 20.0;
 // the open glottis damps F1 and F2 during aspiration: bandwidth added (Hz), fading out with the aspiration
 const ASP_B1_WIDEN: f32 = 400.0;
 const ASP_B2_WIDEN: f32 = 70.0;
@@ -996,6 +1000,7 @@ impl engine {
 				let [f1, f2, f3] = self.next_vowel_formants();
 				(self.F1_A_src, self.F2_A_src, self.F3_A_src) = (f1, f2, f3);
 				(self.F1_B_src, self.F2_B_src, self.F3_B_src) = (f1, f2, f3);
+				self.AH_src = H_DB - ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0;
 			}
 			return;
 		}
@@ -1402,6 +1407,9 @@ impl engine {
 			if nasal(self.pft_c) || nasal(self.pft_l1) {
 				// a nasal's closure and release are quick
 				self.amp_len = samples(NASAL_EDGE_MS);
+			}
+			if self.phn_c == 18 || self.phn_l1 == 18 {
+				self.amp_len = samples(H_EDGE_MS);
 			}
 			self.amp_start = 0;
 			let sibilant = |f: u16| f & 0x8200 == 0x200;
@@ -2270,5 +2278,24 @@ mod tests {
 		let (f1, f1_t, f2, f2_t) = at.unwrap();
 		assert!((f1 - f1_t).abs() < 0.03 * f1_t, "F1 {} not at {}", f1, f1_t);
 		assert!(f2 - f2_t > 50.0, "F2 {} already at {}", f2, f2_t);
+	}
+
+	#[test]
+	fn h_breathes_like_aspiration() {
+		// h's breath is no louder than a stop's aspiration, and softer before a front vowel
+		let mid = |v: u8| {
+			let t = noise_track(&[(PAU, 50), (18, 90), (v, 150)]);
+			t.iter().filter(|x| x.0 == 18 && x.1 == ms(60.0)).last().unwrap().3
+		};
+		let (iy, uw) = (mid(21), mid(39));
+		assert!(uw <= ASP_DB[0] + 1.0, "h before uw at {} dB", uw);
+		assert!(uw - iy > 5.0, "h before iy {} vs uw {}", iy, uw);
+	}
+
+	#[test]
+	fn h_breath_ends_early_in_its_vowel() {
+		let t = noise_track(&[(PAU, 50), (18, 90), (2, 150)]);
+		let ah = t.iter().filter(|x| x.0 == 2 && x.1 == ms(H_EDGE_MS + 5.0)).last().unwrap().3;
+		assert!(ah <= 0.0, "breath {} dB at {} ms into the vowel", ah, H_EDGE_MS + 5.0);
 	}
 }
