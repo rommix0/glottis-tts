@@ -102,7 +102,7 @@ impl noise {
 		// generate both white and fricative noise
 		self.xorshift();
 		let n: f32 = ((self.nxt >> 16) as u16 as i16) as f32 / 32767.0;
-		let mut f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
+		let f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
 		self.xp1 = f;
 		(n, f)
 	}
@@ -637,8 +637,6 @@ impl vtm {
 		/*########################
 		# CASCADE FILTER NETWORK #
 		########################*/
-		let mut yy: f32 = 0.0;
-
 		// adjust first three bandwidths
 		let mut bb1 = self.B1 * self.B1_ADJ;
 		let mut bb2 = self.B2 * self.B2_ADJ;
@@ -653,7 +651,7 @@ impl vtm {
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 
-		yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT, bnp);	// NASAL TRACT
+		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT, bnp);	// NASAL TRACT
 		yy = self.VR1.step(yy, self.F1, bb1);								// F1 - tongue height
 		yy = self.VR2.step(yy, self.F2, bb2);								// F2 - tongue fronting
 		yy = self.VR3.step(yy, self.F3, bb3);								// F3 - R-coloring
@@ -702,12 +700,9 @@ impl vtm {
 		#################*/
 
 		// get noise and glottal sound sources
-		let mut n:     f32 = 0.0;
-		let mut f:     f32 = 0.0;
-		let mut voice: f32 = 0.0;
-		let mut nmod:  f32 = 0.0;
-		(n, f) = self.noisegen.step();
-		(voice, nmod, self.RA) = self.glottal.step(self.F0, self.RD, 75.0, 0.0, 0.0);
+		let (n, mut f) = self.noisegen.step();
+		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, 75.0, 0.0, 0.0);
+		self.RA = ra;
 		voice *= 0.01;
 		f *= 0.6;
 

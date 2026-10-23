@@ -113,11 +113,7 @@ impl dictreader {
 		
 		// find the word using naive lookup method
 		// set up some variables
-		let mut x:       u8   = 0;
-		let mut y:       u8   = 0;
-		let mut strcomp: bool = false;
 		let mut found:   bool = false;
-		let mut length:  u8   = 0;
 
 		self.start = getLetterOffset(self.upperToLower(self.wordload[0]));
 		self.memcount = self.start;
@@ -135,13 +131,13 @@ impl dictreader {
 
 			// match loop
 			for wmode in 0..2 {
-				strcomp = true;
-				length  = 0;
+				let mut strcomp = true;
+				let mut length: u8 = 0;
 				self.counter  = 0;
 				self.memcount = self.start;
 				loop {
-					x = self.wordload[self.counter];
-					y = dictdat[self.memcount];
+					let mut x = self.wordload[self.counter];
+					let y = dictdat[self.memcount];
 					if wmode == 1 { x = self.upperToLower(x); }
 
 					self.counter  += 1;
@@ -149,35 +145,20 @@ impl dictreader {
 					if y == 0xFE { break; }
 					length += 1;
 
-					//println!("wordload: {}, dictdat: {}", x, y);
-
-					if x != y && strcomp { strcomp = false; }
+					if x != y { strcomp = false; }
 				}
-				if strcomp {
-					if length != self.wordlen {
-						strcomp = false;
-					} else {
-						found = true;
-						break;
-					}
+				if strcomp && length == self.wordlen {
+					found = true;
+					break;
 				}
-				/*if wmode == 0 {
-					println!("==============");
-					println!("TRY LOWERCASE!");
-					println!("==============");
-				}*/
 			}
 
 			// found routine
 			if found {
-				//println!("FOUND!");
 				break;
 			} else {
-				/*println!("");
-				println!("SKIP TO NEXT ONE!");
-				println!("");*/
 				loop {
-					y = dictdat[self.memcount];
+					let y = dictdat[self.memcount];
 					self.memcount += 1;
 					if y == 0xFF { break; }
 				}

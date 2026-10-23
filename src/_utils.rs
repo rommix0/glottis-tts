@@ -35,16 +35,6 @@ impl cbuf {
 		//println!("dequeue: t: {}, h: {}", self.tail, self.head);
 		output
 	}
-	pub fn erase(&mut self) {
-		// THIS CAN BE DANGEROUS WHEN USED INCORRECTLY
-		// only used for certain cases such as allophonic recoding.
-		//
-		// this erases the last written token by
-		// simply backing up the producer (head) pointer
-		if self.is_not_empty() {
-			self.head = (self.head - 1) & (self.size - 1);
-		}
-	}
 	pub fn recede(&mut self) {
 		self.tail = (self.tail - 1) & (self.size - 1);
 	}
@@ -69,16 +59,13 @@ impl cbuf {
 			}
 		}
 	}
-	pub fn len(&mut self) -> usize {
-		(self.head - self.tail) as usize
-	}
 }
 
 // convert phoneme tokens and separate phoneme and stress
 pub fn PHNIDToPhoneme(x: u8) -> (u8, u8, u8, u8) {
 	let mut stress_a: u8 = 0;
 	let mut stress_b: u8 = 0;
-	let mut phone_a:  u8 = 0;
+	let phone_a:  u8;
 	let mut phone_b:  u8 = 0;
 	match x {
 		0 => {

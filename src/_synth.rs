@@ -8,11 +8,9 @@
 
 use crate::_vtm::vtm;
 use crate::_vtm::m_sr;
-use crate::_vtm::FN_INIT;
 use crate::_vtbl::formant_tbl;
 use crate::_utt::PAU;
 
-const one_ms:    i32 = (m_sr as f32 * 0.001) as i32;
 const two_ms:    i32 = (m_sr as f32 * 0.002) as i32;
 const five_ms:   i32 = (m_sr as f32 * 0.005) as i32;
 const ten_ms:    i32 = (m_sr as f32 * 0.010) as i32;
@@ -766,7 +764,6 @@ impl engine {
 		self.C_B_src   = formant_tbl[offset_src+1] as u8;
 		self.RD_A_src  = formant_tbl[offset_src+2] as f32 / 100.0;
 		self.RD_B_src  = formant_tbl[offset_src+3] as f32 / 100.0;
-		//self.NZP_A_src = formant_tbl[offset_src+4] as f32;
 		self.NZP_A_src = self.fetch_nsl();
 		self.F1_A_src  = formant_tbl[offset_src+5] as f32;
 		self.F2_A_src  = formant_tbl[offset_src+6] as f32;
@@ -787,7 +784,6 @@ impl engine {
 		self.AF_src    = formant_tbl[offset_src+21] as f32;
 		self.AH_src    = formant_tbl[offset_src+22] as f32;
 		self.AV_src    = formant_tbl[offset_src+23] as f32;
-		//self.NZP_B_src = formant_tbl[offset_src+24] as f32;
 		self.NZP_B_src = self.NZP_A_src;
 		self.F1_B_src  = formant_tbl[offset_src+25] as f32;
 		self.F2_B_src  = formant_tbl[offset_src+26] as f32;
@@ -832,10 +828,9 @@ impl engine {
 		}
 	}
 	fn ftar(&mut self) {
-		let mut factor: f32 = 1.0;
 		if self.pft_c & 0x1 == 1 {
 			// STRESS COLORING FOR VOWEL
-			factor = if self.pst_c { 0.75 } else { 1.25 };
+			let factor: f32 = if self.pst_c { 0.75 } else { 1.25 };
 
 			// VELAR PINCHING RULE
 			if self.pft_l1 & 0x100 != 0 {
@@ -1335,16 +1330,11 @@ impl engine {
 					// otherwise, get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				}
-				//self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				self.marker_B = self.get_control_B_duration(self.C_B_src, self.pdr_c);
 				if self.pft_c & 0x1 != 0 {
 					// short vowels get a shorter transition so they still reach their target
 					self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
 				}
-			/*} else if self.phn_c == 47 {
-				// deal with alveolar flap here
-				self.marker_A = one_ms;
-				self.pdr_c = self.ms_to_samples(50);*/
 			} else {
 				// plosive or affricate: closure, then burst or frication;
 				// a voiceless stop's aspiration is carried into the next phone
@@ -1496,14 +1486,6 @@ impl engine {
 		// update the interpolator
 		self.update_registers()
 	}
-	/*pub fn float_to_16(x: f32) -> (u8, u8) {
-		// converts 32 bit float audio to 16-bit (as little endian u8 pair)
-		// stored here as a fallback if we need to grab 16-bit audio
-		let xx: i16 = (32767.0 * (x).clamp(-1.0, 1.0)) as i16;
-		let a: u8 = (xx & 0xFF) as u8;
-		let b: u8 = ((xx >> 8) & 0xFF) as u8;
-		(a, b)
-	}*/
 	pub fn sample(&mut self, f0: f32) -> f32 {
 		self.step();
 		self.vtm_eng.F0  = f0;
