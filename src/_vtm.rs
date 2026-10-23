@@ -248,8 +248,16 @@ impl LpPole {
 	}
 }
 
+// a glottal pulse is spread over this many samples either side of its exact time, so the voice plays this many
+// samples late
+const PULSE_HALF: usize = 4;
+const PULSE_RING: usize = 16;
+
 struct LfSource {
 	pos_in_period: f32,
+	last_inc: f32,				// period fraction the last sample advanced by
+	exc: [f32; PULSE_RING],		// excitation still to play, by absolute sample index
+	n: usize,					// absolute sample index
 	glottal: Biquad,
 	tilt: LpPole,
 	rng_state: u32,
@@ -260,6 +268,9 @@ impl LfSource {
 	pub fn new() -> LfSource {
 		LfSource {
 			pos_in_period: 0.0,
+			last_inc: 0.0,
+			exc: [0.0; PULSE_RING],
+			n: 0,
 			glottal: Biquad::new(),
 			tilt: LpPole::new(),
 			rng_state: 0x12345678,
@@ -270,6 +281,23 @@ impl LfSource {
 	pub fn reset(&mut self) {
 		self.glottal.reset();
 		self.tilt.reset();
+		self.exc = [0.0; PULSE_RING];
+	}
+	fn add_pulse(&mut self, ago: f32) {
+		// a band-limited unit impulse at (n - ago), written PULSE_HALF samples ahead of what plays now
+		let h = PULSE_HALF as f32;
+		let t = (self.n + PULSE_HALF) as f32 - ago;
+		let first = t.floor() as usize + 1 - PULSE_HALF;
+		let mut w = [0.0f32; 2 * PULSE_HALF];
+		for (k, wk) in w.iter_mut().enumerate() {
+			let x = (first + k) as f32 - t;
+			let sinc = if x.abs() < 1e-6 { 1.0 } else { (PI * x).sin() / (PI * x) };
+			*wk = sinc * (0.5 + 0.5 * (PI * x / h).cos());
+		}
+		let sum: f32 = w.iter().sum();
+		for (k, wk) in w.iter().enumerate() {
+			self.exc[(first + k) % PULSE_RING] += wk / sum;
+		}
 	}
 	fn xorshift(&mut self) -> f32 {
 		self.rng_state ^= self.rng_state << 13;
@@ -327,13 +355,17 @@ impl LfSource {
 		// determine noise modulation amount
 		let nmod = if self.pos_in_period >= 0.5 { 0.5 } else { 1.0 };
 
-		// create impulse if start of glottal pulse
-		let mut impulse = 0.0;
+		// start a glottal pulse at the exact time the period ended, somewhere since the last sample
 		if self.pos_in_period == 0.0 || self.pos_in_period >= 1.0 {
 			self.calc_fant(f0, rd);
+			let ago = if self.last_inc > 0.0 { ((self.pos_in_period - 1.0) / self.last_inc).clamp(0.0, 0.999) } else { 0.0 };
 			self.pos_in_period %= 1.0;
-			impulse = 1.0;
+			self.add_pulse(ago);
 		}
+		let slot = self.n % PULSE_RING;
+		let impulse = self.exc[slot];
+		self.exc[slot] = 0.0;
+		self.n += 1;
 
 		// construct glottal pulse
 		// and add diplophonic pulsing if need be
@@ -343,7 +375,8 @@ impl LfSource {
 		}
 
 		// advance position and return sample
-		self.pos_in_period += f0_final / m_sr as f32;
+		self.last_inc = f0_final / m_sr as f32;
+		self.pos_in_period += self.last_inc;
 		(sample, nmod, self.ra)
 	}
 }
@@ -763,5 +796,52 @@ mod tests {
 		assert!((gain(100.0, &ours) - gain(100.0, &raw)).abs() < 0.2, "low end moved");
 		let cut = gain(4000.0, &raw) - gain(4000.0, &ours);
 		assert!(cut > 0.5 && cut < 2.5, "4 kHz trimmed {} dB", cut);
+	}
+
+	// harmonic energy over the rest, in dB, between lo and hi Hz, of x at fundamental f0 (Hann-windowed DFT)
+	fn hnr(x: &[f32], f0: f32, lo: f32, hi: f32) -> f32 {
+		let n = x.len();
+		let (mut h, mut r) = (0.0f64, 0.0f64);
+		let k0 = (lo * n as f32 / m_sr as f32) as usize;
+		let k1 = (hi * n as f32 / m_sr as f32) as usize;
+		for k in k0..k1 {
+			let (mut re, mut im) = (0.0f64, 0.0f64);
+			for (i, &v) in x.iter().enumerate() {
+				let w = 0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos();
+				let ph = 2.0 * std::f64::consts::PI * (k * i) as f64 / n as f64;
+				re += w * v as f64 * ph.cos();
+				im -= w * v as f64 * ph.sin();
+			}
+			let hz = k as f32 * m_sr as f32 / n as f32;
+			let near = ((hz / f0) - (hz / f0).round()).abs() < 0.08;
+			if near { h += re * re + im * im } else { r += re * re + im * im }
+		}
+		10.0 * (h / r).log10() as f32
+	}
+
+	#[test]
+	fn glottal_pulses_keep_exact_time() {
+		// at a period that is no whole number of samples, the voice's highs are still harmonic
+		let mut g = LfSource::new();
+		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| g.step(120.0, 0.6, 0.0, 0.0, 0.0).0).collect();
+		let tail = &x[x.len() - 8192..];
+		let h = hnr(tail, 120.0, 2000.0, 4000.0);
+		assert!(h > 40.0, "2-4 kHz harmonics only {} dB over the rest", h);
+	}
+
+	#[test]
+	fn pulse_is_centred_on_its_time() {
+		let mut g = LfSource::new();
+		g.n = 100;
+		g.add_pulse(0.3);
+		let (mut sum, mut at) = (0.0f32, 0.0f32);
+		for j in 96..96 + PULSE_RING {
+			let w = g.exc[j % PULSE_RING];
+			sum += w;
+			at += w * j as f32;
+		}
+		assert!((sum - 1.0).abs() < 1e-4, "pulse sums to {}", sum);
+		let want = (100 + PULSE_HALF) as f32 - 0.3;
+		assert!((at / sum - want).abs() < 0.02, "pulse at {} not {}", at / sum, want);
 	}
 }
