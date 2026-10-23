@@ -2,6 +2,23 @@
 use crate::_utils::cbuf;
 // fixed-text rules (homographs, abbreviations, units, emoji) from tools/normalizer_rules.txt
 use crate::_text_rules::{RULES, FIRST};
+use crate::_dread::dictreader;
+
+// a Roman numeral from II to XXXIX written the standard way
+fn roman(s: &str) -> Option<u64> {
+	if s.len() < 2 || !s.bytes().all(|c| matches!(c, b'I' | b'V' | b'X')) { return None; }
+	let v = (1..=39).find(|&v| {
+		let tens = "X".repeat(v / 10);
+		let ones = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"][v % 10];
+		format!("{}{}", tens, ones) == s
+	})?;
+	Some(v as u64)
+}
+
+// a day number ends here: not followed by more of a number, an ordinal ending, a time or a fraction
+fn ends_day(c: u8, d: u8) -> bool {
+	!c.is_ascii_alphanumeric() && c != b'/' && !(matches!(c, b':' | b',' | b'.') && d.is_ascii_digit())
+}
 
 // text-number-homograph normalizer AIO (all-in-one)
 pub struct engine {
@@ -252,6 +269,307 @@ impl engine {
 		self.process_number(self.number, zero_oh, is_ordinal);
 	}
 
+	// CONTEXT RULE PART
+	// rules that look further around than a fixed pattern: run before the fixed-text rules and the lexer
+	fn ahead(buf: &mut cbuf, max: usize) -> Vec<u8> {
+		// up to max bytes from the cursor, stopping at the end of the text; the cursor stays put
+		let start = buf.getcurs();
+		let mut out = Vec::new();
+		while out.len() < max {
+			let c = buf.read();
+			if c == 0x00 { break; }
+			out.push(c);
+			buf.advance();
+		}
+		buf.setcurs(start);
+		out
+	}
+	fn prev_byte(buf: &mut cbuf) -> u8 {
+		buf.recede();
+		let c = buf.read();
+		buf.advance();
+		c
+	}
+	fn prev_word(buf: &mut cbuf) -> String {
+		// the word before the cursor (skipping spaces), as written
+		let start = buf.getcurs();
+		buf.recede();
+		while buf.read() == b' ' { buf.recede(); }
+		let mut w = Vec::new();
+		while buf.read().is_ascii_alphabetic() && w.len() < 32 {
+			w.push(buf.read());
+			buf.recede();
+		}
+		buf.setcurs(start);
+		w.reverse();
+		String::from_utf8(w).unwrap_or_default()
+	}
+	fn is_word(w: &str) -> bool {
+		// the dictionary has it, or it is a CMUdict word the letter-to-sound tree says right
+		if crate::_morph::known(w) { return true; }
+		let mut r = dictreader::new();
+		r.reset();
+		for b in w.bytes() { r.readIn(b); }
+		r.search()
+	}
+	fn words(&mut self, n: u64, ordinal: bool, zero_oh: bool) -> String {
+		// what the number reader says for n
+		let saved = std::mem::replace(&mut self.scratch_pad, cbuf::new());
+		self.process_number(n, zero_oh, ordinal);
+		let mut out = Vec::new();
+		while self.scratch_pad.is_not_empty() { out.push(self.scratch_pad.read()); self.scratch_pad.advance(); }
+		self.scratch_pad = saved;
+		String::from_utf8(out).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ")
+	}
+	fn year_words(&mut self, y: u64) -> String {
+		// 1999 nineteen ninety nine, 1905 nineteen oh five, 1900 nineteen hundred, 2005 two thousand five
+		if (2000..=2009).contains(&y) || y < 1000 { return self.words(y, false, false); }
+		let (hi, lo) = (y / 100, y % 100);
+		let lo = if lo == 0 { "hundred".to_string() } else if lo < 10 { format!("oh {}", self.words(lo, false, false)) } else { self.words(lo, false, false) };
+		format!("{} {}", self.words(hi, false, false), lo)
+	}
+	fn plural_last(s: &str) -> String {
+		// nineties, tens, hundreds, thousands
+		match s.strip_suffix("ty") { Some(t) => format!("{}ties", t), None => format!("{}s", s) }
+	}
+	fn digits(a: &[u8], from: usize) -> (u64, usize) {
+		// the value and length of the digit run at a[from..]
+		let mut v = 0u64;
+		let mut n = 0;
+		while from + n < a.len() && a[from + n].is_ascii_digit() && n < 18 {
+			v = v * 10 + (a[from + n] - b'0') as u64;
+			n += 1;
+		}
+		(v, n)
+	}
+	fn special_rule(&mut self, buf: &mut cbuf) -> bool {
+		const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august",
+			"september", "october", "november", "december"];
+		const SHORT: [(&str, usize); 13] = [("jan.", 0), ("feb.", 1), ("mar.", 2), ("apr.", 3), ("jun.", 5), ("jul.", 6),
+			("aug.", 7), ("sep.", 8), ("sept.", 8), ("oct.", 9), ("nov.", 10), ("dec.", 11), ("may", 4)];
+		// a numeral after one of these words is a plain number ("chapter four"); after another name, a ruler's
+		// ordinal ("henry the eighth")
+		const CARDINAL_AFTER: [&str; 16] = ["chapter", "part", "volume", "book", "act", "scene", "war", "phase", "level",
+			"stage", "round", "season", "episode", "apollo", "rocky", "section"];
+		let a = Self::ahead(buf, 48);
+		if a.is_empty() { return false; }
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let letter = |c: u8| c.is_ascii_alphabetic();
+		let space = |c: u8| matches!(c, b' ' | 0x08 | 0x0A);
+		let consume = |buf: &mut cbuf, n: usize| for _ in 0..n { buf.advance(); };
+		let prev = Self::prev_byte(buf);
+
+		// an opening double quote is not read out
+		if space(at(0)) {
+			let q = if at(1) == b'"' { 1 } else if at(1) == 0xE2 && at(2) == 0x80 && (0x9C..=0x9F).contains(&at(3)) { 3 } else { 0 };
+			if q > 0 && at(1 + q).is_ascii_alphanumeric() {
+				self.scratch_pad.write_text(" ");
+				consume(buf, 1 + q);
+				return true;
+			}
+		}
+
+		// a quote after a space: a decade ('90s), a word that keeps its apostrophe ('twas), or an opening quote
+		if space(at(0)) {
+			let q = if at(1) == b'\'' { 1 } else if a.get(1..4) == Some(&[0xE2, 0x80, 0x99][..]) || a.get(1..4) == Some(&[0xE2, 0x80, 0x98][..]) { 3 } else { 0 };
+			if q > 0 {
+				let r = 1 + q;
+				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's' && !letter(at(r + 3)) {
+					let w = self.words(((at(r) - b'0') * 10) as u64, false, false);
+					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
+					consume(buf, r + 3);
+					return true;
+				}
+				if letter(at(r)) {
+					let mut w = String::from("'");
+					let mut k = r;
+					while letter(at(k)) { w.push(at(k).to_ascii_lowercase() as char); k += 1; }
+					if Self::is_word(&w) {
+						self.scratch_pad.write_text(&format!(" {} ", w));
+						consume(buf, k);
+					} else {
+						self.scratch_pad.write_text(" ");
+						consume(buf, r);
+					}
+					return true;
+				}
+			}
+		}
+
+		// numbers at the start of a word
+		if at(0).is_ascii_digit() && !prev.is_ascii_digit() && !matches!(prev, b'.' | b',' | b'/' | b':') {
+			let (v1, n1) = Self::digits(&a, 0);
+			let after = |i: usize| !at(i).is_ascii_digit() && at(i) != b'/';
+			if at(n1) == b'/' {
+				let (v2, n2) = Self::digits(&a, n1 + 1);
+				let p2 = n1 + 1 + n2;
+				// a date: month / day / year
+				if n1 <= 2 && (1..=2).contains(&n2) && at(p2) == b'/' && (1..=12).contains(&v1) && (1..=31).contains(&v2) {
+					let (v3, n3) = Self::digits(&a, p2 + 1);
+					if (n3 == 2 || n3 == 4) && after(p2 + 1 + n3) {
+						let day = self.words(v2, true, false);
+						let year = if n3 == 4 { self.year_words(v3) } else if v3 < 10 { format!("oh {}", self.words(v3, false, false)) } else { self.words(v3, false, false) };
+						self.scratch_pad.write_text(&format!(" {} {} , {} ", MONTHS[v1 as usize - 1], day, year));
+						consume(buf, p2 + 1 + n3);
+						self.digit_prev = true;
+						return true;
+					}
+				}
+				// a proper fraction up to sixteenths
+				if n1 <= 2 && n2 <= 2 && n2 > 0 && after(p2) && v1 >= 1 && v1 < v2 && (2..=16).contains(&v2) {
+					let num = self.words(v1, false, false);
+					let den = match (v2, v1 > 1) {
+						(2, false) => "half".to_string(), (2, true) => "halves".to_string(),
+						(4, false) => "quarter".to_string(), (4, true) => "quarters".to_string(),
+						(_, plural) => { let d = self.words(v2, true, false); if plural { format!("{}s", d) } else { d } },
+					};
+					self.scratch_pad.write_text(&format!(" {} {} ", num, den));
+					consume(buf, p2);
+					return true;
+				}
+			}
+			let ends = |i: usize| !letter(at(i)) && !at(i).is_ascii_digit();
+			let plain = !(matches!(at(n1), b',' | b'\'' | b'_' | b'.' | b':') && at(n1 + 1).is_ascii_digit());
+			// a decade: the 1990s, the 2000s, the 90s (a possessive s may follow an apostrophe)
+			let s_at = if at(n1) == b's' { Some(n1) } else if at(n1) == b'\'' && at(n1 + 1) == b's' { Some(n1 + 1) } else { None };
+			if let Some(s) = s_at {
+				if v1 % 10 == 0 && ends(s + 1) && ((n1 == 4 && (1100..=2099).contains(&v1)) || (n1 == 2 && v1 >= 10)) {
+					let w = if n1 == 4 { self.year_words(v1) } else { self.words(v1, false, false) };
+					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
+					consume(buf, s + 1);
+					return true;
+				}
+			}
+			// a year: four plain digits from 1100 to 2099
+			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
+			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' && ((1100..=1999).contains(&v1) || (2010..=2099).contains(&v1)) {
+				let w = self.year_words(v1);
+				self.scratch_pad.write_text(&format!(" {} ", w));
+				consume(buf, 4);
+				self.digit_prev = true;
+				self.is_plural = true;
+				return true;
+			}
+		}
+
+		// money with a scale word: $1.5 million, $20 billion
+		if at(0) == b'$' && at(1).is_ascii_digit() {
+			let (v, n) = Self::digits(&a, 1);
+			let mut k = 1 + n;
+			let mut frac = String::new();
+			if at(k) == b'.' && at(k + 1).is_ascii_digit() {
+				k += 1;
+				while at(k).is_ascii_digit() { frac.push_str(&format!(" {}", self.words((at(k) - b'0') as u64, false, true))); k += 1; }
+			}
+			let mut j = k;
+			while space(at(j)) { j += 1; }
+			if j > k {
+				for scale in ["thousand", "million", "billion", "trillion"] {
+					let w = a.get(j..j + scale.len()).map(|s| s.eq_ignore_ascii_case(scale.as_bytes())).unwrap_or(false);
+					if w && !letter(at(j + scale.len())) {
+						let point = if frac.is_empty() { String::new() } else { format!(" point{}", frac) };
+						let num = self.words(v, false, false);
+						self.scratch_pad.write_text(&format!(" {}{} {} dollars ", num, point, scale));
+						consume(buf, j + scale.len());
+						return true;
+					}
+				}
+			}
+		}
+
+		// a month and a day: march third, jan. fifth
+		if space(at(0)) && letter(at(1)) {
+			let low: Vec<u8> = a.iter().map(|c| c.to_ascii_lowercase()).collect();
+			let mut found: Option<(usize, usize)> = None;
+			for (m, name) in MONTHS.iter().enumerate() {
+				if low[1..].starts_with(name.as_bytes()) { found = Some((m, name.len())); }
+			}
+			for (name, m) in SHORT {
+				if low[1..].starts_with(name.as_bytes()) && found.map_or(true, |(_, n)| name.len() > n) { found = Some((m, name.len())); }
+			}
+			if let Some((m, n)) = found {
+				let mut k = 1 + n;
+				if !letter(at(k)) && space(at(k)) {
+					while space(at(k)) { k += 1; }
+					let (d, nd) = Self::digits(&a, k);
+					if (1..=2).contains(&nd) && (1..=31).contains(&d) && ends_day(at(k + nd), at(k + nd + 1)) {
+						let day = self.words(d, true, false);
+						self.scratch_pad.write_text(&format!(" {} {} ", MONTHS[m], day));
+						consume(buf, k + nd);
+						self.digit_prev = true;
+						return true;
+					}
+				}
+			}
+		}
+
+		// "St.": saint before a name, street otherwise
+		if space(at(0)) && a.get(1..4) == Some(&b"St."[..]) {
+			let mut k = 4;
+			while space(at(k)) { k += 1; }
+			let saint = k > 4 && at(k).is_ascii_uppercase();
+			self.scratch_pad.write_text(if saint { " saint " } else { " street " });
+			consume(buf, 4);
+			if !saint { self.end_after_period(buf); }
+			return true;
+		}
+
+		// "www." spelled letter by letter
+		if !letter(prev) && a.len() >= 4 && a[..4].eq_ignore_ascii_case(b"www.") {
+			self.scratch_pad.write_text(" w w w dot ");
+			consume(buf, 4);
+			return true;
+		}
+
+		// a run of capitals: a Roman numeral, a word the dictionary knows (NASA, HELLO), or letters to spell
+		if at(0).is_ascii_uppercase() && !letter(prev) && prev != b'\'' {
+			let mut n = 0;
+			while at(n).is_ascii_uppercase() { n += 1; }
+			// a fixed-text rule as long or longer here ("MPG", "PAT. PEND.") goes first
+			let longer = self.table_best(buf).is_some_and(|(len, _)| len >= n);
+			if n >= 2 && !at(n).is_ascii_lowercase() && !longer {
+				let run = std::str::from_utf8(&a[..n]).unwrap_or("");
+				if let Some(v) = roman(run) {
+					let before = Self::prev_word(buf);
+					let ruler = before.as_bytes().first().is_some_and(|c| c.is_ascii_uppercase()) && !CARDINAL_AFTER.contains(&before.to_ascii_lowercase().as_str());
+					let w = if ruler { format!("the {}", self.words(v, true, false)) } else { self.words(v, false, false) };
+					self.scratch_pad.write_text(&format!(" {} ", w));
+					consume(buf, n);
+					return true;
+				}
+				let low = run.to_ascii_lowercase();
+				if n >= 3 && Self::is_word(&low) {
+					self.scratch_pad.write_text(&format!(" {} ", low));
+					consume(buf, n);
+					return true;
+				}
+			}
+			// the article "A" before a word
+			if at(0) == b'A' && n == 1 && space(at(1)) {
+				let mut k = 1;
+				while space(at(k)) { k += 1; }
+				if letter(at(k)) && letter(at(k + 1)) {
+					self.scratch_pad.write_text(" a");
+					consume(buf, 1);
+					return true;
+				}
+			}
+		}
+
+		// an emoticon after a space is the emoticon, not "colon"
+		if space(at(0)) && matches!(at(1), b':' | b';' | b'=') {
+			buf.advance();
+			let face = self.table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= Self::lexer_len(buf));
+			buf.recede();
+			if face {
+				self.scratch_pad.write_text(" ");
+				buf.advance();
+				return true;
+			}
+		}
+		false
+	}
+
 	// FIXED-TEXT RULE PART
 	fn match_len(buf: &mut cbuf, pat: &[u8]) -> Option<usize> {
 		// how many bytes of the input at the cursor the pattern matches, if it does; the cursor stays put
@@ -339,9 +657,16 @@ impl engine {
 		buf.setcurs(start);
 		n
 	}
-	fn table_rule(&mut self, buf: &mut cbuf) -> bool {
-		// the longest fixed-text rule at the cursor (the earlier on a tie) writes its replacement, unless a lexer
-		// rule matches longer there; the lexer's " for"/" the" rules come first, so they also win a tie
+	fn end_after_period(&mut self, buf: &mut cbuf) {
+		// a period eaten by an abbreviation also ends the sentence when only spaces follow it
+		let start = buf.getcurs();
+		while matches!(buf.read(), b' ' | 0x08 | 0x0A) { buf.advance(); }
+		let end = buf.read() == 0x00;
+		buf.setcurs(start);
+		if end { self.scratch_pad.write_text(" . "); }
+	}
+	fn table_best(&mut self, buf: &mut cbuf) -> Option<(usize, usize)> {
+		// the longest fixed-text rule matching at the cursor, the earlier on a tie: (length, rule)
 		let first = buf.read();
 		let mut best: Option<(usize, usize)> = None;
 		for &r in FIRST[first as usize] {
@@ -349,7 +674,13 @@ impl engine {
 				if best.map_or(true, |(b, _)| n > b) { best = Some((n, r as usize)); }
 			}
 		}
-		let Some((n, r)) = best else { return false };
+		best
+	}
+	fn table_rule(&mut self, buf: &mut cbuf) -> bool {
+		// the longest fixed-text rule at the cursor writes its replacement, unless a lexer rule matches longer
+		// there; the lexer's " for"/" the" rules come first, so they also win a tie
+		let first = buf.read();
+		let Some((n, r)) = self.table_best(buf) else { return false };
 		let lex = Self::lexer_len(buf);
 		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
 		for _ in 0..n { buf.advance(); }
@@ -360,6 +691,9 @@ impl engine {
 			self.scratch_pad.write_text(plural);
 		}
 		self.scratch_pad.write_text(rest);
+		// a unit or abbreviation ends what a number before it started
+		self.digit_prev = false;
+		if RULES[r].0.last() == Some(&b'.') && !text.trim_end().ends_with('.') { self.end_after_period(buf); }
 		true
 	}
 
@@ -368,10 +702,10 @@ impl engine {
 		let mut text_done: bool  = false;
 		let mut yymarker: usize = 0;
 
+		// a number's plurality and "after a digit" carry on until a letter or punctuation clears them
 		self.punct_prev = false;
-		self.digit_prev = false;
-		self.is_plural  = false;
 
+		if self.special_rule(buf) { return false; }
 		if self.table_rule(buf) { return false; }
 
 		// Final tag variables available in semantic action.
@@ -717,10 +1051,14 @@ impl engine {
 				break;
 			}
 			":" space | ";" space | period space {
+				self.digit_prev = false;
+				self.is_plural  = false;
 				if !self.punct_prev {
 					self.scratch_pad.write_text(" . ");
 					self.punct_prev = true;
 				}
+				// leave the space, so an abbreviation starting the next sentence still has its word boundary
+				buf.recede();
 				break;
 			}
 			space ques_mark {
@@ -765,6 +1103,8 @@ impl engine {
 				break;
 			}
 			exc_point {
+				self.digit_prev = false;
+				self.is_plural  = false;
 				if !self.punct_prev {
 					self.scratch_pad.write_text(" ! ");
 					self.punct_prev = true;
@@ -772,6 +1112,8 @@ impl engine {
 				break;
 			}
 			ques_mark {
+				self.digit_prev = false;
+				self.is_plural  = false;
 				if !self.punct_prev {
 					self.scratch_pad.write_text(" ? ");
 					self.punct_prev = true;
@@ -808,6 +1150,19 @@ impl engine {
 				}
 				break;
 			}
+			'a.m.' {
+				// a time of day; its period may also end the sentence
+				self.digit_prev = false;
+				self.scratch_pad.write_text(" A m ");
+				self.end_after_period(buf);
+				break;
+			}
+			'p.m.' {
+				self.digit_prev = false;
+				self.scratch_pad.write_text(" p m ");
+				self.end_after_period(buf);
+				break;
+			}
 
 			space "-" space {
 				self.scratch_pad.write_text(" minus ");
@@ -815,6 +1170,8 @@ impl engine {
 			}
 
 			dquote | comma | space "(" | ")" space {
+				self.digit_prev = false;
+				self.is_plural  = false;
 				if !self.punct_prev {
 					self.scratch_pad.write_text(" , ");
 					self.punct_prev = true;
@@ -846,106 +1203,132 @@ impl engine {
 			/* DEAL WITH UPPERCASE LETTERS FIRST */
 			"A" period? {
 				self.scratch_pad.write_text(" A");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"B" period? {
 				self.scratch_pad.write_text(" b");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"C" period? {
 				self.scratch_pad.write_text(" c");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"D" period? {
 				self.scratch_pad.write_text(" d");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"E" period? {
 				self.scratch_pad.write_text(" e");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"F" period? {
 				self.scratch_pad.write_text(" f");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"G" period? {
 				self.scratch_pad.write_text(" g");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"H" period? {
 				self.scratch_pad.write_text(" h");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"I" period? {
 				self.scratch_pad.write_text(" i");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"J" period? {
 				self.scratch_pad.write_text(" j");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"K" period? {
 				self.scratch_pad.write_text(" k");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"L" period? {
 				self.scratch_pad.write_text(" l");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"M" period? {
 				self.scratch_pad.write_text(" m");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"N" period? {
 				self.scratch_pad.write_text(" n");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"O" period? {
 				self.scratch_pad.write_text(" o");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"P" period? {
 				self.scratch_pad.write_text(" p");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"Q" period? {
 				self.scratch_pad.write_text(" q");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"R" period? {
 				self.scratch_pad.write_text(" r");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"S" period? {
 				self.scratch_pad.write_text(" s");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"T" period? {
 				self.scratch_pad.write_text(" t");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"U" period? {
 				self.scratch_pad.write_text(" u");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"V" period? {
 				self.scratch_pad.write_text(" v");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"W" period? {
 				self.scratch_pad.write_text(" w");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"X" period? {
 				self.scratch_pad.write_text(" x");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"Y" period? {
 				self.scratch_pad.write_text(" y");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 			"Z" period? {
 				self.scratch_pad.write_text(" z");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
 				break;
 			}
 

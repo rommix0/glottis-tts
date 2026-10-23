@@ -415,8 +415,60 @@ mod tests {
 	#[test]
 	fn long_input_does_not_crash() {
 		let long = "Dr. Smith paid $45.50 for 3 km of road. ".repeat(250);
-		assert!(says(&long).contains("doctor smith"));
+		assert!(says(&long).matches("doctor smith").count() == 250);
 		let digits = "7".repeat(3000);
 		assert_eq!(says(&digits).matches("seven").count(), 3000);
+	}
+
+	#[test]
+	fn units_follow_the_number() {
+		assert!(says("It is 100 km away.").contains("one hundred kilometers"), "{}", says("It is 100 km away."));
+		assert!(says("It is 1 km away.").contains("one kilometer away"), "{}", says("It is 1 km away."));
+	}
+
+	#[test]
+	fn times_and_ranges() {
+		assert!(says("10:30 am").contains("ten thirty A m"), "{}", says("10:30 am"));
+		assert!(says("at 3pm").contains("three p m"), "{}", says("at 3pm"));
+		assert!(says("at 5 a.m. today").contains("five A m today"), "{}", says("at 5 a.m. today"));
+		assert!(says("pages 3-5").contains("three through five"), "{}", says("pages 3-5"));
+	}
+
+	#[test]
+	fn years_and_decades() {
+		for (t, want) in [("In 1999 we", "nineteen ninety nine"), ("In 1905 we", "nineteen oh five"),
+			("In 1900 we", "nineteen hundred"), ("In 2026 we", "twenty twenty six"), ("In 2005 we", "two thousand five"),
+			("the 1990s", "nineteen nineties"), ("the '90s", "the nineties"), ("the 2000s", "two thousands"),
+			("the 1900s", "nineteen hundreds"), ("it cost $1999", "one thousand nine hundred ninety nine dollars"),
+			("1,999 people", "one thousand nine hundred ninety nine people")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
+
+	#[test]
+	fn dates_fractions_and_money() {
+		for (t, want) in [("on 10/23/2026.", "october twenty third , twenty twenty six"), ("on 1/5/99.", "january fifth , ninety nine"),
+			("add 1/2 cup", "one half cup"), ("add 3/4 cup", "three quarters cup"), ("a 5/8 inch", "five eighths inch"),
+			("add 1/3 cup", "one third cup"), ("It was $1.5 million.", "one point five million dollars"),
+			("and $20 billion.", "twenty billion dollars"), ("on Jan. 5 we", "january fifth we"), ("on March 3 we", "march third we")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
+
+	#[test]
+	fn abbreviations_keep_the_sentence_end() {
+		for (t, want) in [("He lives on Elm St.", "elm street ."), ("St. Louis is far.", "saint louis is far"),
+			("They met at the IEEE.", "i e e e ."), ("He got a Grade A.", "grade A ."), ("Visit www.example.com now.", "w w w dot example dot com")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
+
+	#[test]
+	fn capitals_numerals_and_quotes() {
+		for (t, want) in [("NASA and the", "nasa and the"), ("HELLO WORLD", "hello world"), ("a PAT. PEND. sign", "patent pending"), ("Chapter IV begins", "chapter four begins"),
+			("World War II ended", "world war two ended"), ("Henry VIII was", "henry the eighth was"), ("'Twas the night", "'twas the night"),
+			("'Hello,' she said", "hello , ' she said"), ("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"), ("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
 	}
 }
