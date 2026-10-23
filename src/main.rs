@@ -1,3 +1,6 @@
+// the code keeps the synthesis literature's names (F1, AV, m_sr, formant_tbl) over Rust's naming style
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+
 mod _utils;
 mod _text;
 mod _lts;
