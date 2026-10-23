@@ -25,6 +25,9 @@ const CASC_EMPH: f32 = 0.75;
 // frication noise: rolled off above this, so consonants are not too bright
 const FRIC_LP_HZ: f32 = 4500.0;
 
+// narrowest F1/F2 bandwidth (Hz) the cascade uses
+const CASC_MIN_BW: f32 = 60.0;
+
 // low shelf on the cascade branch: this much more level (dB) below about LOW_SHELF_HZ
 const LOW_SHELF_DB: f32 = 4.0;
 const LOW_SHELF_HZ: f32 = 250.0;
@@ -603,8 +606,8 @@ impl vtm {
 		let mut bb1 = self.B1 * self.B1_ADJ;
 		let mut bb2 = self.B2 * self.B2_ADJ;
 		let mut bb3 = self.B3 * self.B3_ADJ;
-		if bb1 < 40.0 { bb1 = 40.0; }
-		if bb2 < 40.0 { bb2 = 40.0; }
+		if bb1 < CASC_MIN_BW { bb1 = CASC_MIN_BW; }
+		if bb2 < CASC_MIN_BW { bb2 = CASC_MIN_BW; }
 		if bb3 < 40.0 { bb3 = 40.0; }
 
 		// nasal coupling (Hawkins & Stevens 1985)
@@ -717,5 +720,24 @@ mod tests {
 			if i > 10000 { peak = peak.max(y.abs()); }
 		}
 		assert!((20.0 * peak.log10()).abs() < 0.3, "Nyquist gain {} dB", 20.0 * peak.log10());
+	}
+
+	#[test]
+	fn cascade_bandwidths_have_a_floor() {
+		// a B1 or B2 asked below the floor renders exactly as the floor itself
+		let render = |b1: f32, b2: f32| {
+			let mut v = vtm::new();
+			let mut out = Vec::new();
+			for _ in 0..4000 {
+				v.F0 = 120.0; v.AV = 60.0; v.RD = 0.6;
+				v.F1 = 600.0; v.F2 = 1500.0; v.F3 = 2500.0;
+				v.B1 = b1; v.B2 = b2; v.B3 = 150.0;
+				out.push(v.step());
+			}
+			out
+		};
+		let floor = render(CASC_MIN_BW, CASC_MIN_BW);
+		assert_eq!(render(20.0, 20.0), floor);
+		assert_ne!(render(CASC_MIN_BW + 200.0, CASC_MIN_BW), floor);
 	}
 }
