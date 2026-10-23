@@ -1,0 +1,226 @@
+# Hand-made dictionary entries that override or add to what CMUdict and the LTS tree give: homograph readings
+# (the capitalized spelling selects the other reading), letter names and a few corrections.
+# Format: spaced letters, a tab, then phones.
+A	'ey
+F O R	f 'ao r
+T O	t ax
+U S E D	y 'uw z d
+A D D R E S S	ax d r 'eh s
+A D V O C A T E	'ae d v ax k "ey t
+A D V O C A T E S	'ae d v ax k "ey t s
+A F F E C T	ax f 'eh k t
+A F F E C T S	ax f 'eh k t s
+A F F I L I A T E	ax f 'ih l "iy ax t
+A G G R E G A T E	'ae g r ax g ey t
+A G G R E G A T E S	'ae g r ax g "ey t s
+A L T E R N A T E	'ao l t axr n "ey t
+A N A L Y S E S	'ae n ax l ay z "ih z
+A N I M A T E	'ae n ax m ax t
+A P P R O P R I A T E	ax p r 'ow p r iy "ey t
+A P P R O X I M A T E	ax p r 'aa k s ax m "ey t
+A R T I C U L A T E	aa r t 'ih k y ax l "ey t
+A S S O C I A T E	ax s 'ow s iy ax t
+A S S O C I A T E S	ax s 'ow s iy ax t s
+A T T R I B U T E	'ae t r ix b y uw t
+A T T R I B U T E S	ax t r 'ih b y "uw t s
+A U G U S T	ax g 'ah s t
+B A S S	b 'ae s
+B A T H	b 'ey dh
+B A T H S	b 'ey dh z
+B O W	b 'aw
+B O W E D	b 'aw d
+B a t o n	b 'ae t ax n
+B o l o g n a	b ax l 'ow n ax
+C L O S E	k l 'ow s
+C O M P O U N D	k ax m p 'aw n d
+C O N D U C T	k ax n d 'ah k t
+C O N F L I C T	k 'aa n f l ix k t
+C O N F L I C T S	k 'aa n f l ix k t s
+C O N J U G A T E	k 'aa n jh ax g ix t
+C O N S O L E	k 'aa n s ow l
+C O N S O L E S	k ax n s 'ow l z
+C O N S T R U C T	k ax n s t r 'ah k t
+C O N S T R U C T S	k ax n s t r 'ah k t s
+C O N T E N T	k ax n t 'eh n t
+C O N T E S T	k 'aa n t eh s t
+C O N T E S T S	k 'aa n t eh s t s
+C O N T R A C T	k 'aa n t r "ae k t
+C O N T R A C T S	k ax n t r 'ae k t s
+C O N V E R T	k 'aa n v axr t
+C O N V I C T	k 'aa n v ix k t
+C O N V I C T S	k ax n v 'ih k t s
+C O O R D I N A T E	k ow 'ao r d ax n "ey t
+C O O R D I N A T E S	k ow 'ao r d ax n "ey t s
+D E F A U L T	d ix f 'ao l t
+D E F E C T	d ix f 'eh k t
+D E F E C T S	d ix f 'eh k t s
+D E S E R T	d ix z 'er t
+D E S E R T S	d ix z 'er t s
+D O V E	d 'ow v
+D U P L I C A T E	d 'uw p l ax k ax t
+D U P L I C A T E S	d 'uw p l ax k "ey t s
+E N T R A N C E	ix n t r 'ae n s
+E N T R A N C E S	ix n t r 'ae n s ax z
+E N V E L O P E	ix n v 'eh l ax p
+E N V E L O P E S	ix n v 'eh l ax p s
+E S T I M A T E	'eh s t ax m ax t
+E S T I M A T E S	'eh s t ax m "ey t s
+E X P O S E	"eh k s p ow z 'ey
+G R A D U A T E	g r 'ae jh ax w ax t
+G R A D U A T E S	g r 'ae jh ax w "ey t s
+H O U S E	hh 'aw z
+L E A D	l 'eh d
+L I V E	l 'ay v
+L I V E S	l 'ay v z
+M I N U T E	m 'ay n uw t
+M O D E R A T E	m 'aa d axr ax t
+M O D E R A T E S	m 'aa d axr "ey t s
+M O P E D	m 'ow p t
+M O U T H	m 'aw dh
+N e s t l e	n 'eh s l iy
+O B J E C T	'aa b jh ix k t
+O B J E C T S	'aa b jh ix k t s
+P E R F E C T	p axr f 'eh k t
+P E R M I T	p axr m 'ih t
+P E R M I T S	p axr m 'ih t s
+P R E S E N T	p r 'eh z ax n t
+P R E S E N T S	p r 'eh z ax n t s
+P R O D U C E	p r ax d 'uw s
+P R O G R E S S	p r ax g r 'eh s
+P R O G R E S S E S	p r ow g r 'eh s ax z
+P R O J E C T	p r 'aa jh ix k t
+P R O J E C T S	p r ax jh 'eh k t s
+P o l i s h	p 'ow lx ix sh
+R E A D	r 'eh d
+R E B E L	r ix b 'eh lx
+R E B E L S	r ix b 'eh lx z
+R E C O R D	r ax k 'ao rx d
+R E C O R D S	r ax k 'ao rx d z
+R E J E C T	r ix jh 'eh k t
+R E J E C T S	r ix jh 'eh k t s
+R E S U M E	r ix z 'uw m
+S E P A R A T E	s 'eh p axr ix t
+S O W	s 'ow
+S U R V E Y	s 'er v "ey
+S U S P E C T	s 'ah s p "eh k t
+S U S P E C T S	s 'ah s p "eh k t s
+T E A R	t 'iy rx
+T E A R I N G	t 'eh rx ix ng
+T E A R S	t 'iy rx z
+U S E S	y 'uw z ix z
+W I N D	w 'ay n d
+W O U N D	w 'aw n d
+a d d i c t s	'ae d "ih k t s
+a d d r e s s	'ae d r ax s
+a f f e c t	'ae f eh k t
+a f f e c t s	'ae f eh k t s
+a f f i l i a t e	ax f 'ih l "iy "ey t
+a g g r e g a t e s	'ae g r ax g ey t s
+a l t e r n a t e	ao l t 'er n ax t
+a n a l y s e s	ax n 'ae l ix s "iy z
+a n i m a t e	'ae n ax m "ey t
+a p p r o x i m a t e	ax p r 'aa k s ax m ax t
+a r t i c u l a t e	aa r t 'ih k y ax l ax t
+a s s o c i a t e	ax s 'ow s iy "ey t
+a s s o c i a t e s	ax s 'ow s iy "ey t s
+a t t r i b u t e	ax t r 'ih b y "uw t
+a t t r i b u t e s	'ae t r ix b y uw t s
+b	b 'iy
+b a s s	b 'ey s
+b a t h s	b 'ae th s
+b o l o g n a	b ax l 'ow n "iy
+b o w	b 'ow
+c	s 'iy
+c l o s e	k l 'ow z
+c o n d u c t	k 'aa n d ax k t
+c o n f l i c t	k ax n f l 'ih k t
+c o n f l i c t s	k ax n f l 'ih k t s
+c o n j u g a t e	k 'aa n jh ax g "ey t
+c o n s o l e	k ax n s 'ow l
+c o n s o l e s	k 'aa n s ow l z
+c o n s t r u c t	k 'aa n s t r ax k t
+c o n s t r u c t s	k 'aa n s t r ax k t s
+c o n t e s t	k ax n t 'eh s t
+c o n t e s t s	k ax n t 'eh s t s
+c o n t r a c t	k ax n t r 'ae k t
+c o n t r a c t s	k 'aa n t r "ae k t s
+c o n v e r s e	k ax n v 'er s
+c o n v e r s e s	k ax n v 'er s ix z
+c o n v e r t	k ax n v 'er t
+c o n v i c t	k ax n v 'ih k t
+c o n v i c t s	k 'aa n v ix k t s
+c o o r d i n a t e	k ow 'ao r d ax n ax t
+c o o r d i n a t e s	k ow 'ao r d ax n ax t s
+d	d 'iy
+d e f a u l t	d 'iy f "ao l t
+d o v e	d 'ah v
+d u p l i c a t e	d 'uw p l ax k "ey t
+d u p l i c a t e s	d 'uw p l ax k ax t s
+e	'iy
+e s t i m a t e	'eh s t ax m "ey t
+e x a g g e r a t e	ix g z 'ae jh axr "ey t
+e x a g g e r a t e d	ix g z 'ae jh axr "ey t ix d
+e x a g g e r a t e s	ix g z 'ae jh axr "ey t s
+e x a g g e r a t i n g	ix g z 'ae jh axr "ey t ix ng
+e x a g g e r a t i o n	ix g z 'ae jh axr "ey sh ax n
+f	'eh f
+g	jh 'iy
+g r a d u a t e	g r 'ae jh ax w "ey t
+h	'ey ch
+h o u s e	hh 'aw s
+j	jh 'ey
+k	k 'ey
+l	'eh lx
+l e a d	l 'iy d
+l i v e	l 'ih v
+m	'eh m
+m i s u s e d	m ix s y 'uw z d
+m i s u s e s	m ix s y 'uw z ix z
+m o d e r a t e	m 'aa d axr "ey t
+m o p e d	m 'ow p eh d
+m o u t h	m 'aw th
+n	'eh n
+n e s t l e	n 'eh s ax l
+o	'ow
+o b j e c t	ax b jh 'eh k t
+o b j e c t s	ax b jh 'eh k t s
+p	p 'iy
+p e r f e c t	p 'er f "ih k t
+p e r m i t	p 'er m "ih t
+p e r m i t s	p 'er m "ih t s
+p e r v e r t	p 'er v axr t
+p e r v e r t s	p 'er v axr t s
+p r e s e n t	p r iy z 'eh n t
+p r e s e n t s	p r iy z 'eh n t s
+p r o d u c e	p r 'ow d uw s
+p r o j e c t	p r ax jh 'eh k t
+p r o j e c t s	p r 'aa jh ix k t s
+q	k y 'uw
+r	'aa rx
+r e a d	r 'iy d
+r e b e l	r 'eh b ax l
+r e b e l s	r 'eh b ax l z
+r e c o r d	r 'eh k axr d
+r e c o r d s	r 'eh k axr d z
+r e j e c t	r 'iy jh eh k t
+r e j e c t s	r 'iy jh eh k t s
+r e s u m e	r "eh z uw m 'ey
+r o u g e	r 'uw zh
+s	'eh s
+s e p a r a t e	s 'eh p axr "ey t
+s e p a r a t e s	s 'eh p axr "ey t s
+s u r v e y	s axr v 'ey
+t	t 'iy
+t e a r	t 'eh rx
+t e a r i n g	t 'iy rx ix ng
+t w o	t 'uw
+u	y 'uw
+u n u s e d	ax n y 'uw z d
+u s e s	y 'uw s ix z
+v	v 'iy
+w	d 'ah b ax l y uw
+w i n d	w 'ih n d
+w o u n d	w 'uw n d
+x	'eh k s
+y	y 'ay
+z	z 'iy
