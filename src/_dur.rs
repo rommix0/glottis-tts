@@ -17,6 +17,7 @@ pub const START_PAUSE_MS: f32 = 50.0;		// silence before the first phone of the 
 pub const RELEASE_MS:     f32 = 80.0;		// phrase-end release phone (AXP/IXP)
 const COMMA_PAUSE_MS:     f32 = 220.0;
 const SENTENCE_PAUSE_MS:  f32 = 450.0;
+const MINOR_PAUSE_MS:     f32 = 100.0;		// a minor break inside a long phrase
 
 // rule factors, tuned by ear
 const PHRASE_FINAL_VOWEL:     f32 = 1.4;
@@ -85,7 +86,7 @@ pub fn phone_dur(p: u8) -> PhoneDur {
 }
 
 pub fn pause_after(end: Boundary, rate: f32) -> f32 {
-	let ms = if end == Boundary::Comma { COMMA_PAUSE_MS } else { SENTENCE_PAUSE_MS };
+	let ms = match end { Boundary::Comma => COMMA_PAUSE_MS, Boundary::Minor => MINOR_PAUSE_MS, _ => SENTENCE_PAUSE_MS };
 	ms / rate
 }
 
@@ -108,7 +109,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let is_coda = !vowel && nucleus.is_some_and(|n| i > n);
 			if is_nucleus || is_coda {
 				if is_nucleus { apply("phrase-final", PHRASE_FINAL_VOWEL); } else { apply("phrase-final", PHRASE_FINAL_CODA); }
-				if utt.phrases[word.phrase].end != Boundary::Comma { apply("sentence-final", SENTENCE_FINAL); }
+				if !matches!(utt.phrases[word.phrase].end, Boundary::Comma | Boundary::Minor) { apply("sentence-final", SENTENCE_FINAL); }
 			}
 		}
 
@@ -143,6 +144,7 @@ mod tests {
 	use crate::_utt::Utterance;
 
 	const CW: u8 = 90;
+	const COMMA: u8 = 91;
 	const PERIOD: u8 = 92;
 
 	fn build(tokens: &[u8]) -> Utterance {
@@ -179,6 +181,17 @@ mod tests {
 		assign(&mut u, 1.0);
 		let ratio = stretch(&u, 4) / stretch(&u, 1);
 		assert!((ratio - 1.4 * 1.1).abs() < 0.01, "ratio {}", ratio);
+	}
+
+	#[test]
+	fn minor_break_lengthens_without_sentence_final() {
+		// k 'ae t , k 'ae t . with the comma taken as a minor break
+		let mut u = build(&[CW, 56, 16, 76, COMMA, CW, 56, 16, 76, PERIOD]);
+		u.phrases[0].end = Boundary::Minor;
+		assign(&mut u, 1.0);
+		assert!(u.segs[1].rules.contains(&"phrase-final"));
+		assert!(!u.segs[1].rules.contains(&"sentence-final"));
+		assert_eq!(pause_after(Boundary::Minor, 1.0), MINOR_PAUSE_MS);
 	}
 
 	#[test]

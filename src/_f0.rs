@@ -11,7 +11,7 @@ the segment), in semitones from REF_HZ:
 	  down within the phrase and restarting at each phrase
 	+ a trough on the baseline between accents that are far apart
 	+ phrase ends: a fall for statements, a rise for yes/no questions,
-	  a small rise at commas
+	  a small rise at commas and a smaller one at minor breaks
 
 the contour is evaluated per sample from the synthesizer's position.
 
@@ -40,6 +40,7 @@ const QUESTION_RISE_ST:     f32 = 8.0;
 const LOW_ACCENT_ST:        f32 = -1.0;
 const LOW_ACCENT_FRAC:      f32 = 0.3;
 const CONTINUATION_RISE_ST: f32 = 3.0;
+const MINOR_RISE_ST:        f32 = 1.5;	// at a minor break inside a long phrase
 const ONSET_BUMP_ST:        f32 = 0.5;
 const ONSET_BUMP_MS:        f32 = 40.0;
 const MERGE_MS:             f32 = 20.0;
@@ -144,6 +145,8 @@ impl Contour {
 			let be = base(time(last_v, 1.0));
 			let end_st = if ph.end == Boundary::Comma {
 				CONTINUATION_RISE_ST
+			} else if ph.end == Boundary::Minor {
+				MINOR_RISE_ST
 			} else if utt.kind == Kind::YesNo {
 				QUESTION_RISE_ST
 			} else {
@@ -291,6 +294,19 @@ mod tests {
 		for t in c.targets.iter().filter(|t| t.kind == Tk::Start) {
 			assert!(t.base >= -PHRASE_RESET_MAX_ST - 0.01, "phrase starts at {}", t.base);
 		}
+	}
+
+	#[test]
+	fn minor_break_ends_with_a_small_rise() {
+		let mut u = Utterance::build(&[CW, 39, 15, CW, 42, 26, COMMA, CW, 48, 27, PERIOD], &["w".to_string(), "w".to_string(), "w".to_string()]);
+		u.phrases[0].end = Boundary::Minor;
+		crate::_dur::assign(&mut u, 1.0);
+		let stream: Vec<usize> = (0..u.segs.len()).collect();
+		let mut c = Contour::new();
+		c.add_utterance(&u, &stream);
+		let end = u.words[1].segs.end - 1;
+		let t = c.targets.iter().find(|t| t.kind == Tk::End && t.seg == end).unwrap();
+		assert!((t.st - (t.base + MINOR_RISE_ST)).abs() < 0.01, "{} over {}", t.st, t.base);
 	}
 
 	#[test]

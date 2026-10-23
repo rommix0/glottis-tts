@@ -52,7 +52,7 @@ fn is_legal_onset(c: &[u8]) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Boundary { Comma, Period, Question, Exclaim, None }
+pub enum Boundary { Comma, Period, Question, Exclaim, Minor, None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind { Statement, Exclamation, YesNo, Wh }
@@ -89,6 +89,17 @@ pub struct Utterance {
 	pub phrases: Vec<Phrase>,
 	pub kind:    Kind,
 }
+
+// a phrase longer than this many syllables gets a minor break, leaving pieces of at least MIN_PIECE_SYL
+const MAX_PHRASE_SYL: usize = 14;
+const MIN_PIECE_SYL:  usize = 5;
+// the break goes before one of these words best ...
+const BREAK_BEFORE: [&str; 23] = ["and", "but", "or", "nor", "so", "yet", "because", "while", "although", "though", "unless",
+	"whereas", "until", "if", "when", "whether", "since", "that", "which", "who", "whom", "whose", "where"];
+// ... then before a preposition, then before any function word after a content word
+const PREPOSITIONS: [&str; 32] = ["in", "on", "at", "by", "near", "over", "under", "after", "before", "with", "without", "from",
+	"into", "onto", "through", "during", "across", "about", "against", "along", "among", "around", "behind", "below",
+	"beside", "between", "beyond", "toward", "towards", "upon", "within", "to"];
 
 const WH_WORDS: [&str; 9] = ["who", "what", "when", "where", "why", "how", "which", "whose", "whom"];
 
@@ -144,6 +155,7 @@ impl Utterance {
 		if u.words.len() > phrase_start {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::None });
 		}
+		u.break_long_phrases();
 		u.flap();
 		u.kind = match u.phrases.last().map(|p| p.end) {
 			Some(Boundary::Exclaim) => Kind::Exclamation,
@@ -154,6 +166,37 @@ impl Utterance {
 			_ => Kind::Statement,
 		};
 		u
+	}
+	fn break_long_phrases(&mut self) {
+		let old = std::mem::take(&mut self.phrases);
+		for ph in old {
+			let pieces = self.pieces(ph.words, ph.end);
+			self.phrases.extend(pieces);
+		}
+		for (k, ph) in self.phrases.iter().enumerate() {
+			for w in ph.words.clone() { self.words[w].phrase = k; }
+		}
+	}
+	fn pieces(&self, words: Range<usize>, end: Boundary) -> Vec<Phrase> {
+		// a phrase with too many syllables to say in one go breaks after a content word, before its best next word:
+		// a conjunction or relative word, else a preposition, else a function word; the nearer the middle the better
+		let syls = |r: Range<usize>| -> usize { r.map(|w| self.words[w].syls.len()).sum() };
+		let total = syls(words.clone());
+		if total <= MAX_PHRASE_SYL { return vec![Phrase { words, end }]; }
+		let mut best: Option<(f32, usize)> = None;
+		for j in words.start + 1..words.end {
+			let left = syls(words.start..j);
+			if left < MIN_PIECE_SYL || total - left < MIN_PIECE_SYL || self.words[j - 1].function { continue; }
+			let text = self.words[j].text.to_lowercase();
+			let score = if BREAK_BEFORE.contains(&text.as_str()) { 3.0 } else if PREPOSITIONS.contains(&text.as_str()) { 2.0 }
+				else if self.words[j].function { 1.0 } else { continue };
+			let value = score - 2.0 * (left as f32 / total as f32 - 0.5).abs();
+			if best.is_none_or(|(v, _)| value > v) { best = Some((value, j)); }
+		}
+		let Some((_, j)) = best else { return vec![Phrase { words, end }] };
+		let mut out = self.pieces(words.start..j, Boundary::Minor);
+		out.extend(self.pieces(j..words.end, end));
+		out
 	}
 	fn flap(&mut self) {
 		// a t or d after a vowel or r is said as a flap before an unstressed vowel in its word ("city", "rider"),
@@ -321,6 +364,49 @@ mod tests {
 	}
 
 	fn phones(u: &Utterance) -> Vec<u8> { u.segs.iter().map(|s| s.phone).collect() }
+
+	// one-syllable words (function?, text), each b 'aa, then a period
+	fn sentence(words: &[(bool, &str)]) -> Utterance {
+		let mut toks = Vec::new();
+		for &(f, _) in words { toks.extend([if f { FW } else { CW }, 39, 15]); }
+		toks.push(PERIOD);
+		Utterance::build(&toks, &texts(&words.iter().map(|w| w.1).collect::<Vec<_>>()))
+	}
+
+	#[test]
+	fn a_long_phrase_breaks_before_a_conjunction() {
+		// 16 syllables: the break goes before "and", not before "the" at the middle or the preposition "of"
+		let (c, f) = ((false, "w"), |t| (true, t));
+		let u = sentence(&[c, c, f("the"), c, c, c, f("and"), c, f("the"), c, c, f("of"), c, c, c, c]);
+		assert_eq!(u.phrases.len(), 2);
+		assert_eq!(u.phrases[0].words, 0..6);
+		assert_eq!(u.phrases[0].end, Boundary::Minor);
+		assert_eq!(u.phrases[1].end, Boundary::Period);
+		assert_eq!(u.words[6].phrase, 1);
+		assert!(u.is_last_syl_of_phrase(5));
+	}
+
+	#[test]
+	fn a_phrase_breaks_only_where_it_can() {
+		let (c, f) = ((false, "w"), |t| (true, t));
+		// short enough
+		let mut short = vec![c; 13];
+		short.insert(6, f("and"));
+		assert_eq!(sentence(&short).phrases.len(), 1);
+		// no word between content words to break before
+		assert_eq!(sentence(&[c; 16]).phrases.len(), 1);
+		// the only place leaves a piece too short
+		let mut edge = vec![c; 15];
+		edge.insert(2, f("and"));
+		assert_eq!(sentence(&edge).phrases.len(), 1);
+		// a very long phrase breaks more than once, each piece short enough
+		let mut long = Vec::new();
+		for _ in 0..6 { long.extend([c, c, c, c, c, f("and")]); }
+		long.pop();
+		let u = sentence(&long);
+		assert!(u.phrases.len() >= 3, "{} phrases", u.phrases.len());
+		for ph in &u.phrases { assert!(ph.words.len() <= MAX_PHRASE_SYL, "{:?}", ph.words); }
+	}
 
 	#[test]
 	fn flaps_between_a_vowel_and_an_unstressed_vowel() {
