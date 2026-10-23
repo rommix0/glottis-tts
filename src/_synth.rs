@@ -1199,7 +1199,12 @@ impl engine {
 	}
 	fn update_B_to_Next(&mut self) {
 		// calculate transition slope here
-		let mut dist = self.marker_A + self.marker_BA;
+		let mut dist = if self.stop_on {
+			// the formants reach a stop by its closure, where the sound stops
+			self.marker_BA
+		} else {
+			self.marker_A + self.marker_BA
+		};
 		if self.pft_c & 0x800 != 0 && self.pft_l1 & 0x1 != 0 {
 			// out of a vowel the tongue moves into an r quickly
 			dist = dist.min(samples(R_ONSET_MS));
@@ -2429,4 +2434,34 @@ mod tests {
 		let low = out.iter().filter(|x| x.0 == 48 && x.2 > 0.0).map(|x| x.1).fold(9999.0f32, f32::min);
 		assert!(end - low > 200.0, "iy's release stays at F3 {} from {}", low, end);
 	}
+
+	// per sample (phone, counter, F1, F2, the F2 being moved toward) while rendering (phone, ms, stressed)
+	fn trace_moves(phones: &[(u8, i32, bool)]) -> Vec<(u8, i32, f32, f32, f32)> {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut out = Vec::new();
+		for &(p, d, st) in phones {
+			if e.load(p, d, st, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					out.push((e.phn_c, e.counter, e.F1_reg, e.F2_reg, e.F2_reg_trg));
+				}
+			}
+		}
+		out
+	}
+
+	#[test]
+	fn formants_reach_a_stop_by_its_closure() {
+		// the move out of a vowel is heard only until the closure, so it is over by then
+		for &v in &[1u8, 29, 21] {
+			for &c in &[31u8, 36, 23, 9, 11, 17] {
+				let out = trace_moves(&[(PAU, 50, false), (35, 90, false), (v, 140, true), (c, 90, false), (6, 100, false), (48, 80, false), (0, 50, false)]);
+				let x = out.iter().find(|x| x.0 == c && x.1 == 0).unwrap();
+				assert!((x.3 - x.4).abs() < 5.0, "vowel {} into {}: F2 {} at the closure, moving to {}", v, c, x.3, x.4);
+			}
+		}
+	}
+
 }
