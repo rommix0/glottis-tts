@@ -5,6 +5,8 @@ mod _utils;
 mod _text;
 mod _lts;
 mod _lts_tree;
+mod _morph;
+mod _known;
 mod _vtm;
 mod _vtbl;
 mod _synth;
@@ -54,6 +56,24 @@ fn parse_args() -> Result<Opts, String> {
 	}
 	if !have_text { return Err("please enter text!".to_string()); }
 	Ok(opts)
+}
+
+// a word the dictionary lacks, built from a known stem and suffixes (letters and apostrophes only)
+fn morph_word(word: &str, dict_reader: &mut dictreader) -> Option<Vec<u8>> {
+	if word.len() < 4 || !word.bytes().all(|b| b.is_ascii_alphabetic() || b == b'\'') { return None; }
+	let mut lookup = |w: &str| {
+		dict_reader.reset();
+		for b in w.bytes() { dict_reader.readIn(b); }
+		if !dict_reader.search() { return None; }
+		let mut out = Vec::new();
+		loop {
+			let p = dict_reader.readOut();
+			if p == 0xFF { break; }
+			out.push(p);
+		}
+		Some(out)
+	};
+	_morph::compose(&word.to_ascii_lowercase(), &mut lookup, 2)
 }
 
 // the engines that run across sentences
@@ -264,6 +284,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 						if pout == 0xFF { break; }
 						tokens.push(pout);
 					}
+				} else if let Some(classes) = morph_word(&word_text, &mut dict_reader) {
+					// a known stem with suffixes
+					tokens.push(90);
+					texts.push(word_text);
+					tokens.extend(classes);
 				} else {
 					// if no dictionary match, then
 					// do letter-to-sound stuff here!
