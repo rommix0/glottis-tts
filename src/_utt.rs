@@ -155,6 +155,10 @@ impl Utterance {
 		if u.words.len() > phrase_start {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::None });
 		}
+		// a sentence does not end on a comma: one at the end of the input ends it
+		if let Some(last) = u.phrases.last_mut() {
+			if last.end == Boundary::Comma { last.end = Boundary::Period; }
+		}
 		u.break_long_phrases();
 		u.flap();
 		u.kind = match u.phrases.last().map(|p| p.end) {
@@ -325,6 +329,17 @@ mod tests {
 		assert_eq!(u.words[1].phrase, 1);
 		assert!(u.is_last_syl_of_phrase(0));
 		assert_eq!(u.phrase_of_seg(2), 1);
+	}
+
+	#[test]
+	fn a_trailing_comma_ends_the_sentence() {
+		// 'ey ,  at the end of the input
+		let u = Utterance::build(&[CW, 24, COMMA], &texts(&["a"]));
+		assert_eq!(u.phrases.len(), 1);
+		assert_eq!(u.phrases[0].end, Boundary::Period);
+		// a comma inside the sentence stays
+		let u = Utterance::build(&[CW, 24, COMMA, CW, 39, 26, PERIOD], &texts(&["a", "b"]));
+		assert_eq!(u.phrases[0].end, Boundary::Comma);
 	}
 
 	#[test]
