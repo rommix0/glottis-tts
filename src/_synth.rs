@@ -901,10 +901,6 @@ impl engine {
 
 			// FRONT VOWEL ADJUSTMENT
 			if self.pft_c & 0x4 != 0 {
-				if self.pft_l1 == 0x1C10 {
-					self.F2_A_src -= 150.0 * factor;
-					self.F2_B_src -= 150.0 * factor;
-				}
 				if self.pft_l1 & 0x100 != 0 {
 					self.F2_A_src += 50.0 * factor;
 				}
