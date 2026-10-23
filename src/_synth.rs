@@ -61,6 +61,12 @@ const NASAL_EDGE_MS: f32 = 15.0;
 const BACK_TRANSITION_MS: f32 = 80.0;
 // a vowel's F3 is this much (Hz) lower at its end before an r
 const RHOTIC_F3: f32 = 200.0;
+// breath noise in the voice (dB), and how much more of it and how much laxer the voice (Rd) as it dies away at a
+// phrase end, reached this long (ms) into the phrase-end release
+const BREATH_DB: f32 = 6.0;
+const BREATH_END_DB: f32 = 12.0;
+const BREATH_END_RD: f32 = 0.3;
+const BREATH_RAMP_MS: f32 = 60.0;
 // a vowel's move into the next phone takes at most this long (ms)
 const VOWEL_EXIT_MS: f32 = 50.0;
 // out of a vowel an r reaches its formants within this long (ms)
@@ -1546,7 +1552,12 @@ impl engine {
 			self.vtm_eng.F2 = self.F2_reg.min(LABIAL_BURST_F2);
 			self.vtm_eng.F3 = self.F3_reg.min(LABIAL_BURST_F3);
 		}
-		self.vtm_eng.RD  = self.RD_reg;
+		// as the voice dies away at a phrase end it gets breathier and laxer
+		let breath = if matches!(self.phn_c, 48 | 49) {
+			((self.counter - self.seg_start) as f32 / samples(BREATH_RAMP_MS) as f32).clamp(0.0, 1.0)
+		} else { 0.0 };
+		self.vtm_eng.RD  = self.RD_reg + BREATH_END_RD * breath;
+		self.vtm_eng.BR  = BREATH_DB + BREATH_END_DB * breath;
 		self.vtm_eng.NC  = self.NZP_reg;
 		self.vtm_eng.A2  = self.A2_reg;
 		self.vtm_eng.A3  = self.A3_reg;
@@ -2490,6 +2501,42 @@ mod tests {
 		assert!(short < samples(VOWEL_EXIT_MS) && short > samples(25.0), "short ah carries {} samples", short);
 		// the vowel's length does not change
 		assert!((n_long as i32 - n_short as i32 - samples(140.0)).abs() <= 1, "{} samples apart", n_long - n_short);
+	}
+
+	// per sample (phone, breath noise level, Rd) as the tract gets them, rendering (phone, ms, stressed)
+	fn trace_breath(phones: &[(u8, i32, bool)]) -> Vec<(u8, f32, f32)> {
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut out = Vec::new();
+		for &(p, d, st) in phones {
+			if e.load(p, d, st, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					out.push((e.phn_c, e.vtm_eng.BR, e.vtm_eng.RD));
+				}
+			}
+		}
+		out
+	}
+
+	#[test]
+	fn the_voice_gets_breathy_as_a_phrase_ends() {
+		let out = trace_breath(&[(PAU, 50, false), (23, 90, false), (1, 200, true), (48, 80, false), (0, 50, false)]);
+		let vowel: Vec<_> = out.iter().filter(|x| x.0 == 1).collect();
+		let release: Vec<_> = out.iter().filter(|x| x.0 == 48).collect();
+		let rd = vowel.last().unwrap().2;
+		// the vowel itself as ever
+		assert!(vowel.iter().all(|x| x.1 == BREATH_DB), "breath in the vowel");
+		// rising through the start of the release, then held
+		let k = ms(BREATH_RAMP_MS) as usize;
+		assert!(release.windows(2).take(k).all(|w| w[1].1 >= w[0].1), "breath rises");
+		let held = release[k + 1];
+		assert!((held.1 - BREATH_DB - BREATH_END_DB).abs() < 0.01, "breath {} at the release", held.1);
+		assert!((held.2 - rd - BREATH_END_RD).abs() < 0.02, "Rd {} at the release, {} at the vowel's end", held.2, rd);
+		// no breathier voice inside a phrase
+		let out = trace_breath(&[(PAU, 50, false), (23, 90, false), (1, 200, true), (36, 90, false), (1, 150, false), (48, 80, false), (0, 50, false)]);
+		assert!(out.iter().filter(|x| x.0 != 48 && x.0 != 0).all(|x| x.1 == BREATH_DB), "breath inside the phrase");
 	}
 
 	#[test]
