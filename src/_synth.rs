@@ -1291,6 +1291,7 @@ impl engine {
 			// the previous phone's formant targets at its end, before fetch replaces them
 			let prev_f2 = self.F2_B_src;
 			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
+			let prev_rd = self.RD_B_src;
 
 			// phoneme is ready and loaded up
 			// load in formant data
@@ -1305,6 +1306,10 @@ impl engine {
 			// consonants take their formants at each edge from the neighbouring vowel
 			self.loci(prev_f2);
 
+			// the phrase-end release is the last phone's voice dying away, so it keeps that voice's Rd
+			if self.phn_c == 48 || self.phn_c == 49 {
+				(self.RD_A_src, self.RD_B_src) = (prev_rd, prev_rd);
+			}
 			// at the end of a phrase an r keeps its tongue in place while the voice dies away
 			if (self.phn_c == 48 || self.phn_c == 49) && matches!(self.phn_l1, 32 | 33 | 46 | 14 | 7) {
 				[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
@@ -2485,5 +2490,24 @@ mod tests {
 		assert!(short < samples(VOWEL_EXIT_MS) && short > samples(25.0), "short ah carries {} samples", short);
 		// the vowel's length does not change
 		assert!((n_long as i32 - n_short as i32 - samples(140.0)).abs() <= 1, "{} samples apart", n_long - n_short);
+	}
+
+	#[test]
+	fn the_release_keeps_the_voice_rd() {
+		// the phrase-end release is the vowel's voice dying away, not a tenser one
+		let mut e = engine::new();
+		e.init();
+		e.reset();
+		let mut out = Vec::new();
+		for &(p, d, st) in &[(PAU, 50, false), (23, 90, false), (1, 200, true), (48, 80, false), (0, 50, false)] {
+			if e.load(p, d, st, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					out.push((e.phn_c, e.RD_reg));
+				}
+			}
+		}
+		let end = out.iter().filter(|x| x.0 == 1).last().unwrap().1;
+		assert!(out.iter().filter(|x| x.0 == 48).all(|x| (x.1 - end).abs() < 0.02), "Rd falls from {} in the release", end);
 	}
 }
