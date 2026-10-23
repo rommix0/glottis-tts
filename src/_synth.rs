@@ -1280,6 +1280,7 @@ impl engine {
 			
 			// the previous phone's formant targets at its end, before fetch replaces them
 			let prev_f2 = self.F2_B_src;
+			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
 
 			// phoneme is ready and loaded up
 			// load in formant data
@@ -1293,6 +1294,12 @@ impl engine {
 
 			// consonants take their formants at each edge from the neighbouring vowel
 			self.loci(prev_f2);
+
+			// at the end of a phrase an r keeps its tongue in place while the voice dies away
+			if (self.phn_c == 48 || self.phn_c == 49) && matches!(self.phn_l1, 32 | 33 | 46 | 14 | 7) {
+				[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
+				[self.F1_B_src, self.F2_B_src, self.F3_B_src] = prev_f;
+			}
 
 			// get duration markers so slopes can be calculated
 			if self.phn_c == PAU {
@@ -2390,4 +2397,22 @@ mod tests {
 		}
 	}
 
+	#[test]
+	fn r_holds_its_formants_through_the_final_release() {
+		// at the end of a phrase the voice dies on the r's F3, not on the release's
+		for &(r, d) in &[(33u8, 120), (14, 200)] {
+			let mut seq = vec![(PAU, 50, false), (23, 90, false)];
+			if r == 33 { seq.push((4, 150, true)); }
+			seq.extend([(r, d, r == 14), (48, 80, false), (0, 50, false)]);
+			let out = trace_f3(&seq);
+			let end = out.iter().filter(|x| x.0 == r).last().unwrap().1;
+			let top = out.iter().filter(|x| x.0 == 48 && x.2 > 0.0).map(|x| x.1).fold(0.0f32, f32::max);
+			assert!(top - end < 50.0, "r {} ends at F3 {}, its release rises to {}", r, end, top);
+		}
+		// other phones still release toward the neutral vowel
+		let out = trace_f3(&[(PAU, 50, false), (23, 90, false), (21, 150, true), (48, 80, false), (0, 50, false)]);
+		let end = out.iter().filter(|x| x.0 == 21).last().unwrap().1;
+		let low = out.iter().filter(|x| x.0 == 48 && x.2 > 0.0).map(|x| x.1).fold(9999.0f32, f32::min);
+		assert!(end - low > 200.0, "iy's release stays at F3 {} from {}", low, end);
+	}
 }
