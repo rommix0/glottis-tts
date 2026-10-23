@@ -16,6 +16,12 @@ pub const m_sr: u32 = 22050;
 // soft clip default
 const CLIP_LIMIT: f32 = 0.85;
 
+// lip radiation coefficient, tuned at LIP_TUNED_SR; a per-sample filter tilts brighter at a lower rate, and
+// LIP_MATCH is the share of that extra tilt taken back (0: none, 1: the tuned response)
+const LIP_D: f32 = 0.5;
+const LIP_TUNED_SR: f32 = 32000.0;
+const LIP_MATCH: f32 = 0.5;
+
 // output trim, keeps peaks under the soft clip
 const OUT_DB: f32 = -2.0;
 
@@ -642,6 +648,11 @@ impl vtm {
 		self.ep1 = x;
 		xx
 	}
+	fn radiate(&mut self, x: f32) -> f32 {
+		// lip radiation with its coefficient moved toward the tuned rate's response, at the same low-frequency gain
+		let d = LIP_D.powf((LIP_TUNED_SR / m_sr as f32).powf(LIP_MATCH));
+		self.lip(x, d) * (1.0 - LIP_D) / (1.0 - d)
+	}
 	fn lip(&mut self, x: f32, d: f32) -> f32 {
 		// apply lip radiation filter (start with 0.97 for d)
 		//let xx = (1.0 - d) * x - d * self.xp1;
@@ -687,7 +698,7 @@ impl vtm {
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
 		// add them together and return
-		let out = self.lip(casc_out + parr_out, 0.5) * 10.0_f32.powf(OUT_DB / 20.0);
+		let out = self.radiate(casc_out + parr_out) * 10.0_f32.powf(OUT_DB / 20.0);
 		self.softclip(out)
 	}
 }
@@ -732,5 +743,25 @@ mod tests {
 		let floor = render(CASC_MIN_BW, CASC_MIN_BW);
 		assert_eq!(render(20.0, 20.0), floor);
 		assert_ne!(render(CASC_MIN_BW + 200.0, CASC_MIN_BW), floor);
+	}
+
+	#[test]
+	fn lip_radiation_tilts_less_than_its_raw_coefficient() {
+		// at this rate the raw coefficient lifts the highs more than it did where it was tuned; radiate() trims that
+		// part of the way back and leaves the low end where it was
+		let gain = |hz: f32, f: &dyn Fn(&mut vtm, f32) -> f32| {
+			let mut v = vtm::new();
+			let mut peak = 0.0f32;
+			for i in 0..20000 {
+				let y = f(&mut v, (2.0 * PI * hz * i as f32 / m_sr as f32).sin());
+				if i > 10000 { peak = peak.max(y.abs()); }
+			}
+			20.0 * peak.log10()
+		};
+		let raw = |v: &mut vtm, x: f32| v.lip(x, LIP_D);
+		let ours = |v: &mut vtm, x: f32| v.radiate(x);
+		assert!((gain(100.0, &ours) - gain(100.0, &raw)).abs() < 0.2, "low end moved");
+		let cut = gain(4000.0, &raw) - gain(4000.0, &ours);
+		assert!(cut > 0.5 && cut < 2.5, "4 kHz trimmed {} dB", cut);
 	}
 }
