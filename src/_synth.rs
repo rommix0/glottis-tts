@@ -2171,9 +2171,9 @@ mod tests {
 
 	#[test]
 	fn voiceless_fricative_breathes_into_its_vowels() {
-		let t = noise_track(&[(PAU, 50), (1, 150), (34, 110), (1, 150)]);
-		// the S's carried-over region is the first vowel's tail; the second vowel starts breathy
-		assert!(t.iter().any(|x| x.0 == 34 && x.1 < 0 && x.3 > 0.0), "no breath at the vowel's end");
+		let t = noise_track(&[(PAU, 50), (1, 150), (16, 110), (1, 150)]);
+		// the F's carried-over region is the first vowel's tail; the second vowel starts breathy
+		assert!(t.iter().any(|x| x.0 == 16 && x.1 < 0 && x.3 > 0.0), "no breath at the vowel's end");
 		let after: Vec<_> = t.iter().filter(|x| x.0 == 1).collect();
 		let start = after.iter().filter(|x| x.1 == ms(5.0)).last().unwrap();
 		assert!(start.3 > 0.0, "no breath at the next vowel's start");
@@ -2297,5 +2297,16 @@ mod tests {
 		let t = noise_track(&[(PAU, 50), (18, 90), (2, 150)]);
 		let ah = t.iter().filter(|x| x.0 == 2 && x.1 == ms(H_EDGE_MS + 5.0)).last().unwrap().3;
 		assert!(ah <= 0.0, "breath {} dB at {} ms into the vowel", ah, H_EDGE_MS + 5.0);
+	}
+
+	#[test]
+	fn s_has_no_vowel_coloured_breath() {
+		// breath through the cascade takes the vowels' formants and smears s; sh keeps it
+		let ah = |c: u8| {
+			let t = noise_track(&[(PAU, 50), (1, 150), (c, 110), (1, 150)]);
+			t.iter().filter(|x| x.0 == c && x.1 == ms(50.0)).last().unwrap().3
+		};
+		assert!(ah(34) <= 0.0, "s breath {} dB", ah(34));
+		assert!(ah(35) > 0.0, "sh lost its breath");
 	}
 }
