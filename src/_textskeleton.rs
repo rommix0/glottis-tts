@@ -457,6 +457,28 @@ impl engine {
 			}
 		}
 
+		// a run of question and exclamation marks (or one interrobang) is one mark: a question if any of them asks
+		if !space(prev) {
+			let (mut k, mut marks, mut asks, mut odd) = (0, 0, false, false);
+			loop {
+				match (at(k), at(k + 1), at(k + 2)) {
+					(b'?', _, _) => { k += 1; asks = true; },
+					(b'!', _, _) => { k += 1; },
+					(0xE2, 0x80, 0xBC) => { k += 3; odd = true; },
+					(0xE2, 0x80, 0xBD) | (0xE2, 0x81, 0x87..=0x89) => { k += 3; asks = true; odd = true; },
+					_ => break,
+				}
+				marks += 1;
+			}
+			if marks >= 2 || (odd && asks) {
+				self.scratch_pad.write_text(if asks { " ? " } else { " ! " });
+				self.digit_prev = false;
+				self.is_plural = false;
+				consume(buf, k);
+				return true;
+			}
+		}
+
 		// the minutes of a time under ten: 10:05 ten oh five
 		if at(0) == b':' && prev.is_ascii_digit() && at(1) == b'0' && (b'1'..=b'9').contains(&at(2)) && !at(3).is_ascii_digit() {
 			let m = self.words((at(2) - b'0') as u64, false, false);

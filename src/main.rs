@@ -521,4 +521,15 @@ mod tests {
 			assert!(says(t).contains(want), "{} -> {}", t, says(t));
 		}
 	}
+
+	#[test]
+	fn a_run_of_marks_is_one_mark() {
+		// a question if any of them asks, else an exclamation; one mark, so one sentence
+		for (t, want) in [("You did that?!", "you did that ?"), ("You did that!?", "you did that ?"), ("No way!!!", "no way !"),
+			("Really??", "really ?"), ("Seriously\u{203d}", "seriously ?"), ("What\u{2049}", "what ?")] {
+			assert_eq!(says(t), want, "{}", t);
+		}
+		// a mark after a space is still read out
+		assert!(says("Is it ? yes").contains("question mark"), "{}", says("Is it ? yes"));
+	}
 }
