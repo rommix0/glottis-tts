@@ -60,6 +60,8 @@ const NASAL_EDGE_MS: f32 = 15.0;
 const BACK_TRANSITION_MS: f32 = 80.0;
 // while F2 glides, F1 still opens into the back vowel within this long (ms)
 const BACK_F1_MS: f32 = 40.0;
+// a back vowel whose own targets move this much (Hz, F1 or F2) starts that glide on time, not after the slow F2
+const GLIDE_HZ: f32 = 100.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
 // aspiration level (AH, dB) by place
@@ -1395,6 +1397,10 @@ impl engine {
 			}
 			// a consonant's formants move to their B (right-side) targets early enough to arrive by its end
 			self.ab_at = if self.pft_c & 0x1 == 0 && self.phn_c != PAU { self.marker_A.min(self.marker_B - thirty_ms).max(0) } else { self.marker_A };
+			let glides = (self.F1_B_src - self.F1_A_src).abs() >= GLIDE_HZ || (self.F2_B_src - self.F2_A_src).abs() >= GLIDE_HZ;
+			if self.f1_len > 0 && glides {
+				self.ab_at = self.marker_A.min(fifty_ms);
+			}
 			// sources switch quickly at obstruent edges; formants keep their own transition
 			let obstruent = |f: u16| f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0;
 			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) { self.marker_A.min(fifteen_ms) } else { self.marker_A };
@@ -2197,9 +2203,9 @@ mod tests {
 			}
 			f
 		};
-		let (back, back_t) = f2_at(39, 50.0);
-		assert!((back - back_t).abs() > 30.0, "F2 {} already at {} 50 ms into uw", back, back_t);
-		let (back, back_t) = f2_at(39, BACK_TRANSITION_MS + 1.0);
+		let (back, back_t) = f2_at(4, 50.0);
+		assert!((back - back_t).abs() > 30.0, "F2 {} already at {} 50 ms into ao", back, back_t);
+		let (back, back_t) = f2_at(4, BACK_TRANSITION_MS + 1.0);
 		assert!((back - back_t).abs() < 5.0, "F2 {} not at {} by {} ms", back, back_t, BACK_TRANSITION_MS);
 		let (front, front_t) = f2_at(21, 51.0);
 		assert!((front - front_t).abs() < 5.0, "F2 {} not at {} 50 ms into iy", front, front_t);
@@ -2308,5 +2314,27 @@ mod tests {
 		};
 		assert!(ah(34) <= 0.0, "s breath {} dB", ah(34));
 		assert!(ah(35) > 0.0, "sh lost its breath");
+	}
+
+	#[test]
+	fn gliding_back_vowel_starts_its_glide_on_time() {
+		// ow's own glide out of d keeps the timing it has out of b
+		let f1 = |c: u8| {
+			let mut e = engine::new();
+			e.init();
+			e.reset();
+			let mut f = 0.0;
+			for &(p, d) in &[(PAU, 50), (6, 100), (c, 80), (29, 250), (48, 100), (0, 50)] {
+				if e.load(p, d, true, 0, true) {
+					while e.is_running() {
+						e.sample(120.0);
+						if e.phn_c == 29 && e.counter == ms(90.0) { f = e.F1_reg; }
+					}
+				}
+			}
+			f
+		};
+		let (b, d) = (f1(9), f1(11));
+		assert!((b - d).abs() < 15.0, "ow F1 at 90 ms: {} after b, {} after d", b, d);
 	}
 }
