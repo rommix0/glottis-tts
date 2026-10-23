@@ -82,24 +82,26 @@ pub fn nasal_zero(f1: f32, k: f32) -> f32 {
 }
 
 // noise generator
-struct noise { alpha: f32, nxt: u16, xp1: f32 }
+struct noise { alpha: f32, nxt: u32, xp1: f32 }
 impl noise {
 	pub fn new() -> noise {
-		noise { alpha: 0.75, nxt: 5612, xp1: 0.0 }
+		// the aspiration source's smoothing was tuned as 0.75 per sample at 32 kHz; keep that corner (~1.5 kHz)
+		noise { alpha: 0.75_f32.powf(32000.0 / m_sr as f32), nxt: 0x2545F491, xp1: 0.0 }
 	}
 	pub fn reset(&mut self) {
-		self.nxt  = 5612;
+		self.nxt  = 0x2545F491;
 		self.xp1  = 0.0;
 	}
 	fn xorshift(&mut self) {
-		self.nxt ^= self.nxt << 7;
-		self.nxt ^= self.nxt >> 9;
-		self.nxt ^= self.nxt << 8;
+		// 32-bit state: repeats after 2^32 - 1 samples instead of 3 s
+		self.nxt ^= self.nxt << 13;
+		self.nxt ^= self.nxt >> 17;
+		self.nxt ^= self.nxt << 5;
 	}
 	pub fn step(&mut self) -> (f32, f32) {
 		// generate both white and fricative noise
 		self.xorshift();
-		let n: f32 = (self.nxt as i16) as f32 / 32767.0;
+		let n: f32 = ((self.nxt >> 16) as u16 as i16) as f32 / 32767.0;
 		let mut f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
 		self.xp1 = f;
 		(n, f)
@@ -340,8 +342,9 @@ impl LfSource {
 		if flutter <= 0.0 { return 0.0; }
 		let w = 2.0 * PI * (self.counter as f32 / m_sr as f32);
 		let a = (12.7 * w).sin() + (7.1 * w).sin() + (4.7 * w).sin();
-		self.counter = (self.counter + 1) % m_sr;
-		1.0 + a * flutter / 50.0
+		// 10 s holds a whole number of cycles of all three, so the wrap is seamless
+		self.counter = (self.counter + 1) % (10 * m_sr);
+		a * (flutter / 50.0) * (f0 / 100.0)
 	}
 	pub fn step(&mut self, f0: f32, rd: f32, flutter: f32, jitter: f32, di: f32) -> (f32, f32, f32) {
 		// calculate variations in F0
@@ -843,5 +846,36 @@ mod tests {
 		assert!((sum - 1.0).abs() < 1e-4, "pulse sums to {}", sum);
 		let want = (100 + PULSE_HALF) as f32 - 0.3;
 		assert!((at / sum - want).abs() < 0.02, "pulse at {} not {}", at / sum, want);
+	}
+
+	#[test]
+	fn flutter_is_centred_and_seamless() {
+		let mut g = LfSource::new();
+		let f: Vec<f32> = (0..12 * m_sr).map(|_| g.calc_flutter(120.0, 75.0)).collect();
+		let mean = f.iter().sum::<f32>() / f.len() as f32;
+		assert!(mean.abs() < 0.1, "flutter offsets F0 by {} Hz", mean);
+		let jump = f.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max);
+		assert!(jump < 0.05, "flutter jumps {} Hz", jump);
+		let mut g = LfSource::new();
+		let hi: Vec<f32> = (0..2 * m_sr).map(|_| g.calc_flutter(240.0, 75.0)).collect();
+		let rms = |v: &[f32]| (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt();
+		let ratio = rms(&hi) / rms(&f[..2 * m_sr as usize]);
+		assert!((ratio - 2.0).abs() < 0.05, "flutter at 240 Hz is {}x that at 120", ratio);
+	}
+
+	#[test]
+	fn noise_does_not_repeat_within_seconds() {
+		let mut n = noise::new();
+		let x: Vec<f32> = (0..4 * m_sr).map(|_| n.step().0).collect();
+		let head = &x[..64];
+		assert!(!x[1..].windows(64).any(|w| w == head), "noise repeats within 4 s");
+	}
+
+	#[test]
+	fn aspiration_noise_corner_is_in_hz() {
+		// smoothed as tuned at 32 kHz: corner near 1.47 kHz whatever the rate
+		let n = noise::new();
+		let fc = -n.alpha.ln() * m_sr as f32 / (2.0 * PI);
+		assert!((fc - 1465.0).abs() < 30.0, "aspiration noise corner {} Hz", fc);
 	}
 }
