@@ -8,7 +8,8 @@ the segment), in semitones from REF_HZ:
 	+ a baseline per phrase that falls over the phrase, each later phrase
 	  starting a little lower
 	+ an accent peak on the stressed vowel of every content word, stepping
-	  down within the phrase and restarting at each phrase
+	  down within the phrase and restarting at each phrase; a content word
+	  right after an accented one goes without, unless it ends the phrase
 	+ a trough on the baseline between accents that are far apart
 	+ phrase ends: a fall for statements, a rise for yes/no questions,
 	  a small rise at commas and a smaller one at minor breaks
@@ -116,8 +117,12 @@ impl Contour {
 			let mut h = first_height;
 			let mut n_acc = 0;
 			let mut prev_peak: Option<(usize, f32)> = None;
+			let last_content = ph.words.clone().rev().find(|&w| accent_of(w).is_some());
+			let mut accented: Option<usize> = None;
 			for w in ph.words.clone() {
 				let Some(n) = accent_of(w) else { continue; };
+				if accented.is_some_and(|a| a + 1 == w) && Some(w) != last_content { continue; }
+				accented = Some(w);
 				if n_acc > 0 { h = (h * DOWNSTEP).max(ACCENT_FLOOR_ST); }
 				n_acc += 1;
 				let is_last = Some(n) == last_accent_seg && k == last_phrase;
@@ -242,6 +247,8 @@ mod tests {
 	const GO:  (bool, u8, u8) = (false, 48, 27);
 	const MA:  (bool, u8, u8) = (false, 61, 15);
 	const NEE: (bool, u8, u8) = (false, 64, 26);
+	// ih t, a function word
+	const IT:  (bool, u8, u8) = (true, 76, 25);
 
 	#[test]
 	fn question_ends_higher_than_statement() {
@@ -264,7 +271,7 @@ mod tests {
 
 	#[test]
 	fn downstep_within_phrase_and_restart() {
-		let (_, c) = utt(&[BAA, DEE, GO, MA, NEE], &[(2, COMMA), (4, PERIOD)], "w");
+		let (_, c) = utt(&[BAA, IT, DEE, IT, GO, MA, IT, NEE], &[(4, COMMA), (7, PERIOD)], "w");
 		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
 		assert_eq!(h.len(), 5);
 		assert!((h[0] - 6.0).abs() < 0.01);
@@ -276,10 +283,11 @@ mod tests {
 
 	#[test]
 	fn downstep_floor() {
-		let (_, c) = utt(&[BAA, DEE, GO, MA, NEE, BAA, DEE, GO], &[(7, PERIOD)], "w");
+		// 13 syllables, one phrase
+		let (_, c) = utt(&[BAA, IT, DEE, IT, GO, IT, MA, IT, NEE, IT, BAA, IT, DEE], &[(12, PERIOD)], "w");
 		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
 		assert!(h.iter().all(|&x| x >= ACCENT_FLOOR_ST - 0.01));
-		assert!((h[7] - ACCENT_FLOOR_ST).abs() < 0.01);
+		assert!((h[6] - ACCENT_FLOOR_ST).abs() < 0.01);
 	}
 
 	#[test]
@@ -294,6 +302,18 @@ mod tests {
 		for t in c.targets.iter().filter(|t| t.kind == Tk::Start) {
 			assert!(t.base >= -PHRASE_RESET_MAX_ST - 0.01, "phrase starts at {}", t.base);
 		}
+	}
+
+	#[test]
+	fn deaccents_a_content_word_after_an_accented_one() {
+		// b 'aa d 'iy g 'ow ih t m 'aa .: d 'iy follows an accent and is not last, so only it loses its accent
+		let (u, c) = utt(&[BAA, DEE, GO, IT, MA], &[(4, PERIOD)], "w");
+		let peaks: Vec<usize> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.seg).collect();
+		let nucleus = |w: usize| u.syls[u.words[w].syls.start].nucleus.unwrap();
+		assert_eq!(peaks, vec![nucleus(0), nucleus(2), nucleus(4)]);
+		// the last content word keeps its accent after an accented one
+		let (u, c) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
+		assert_eq!(c.targets.iter().filter(|t| t.kind == Tk::Accent).count(), 2, "{}", u.words.len());
 	}
 
 	#[test]
