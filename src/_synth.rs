@@ -2337,4 +2337,13 @@ mod tests {
 		let (b, d) = (f1(9), f1(11));
 		assert!((b - d).abs() < 15.0, "ow F1 at 90 ms: {} after b, {} after d", b, d);
 	}
+
+	#[test]
+	fn vowels_are_not_pressed() {
+		for &v in &[1u8, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 19, 20, 21, 29, 30, 39] {
+			let o = v as usize * 31;
+			let (a, b) = (formant_tbl[o + 2], formant_tbl[o + 3]);
+			assert!(a >= 80 && b >= 75, "vowel {} Rd {} / {}", v, a, b);
+		}
+	}
 }
