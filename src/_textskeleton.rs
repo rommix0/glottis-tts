@@ -358,6 +358,45 @@ impl engine {
 		const NOT_PLURAL: [&str; 18] = ["was", "is", "has", "as", "its", "his", "hers", "ours", "yours", "theirs", "this", "thus",
 			"plus", "minus", "always", "perhaps", "besides", "unless"];
 		const PLURAL: [&str; 8] = ["people", "men", "women", "children", "feet", "teeth", "mice", "geese"];
+		// words whose reading follows the word before them: (word, the capitalized reading is the verb, the reading
+		// with no telling word before is the verb); the other reading is the noun or adjective
+		const STRESS_PAIRS: &[(&str, bool, bool)] = &[
+			("address", true, false), ("affect", true, true), ("affects", true, true), ("attribute", false, false),
+			("attributes", true, false), ("compound", true, false), ("conduct", true, false), ("conflict", false, false),
+			("conflicts", false, false), ("console", false, false), ("consoles", true, false), ("construct", true, false),
+			("constructs", true, false), ("contest", false, false), ("contests", false, false), ("contract", false, false),
+			("contracts", true, false), ("convert", false, true), ("convict", false, false), ("convicts", true, false),
+			("defect", true, false), ("defects", true, false), ("desert", true, false), ("deserts", true, false),
+			("object", false, false), ("objects", false, false), ("perfect", true, false), ("permit", true, false),
+			("permits", true, false), ("present", false, false), ("presents", false, false), ("produce", true, true),
+			("progress", true, false), ("progresses", true, true), ("project", false, false), ("projects", true, false),
+			("rebel", true, false), ("rebels", true, false), ("record", true, false), ("records", true, false),
+			("reject", true, true), ("rejects", true, true), ("survey", false, false), ("suspect", false, false),
+			("suspects", false, false), ("advocate", true, false), ("advocates", true, false), ("aggregate", true, false),
+			("alternate", true, false), ("animate", false, true), ("appropriate", true, false), ("approximate", true, false),
+			("articulate", true, false), ("associate", false, false), ("associates", false, false), ("coordinate", true, false),
+			("coordinates", true, false), ("duplicate", false, false), ("duplicates", true, false), ("estimate", false, false),
+			("estimates", true, false), ("graduate", false, false), ("graduates", true, false), ("moderate", false, false),
+			("moderates", true, false), ("separate", false, false), ("increase", false, true), ("increases", false, true),
+			("decrease", false, true), ("decreases", false, true), ("import", false, true), ("imports", false, false),
+			("export", true, false), ("exports", true, false), ("insult", false, true), ("insults", false, false),
+			("protest", true, false), ("protests", true, false), ("subject", false, false), ("subjects", true, false),
+			("transfer", false, true), ("transfers", false, false), ("transport", false, false), ("transports", false, true),
+			("refund", false, false), ("refunds", false, false), ("contrast", true, false), ("contrasts", true, false),
+			("update", false, true), ("updates", false, false), ("upgrade", false, true), ("upgrades", false, false),
+			("discount", false, false), ("discounts", false, false)];
+		// a verb follows these (the plain form) ...
+		const BEFORE_VERB: &[&str] = &["to", "will", "would", "can", "could", "shall", "should", "may", "might", "must", "i", "you",
+			"we", "they", "don't", "didn't", "won't", "can't", "cannot", "not", "never", "please", "let's", "who", "doesn't"];
+		// ... and these (the form in -s)
+		const BEFORE_VERB_S: &[&str] = &["he", "she", "it", "who", "that", "which"];
+		// a noun or adjective follows these
+		const BEFORE_NOUN: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our",
+			"their", "no", "every", "each", "any", "some", "another", "of", "new", "old", "first", "last", "final", "big", "great",
+			"good", "best", "is", "are", "was", "were", "be", "been", "very", "so", "too", "quite"];
+		// an adjective follows these ("it is close", "she was content")
+		const BEFORE_ADJ: &[&str] = &["is", "are", "was", "were", "be", "been", "am", "so", "very", "too", "quite", "really",
+			"fairly", "pretty", "stay", "stayed", "remain", "feel"];
 		let a = Self::ahead(buf, 48);
 		if a.is_empty() { return false; }
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
@@ -666,6 +705,32 @@ impl engine {
 			self.scratch_pad.write_text(" w w w dot ");
 			consume(buf, 4);
 			return true;
+		}
+
+		// a word read by the word before it: "to record" against "a record", "it is close"
+		if letter(at(0)) && !letter(prev) && prev != b'\'' {
+			let mut n = 0;
+			while letter(at(n)) { n += 1; }
+			let w: String = a[..n].iter().map(|c| c.to_ascii_lowercase() as char).collect();
+			let plain = a[1..n].iter().all(|c| c.is_ascii_lowercase()) && !matches!(at(n), b'\'' | b'-');
+			let before = if space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
+			let b = before.as_str();
+			let pair = STRESS_PAIRS.iter().find(|p| p.0 == w);
+			let cap = if !plain { None } else if let Some(&(_, cap_verb, default_verb)) = pair {
+				let verb = if w.ends_with('s') { BEFORE_VERB_S.contains(&b) } else { BEFORE_VERB.contains(&b) };
+				let noun = !verb && BEFORE_NOUN.contains(&b);
+				Some(if verb { cap_verb } else if noun { !cap_verb } else { cap_verb == default_verb })
+			} else if w == "close" || w == "content" {
+				Some(BEFORE_ADJ.contains(&b))
+			} else { None };
+			if cap == Some(true) {
+				// a word ends what a number before it started, as any letter does
+				self.digit_prev = false;
+				self.is_plural = false;
+				self.scratch_pad.write_text(&format!(" {} ", w.to_ascii_uppercase()));
+				consume(buf, n);
+				return true;
+			}
 		}
 
 		// a run of capitals: a Roman numeral, a word the dictionary knows (NASA, HELLO), or letters to spell

@@ -2,8 +2,36 @@
 # (the capitalized spelling selects the other reading), letter names and a few corrections.
 # Format: spaced letters, a tab, then phones.
 A	'ey
+C O N T R A S T	k ax n t r 'ae s t
+C O N T R A S T S	k ax n t r 'ae s t s
+D E C R E A S E	d 'iy k r "iy s
+D E C R E A S E S	d 'iy k r "iy s ix z
+D I S C O U N T	d 'ih s k "aw n t
+D I S C O U N T S	d 'ih s k "aw n t s
+E X P O R T	ix k s p 'ao rx t
+E X P O R T S	ix k s p 'ao rx t s
 F O R	f 'ao r
+I M P O R T	'ih m p "ao rx t
+I M P O R T S	'ih m p "ao rx t s
+I N C R E A S E	'ih n k r "iy s
+I N C R E A S E S	'ih n k r "iy s ix z
+I N S U L T	'ih n s "ah lx t
+I N S U L T S	'ih n s "ah lx t s
+P R O T E S T	p r ax t 'eh s t
+P R O T E S T S	p r ax t 'eh s t s
+R E F U N D	r 'iy f "ah n d
+R E F U N D S	r 'iy f "ah n d z
+S U B J E C T	s 'ah b jh ix k t
+S U B J E C T S	s ax b jh 'eh k t s
 T O	t ax
+T R A N S F E R	t r 'ae n s f axr
+T R A N S F E R S	t r 'ae n s f axr z
+T R A N S P O R T	t r 'ae n s p "ao rx t
+T R A N S P O R T S	t r 'ae n s p "ao rx t s
+U P D A T E	'ah p d "ey t
+U P D A T E S	'ah p d "ey t s
+U P G R A D E	'ah p g r "ey d
+U P G R A D E S	'ah p g r "ey d z
 U S E D	y 'uw z d
 A D D R E S S	ax d r 'eh s
 A D V O C A T E	'ae d v ax k "ey t

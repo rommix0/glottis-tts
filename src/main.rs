@@ -507,4 +507,18 @@ mod tests {
 			assert!(says(t).contains(want), "{} -> {}", t, says(t));
 		}
 	}
+
+	#[test]
+	fn homographs_follow_their_context() {
+		// the capitalized spelling selects the dictionary's other reading
+		for (t, want) in [("I will record a record.", "i will RECORD a record ."), ("I object to that object.", "i object to that OBJECT"),
+			("We present a present.", "we present a PRESENT"), ("Please close it, it is close.", "please close it , it is CLOSE"),
+			("The subject is hard.", "the SUBJECT is hard"), ("Prices will increase after the increase.", "will increase after thee INCREASE"),
+			("They export grain.", "they EXPORT grain"), ("a separate room", "a SEPARATE room"), ("to separate them", "to separate them"),
+			("an estimate", "an ESTIMATE"), ("to estimate it", "to estimate it"), ("The project is late.", "the PROJECT is late"),
+			("They project growth.", "they project growth"), ("It affects us.", "it AFFECTS us"), ("He records it.", "he RECORDS it"),
+			("Objects fell.", "OBJECTS fell"), ("the objective", "thee objective")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
 }
