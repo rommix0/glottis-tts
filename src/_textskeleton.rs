@@ -351,6 +351,13 @@ impl engine {
 		// ordinal ("henry the eighth")
 		const CARDINAL_AFTER: [&str; 16] = ["chapter", "part", "volume", "book", "act", "scene", "war", "phase", "level",
 			"stage", "round", "season", "episode", "apollo", "rocky", "section"];
+		// a four-digit number after one of these words is a year ("in 2015 votes were cast")
+		const YEAR_AFTER: [&str; 15] = ["in", "since", "until", "till", "during", "circa", "year", "from", "by", "early", "late",
+			"mid", "spring", "summer", "winter"];
+		// words ending in s that are not plural nouns
+		const NOT_PLURAL: [&str; 18] = ["was", "is", "has", "as", "its", "his", "hers", "ours", "yours", "theirs", "this", "thus",
+			"plus", "minus", "always", "perhaps", "besides", "unless"];
+		const PLURAL: [&str; 8] = ["people", "men", "women", "children", "feet", "teeth", "mice", "geese"];
 		let a = Self::ahead(buf, 48);
 		if a.is_empty() { return false; }
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
@@ -396,10 +403,137 @@ impl engine {
 			}
 		}
 
+		// a sentence mark inside a closing double quote: a period goes on as a comma when the sentence does
+		if matches!(at(0), b'.' | b'?' | b'!') {
+			let q = if at(1) == b'"' { 1 } else if a.get(1..4) == Some(&[0xE2, 0x80, 0x9D][..]) { 3 } else { 0 };
+			if q > 0 {
+				let mut k = 1 + q;
+				while space(at(k)) { k += 1; }
+				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { std::str::from_utf8(&a[..1]).unwrap_or(".") };
+				self.scratch_pad.write_text(&format!(" {} ", mark));
+				self.digit_prev = false;
+				self.is_plural = false;
+				consume(buf, 1 + q);
+				return true;
+			}
+		}
+
+		// the minutes of a time under ten: 10:05 ten oh five
+		if at(0) == b':' && prev.is_ascii_digit() && at(1) == b'0' && (b'1'..=b'9').contains(&at(2)) && !at(3).is_ascii_digit() {
+			let m = self.words((at(2) - b'0') as u64, false, false);
+			self.scratch_pad.write_text(&format!(" oh {} ", m));
+			consume(buf, 3);
+			self.digit_prev = true;
+			return true;
+		}
+
+		// a web address is read without its scheme
+		if !letter(prev) {
+			let low: Vec<u8> = a.iter().take(8).map(|c| c.to_ascii_lowercase()).collect();
+			for scheme in [&b"https://"[..], b"http://"] {
+				if low.starts_with(scheme) && letter(at(scheme.len())) {
+					self.scratch_pad.write_text(" ");
+					consume(buf, scheme.len());
+					return true;
+				}
+			}
+		}
+
+		// pounds, euros and yen: the amount, then the currency (and pence or cents)
+		let currency = match (at(0), at(1), at(2)) {
+			(0xC2, 0xA3, _) => Some((2, "pound", "pounds", "penny", "pence")),
+			(0xE2, 0x82, 0xAC) => Some((3, "euro", "euros", "cent", "cents")),
+			(0xC2, 0xA5, _) => Some((2, "yen", "yen", "", "")),
+			_ => None,
+		};
+		if let Some((len, one, many, sub_one, sub_many)) = currency {
+			if at(len).is_ascii_digit() {
+				// the whole amount, with its thousands commas
+				let (mut v, n) = Self::digits(&a, len);
+				let mut k = len + n;
+				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
+					v = v * 1000 + Self::digits(&a, k + 1).0;
+					k += 4;
+				}
+				let mut frac: Vec<u8> = Vec::new();
+				if at(k) == b'.' && at(k + 1).is_ascii_digit() {
+					k += 1;
+					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
+				}
+				let num = self.words(v, false, false);
+				let mut j = k;
+				while space(at(j)) { j += 1; }
+				let scale = if j > k {
+					["thousand", "million", "billion", "trillion"].into_iter().find(|w| {
+						a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !letter(at(j + w.len()))
+					})
+				} else { None };
+				let text = if let Some(w) = scale {
+					let point: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
+					let point = if frac.is_empty() { point } else { format!(" point{}", point) };
+					k = j + w.len();
+					format!(" {}{} {} {} ", num, point, w, many)
+				} else {
+					let unit = if v == 1 { one } else { many };
+					let subunit = if frac.is_empty() || sub_one.is_empty() { String::new() } else {
+						let c = frac[0] as u64 * 10 + frac.get(1).copied().unwrap_or(0) as u64;
+						if c == 0 { String::new() } else { format!(" and {} {}", self.words(c, false, false), if c == 1 { sub_one } else { sub_many }) }
+					};
+					// under one: only the pence or cents
+					if v == 0 && !subunit.is_empty() { format!(" {} ", &subunit[5..]) } else { format!(" {} {}{} ", num, unit, subunit) }
+				};
+				self.scratch_pad.write_text(&text);
+				consume(buf, k);
+				self.digit_prev = false;
+				return true;
+			}
+		}
+
 		// numbers at the start of a word
 		if at(0).is_ascii_digit() && !prev.is_ascii_digit() && !matches!(prev, b'.' | b',' | b'/' | b':') {
 			let (v1, n1) = Self::digits(&a, 0);
 			let after = |i: usize| !at(i).is_ascii_digit() && at(i) != b'/';
+			// a height in feet and inches: 6'2" six foot two
+			if n1 == 1 && at(1) == b'\'' {
+				let (v2, n2) = Self::digits(&a, 2);
+				let q = if at(2 + n2) == b'"' { 1 } else if a.get(2 + n2..5 + n2) == Some(&[0xE2, 0x80, 0x9D][..]) { 3 } else { 0 };
+				if (1..=2).contains(&n2) && v2 < 12 && q > 0 {
+					let (f, i) = (self.words(v1, false, false), self.words(v2, false, false));
+					self.scratch_pad.write_text(&format!(" {} foot {} ", f, i));
+					consume(buf, 2 + n2 + q);
+					return true;
+				}
+			}
+			// a date written year-month-day
+			if n1 == 4 && at(4) == b'-' {
+				let (m, nm) = Self::digits(&a, 5);
+				let (d, nd) = Self::digits(&a, 8);
+				if nm == 2 && at(7) == b'-' && nd == 2 && !at(10).is_ascii_digit() && (1..=12).contains(&m) && (1..=31).contains(&d) {
+					let day = self.words(d, true, false);
+					let year = self.year_words(v1);
+					self.scratch_pad.write_text(&format!(" {} {} , {} ", MONTHS[m as usize - 1], day, year));
+					consume(buf, 10);
+					self.digit_prev = true;
+					return true;
+				}
+			}
+			// a version or other run of three or more dotted numbers: 2.0.1 two point oh point one
+			{
+				let mut parts = vec![v1];
+				let mut k = n1;
+				while at(k) == b'.' && at(k + 1).is_ascii_digit() {
+					let (v, n) = Self::digits(&a, k + 1);
+					parts.push(v);
+					k += 1 + n;
+				}
+				if parts.len() >= 3 && !letter(at(k)) {
+					let said: Vec<String> = parts.iter().map(|&v| self.words(v, false, true)).collect();
+					self.scratch_pad.write_text(&format!(" {} ", said.join(" point ")));
+					consume(buf, k);
+					self.digit_prev = true;
+					return true;
+				}
+			}
 			if at(n1) == b'/' {
 				let (v2, n2) = Self::digits(&a, n1 + 1);
 				let p2 = n1 + 1 + n2;
@@ -440,9 +574,22 @@ impl engine {
 					return true;
 				}
 			}
-			// a year: four plain digits from 1100 to 2099
+			// a year: four plain digits from 1100 to 2099 unless a plural noun follows ("2015 votes"), or from 1001
+			// after a word that leads a year ("in 2015 votes were cast", "in 1066")
 			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
-			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' && ((1100..=1999).contains(&v1) || (2010..=2099).contains(&v1)) {
+			let cue = space(prev) && YEAR_AFTER.contains(&Self::prev_word(buf).to_ascii_lowercase().as_str());
+			let next: String = {
+				let mut k = n1;
+				while space(at(k)) { k += 1; }
+				let mut w = String::new();
+				if k > n1 { while letter(at(k)) { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
+				w
+			};
+			let counted = PLURAL.contains(&next.as_str()) || (next.len() >= 3 && next.ends_with('s')
+				&& !next.ends_with("ss") && !next.ends_with("us") && !next.ends_with("is") && !NOT_PLURAL.contains(&next.as_str()));
+			let year = if cue { (1001..=1999).contains(&v1) || (2010..=2099).contains(&v1) }
+				else { !counted && ((1100..=1999).contains(&v1) || (2010..=2099).contains(&v1)) };
+			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' && year {
 				let w = self.year_words(v1);
 				self.scratch_pad.write_text(&format!(" {} ", w));
 				consume(buf, 4);

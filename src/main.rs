@@ -471,4 +471,40 @@ mod tests {
 			assert!(says(t).contains(want), "{} -> {}", t, says(t));
 		}
 	}
+
+	#[test]
+	fn times_web_addresses_and_versions() {
+		for (t, want) in [("at 10:05 today", "ten oh five today"), ("at 3:07 pm", "three oh seven p m"), ("Wow :0 there", "wow shocked face there"),
+			("Visit https://example.com/page now.", "visit example dot com slash page now"), ("See http://a.org.", "see a dot org ."),
+			("on 2026-10-23.", "october twenty third , twenty twenty six"), ("Version 2.0.1 is out.", "version two point oh point one is out")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
+
+	#[test]
+	fn pounds_euros_yen_and_heights() {
+		for (t, want) in [("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
+			("\u{20ac}1.50 each", "one euro and fifty cents each"), ("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"), ("only \u{20ac}0.99 each", "only ninety nine cents each"),
+			("a \u{a3}2 million deal", "two million pounds deal"), ("He's 6'2\" tall.", "six foot two tall"), ("She is 5'10\" tall.", "five foot ten tall")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
+
+	#[test]
+	fn a_closing_quote_keeps_its_punctuation() {
+		for (t, want) in [("She said \"Hello.\" and left.", "she said hello , and left ."), ("He asked \"Why?\" and left.", "why ? and left ."),
+			("She left. \"Bye,\" he said.", "she left . bye ,")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+		assert_eq!(says("He said \"Bye.\""), "he said bye .");
+	}
+
+	#[test]
+	fn years_by_context() {
+		for (t, want) in [("There were 2015 votes.", "two thousand fifteen votes"), ("In 2015 votes were cast", "twenty fifteen votes"),
+			("He was born in 1066.", "ten sixty six"), ("the 2020 election", "twenty twenty election"), ("1066 people came", "one thousand sixty six people"),
+			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"), ("1999 was good", "nineteen ninety nine was")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
 }
