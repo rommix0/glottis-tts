@@ -1,43 +1,66 @@
-// letter-to-sound: a decision tree picks each letter's phone class from the 4 letters either side and the classes
-// given to the 2 letters before; the word then gets exactly one primary stress.
-// The tree's tables are in _lts_tree.rs, built by tools/build_lexicon.py, whose decode() is this file in Python.
+// letter-to-sound: two decision trees pick each letter's phone class, left to right, from the 4 letters either
+// side, whether those are vowels and the classes given to the 2 letters before; the second also sees the first
+// tree's classes for the 2 letters after. The word then gets exactly one primary stress.
+// The trees' tables are in _lts_tree.rs, built by tools/build_lexicon.py, whose decode() is this file in Python.
 use crate::_lts_tree::*;
 
 const WINDOW: usize = 4;
+const FEATURES: usize = 2 * (2 * WINDOW + 1) + 4;
 
-// 0 outside the word, 1 apostrophe, 2.. for a to z
+// letters grouped by kind (vowels, y, sonorants, stops, fricatives), so one threshold splits off a group
+const ORDER: &[u8] = b"'aeiouywhlrmnbpdtgkcqfvszxj";
+
+// 0 outside the word, else 1 + the letter's place in ORDER
 pub fn letter_code(x: u8) -> u8 {
-	match x {
-		b'\'' => 1,
-		b'a'..=b'z' => x - b'a' + 2,
-		b'A'..=b'Z' => x - b'A' + 2,
-		_ => 0,
-	}
+	let x = x.to_ascii_lowercase();
+	ORDER.iter().position(|&c| c == x).map_or(0, |i| i as u8 + 1)
 }
 
-fn leaf(f: &[u8; 2 * WINDOW + 3]) -> usize {
-	let mut i = 0;
+fn is_vowel(code: u8) -> bool { (2..=6).contains(&code) }
+
+fn leaf(root: usize, f: &[u8; FEATURES]) -> usize {
+	// a node's left child is the node after it
+	let mut i = root;
 	while FEATURE[i] != 255 {
-		i = if f[FEATURE[i] as usize] <= THRESHOLD[i] { LEFT[i] } else { RIGHT[i] } as usize;
+		i = if f[FEATURE[i] as usize] <= THRESHOLD[i] { i + 1 } else { RIGHT[i] as usize };
 	}
 	i
+}
+
+// the letters around x, the classes given before it, which of those letters are vowels and (second tree) the first
+// tree's classes after it
+fn features(codes: &[u8], x: usize, hist: [u8; 2], ahead: Option<&[u8]>) -> [u8; FEATURES] {
+	let n = codes.len();
+	let mut f = [0u8; FEATURES];
+	for k in 0..2 * WINDOW + 1 {
+		let y = x as isize + k as isize - WINDOW as isize;
+		if y >= 0 && (y as usize) < n { f[k] = codes[y as usize]; }
+		f[2 * WINDOW + 3 + k] = is_vowel(f[k]) as u8;
+	}
+	f[2 * WINDOW + 1] = hist[0];
+	f[2 * WINDOW + 2] = hist[1];
+	if let Some(a) = ahead {
+		f[FEATURES - 2] = a.get(x + 1).copied().unwrap_or(START);
+		f[FEATURES - 1] = a.get(x + 2).copied().unwrap_or(START);
+	}
+	f
 }
 
 // phone classes for a word given as letter codes: silent letters dropped, a class repeated on the next letter
 // played once
 pub fn word(codes: &[u8]) -> Vec<u8> {
 	let n = codes.len();
+	let mut ahead = Vec::with_capacity(n);
+	let mut hist = [START, START];
+	for x in 0..n {
+		let c = CLASS[leaf(0, &features(codes, x, hist, None))];
+		ahead.push(c);
+		hist = [hist[1], c];
+	}
 	let (mut cls, mut prim, mut best) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
 	let mut hist = [START, START];
 	for x in 0..n {
-		let mut f = [0u8; 2 * WINDOW + 3];
-		for k in 0..2 * WINDOW + 1 {
-			let y = x as isize + k as isize - WINDOW as isize;
-			if y >= 0 && (y as usize) < n { f[k] = codes[y as usize]; }
-		}
-		f[2 * WINDOW + 1] = hist[0];
-		f[2 * WINDOW + 2] = hist[1];
-		let i = leaf(&f);
+		let i = leaf(SECOND, &features(codes, x, hist, Some(&ahead)));
 		cls.push(CLASS[i]);
 		prim.push(PRIMARY_P[i]);
 		best.push(BEST_PRIMARY[i]);

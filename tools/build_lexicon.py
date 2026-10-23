@@ -7,8 +7,10 @@ ALIGNED is CMUdict aligned letter by letter ("spaced letters<TAB>one phone class
 letter, "a|b" for a letter that makes two phones). CMUDICT is CMUdict in the synthesizer's phone notation, one
 pronunciation per word.
 
-The tree picks each letter's phone class from the 4 letters either side and the classes it gave the 2 letters
-before. A word then gets exactly one primary stress: extra primaries become secondary, and a word with none takes
+Two trees pick each letter's phone class, left to right. Both see the 4 letters either side (coded with the
+letters grouped by kind, so one threshold splits off the vowels or the stops), whether each of those is a vowel,
+and the classes given to the 2 letters before; the second also sees the first tree's classes for the 2 letters
+after. A word then gets exactly one primary stress: extra primaries become secondary, and a word with none takes
 it on the letter likeliest to carry one. decode() below is what src/_lts.rs does at run time.
 
 The dictionary holds:
@@ -36,7 +38,9 @@ SRC = os.path.join(HERE, '..', 'src')
 WINDOW = 4
 HISTORY = 2
 DEPTH = 25
-ALPHA = 4e-6
+ALPHA = 2e-6
+# letter codes in this order from 1 (0 is outside the word): vowels, y, sonorants, stops, fricatives
+ORDER = "'aeiouywhlrmnbpdtgkcqfvszxj"
 
 # phone class id = position, as PHNIDToPhoneme in src/_utils.rs reads them
 PHONES = ['"aa', '"ae', '"ah', '"ao', '"aw', '"ay', '"eh', '"er', '"ey', '"ih', '"iy', '"ow', '"oy', '"uh', '"uw',
@@ -56,11 +60,14 @@ WEAK = {'ah': 'ax', 'ih': 'ix', 'er': 'axr'}
 
 
 def letter_code(ch):
-    # as letter_code in src/_lts.rs: 0 outside the word, 1 apostrophe, 2.. for a to z
-    if ch == "'":
-        return 1
+    # as letter_code in src/_lts.rs: 0 outside the word, else 1 + the letter's place in ORDER
     ch = ch.lower()
-    return ord(ch) - ord('a') + 2 if 'a' <= ch <= 'z' else 0
+    return ORDER.index(ch) + 1 if len(ch) == 1 and ch in ORDER else 0
+
+
+def is_vowel(code):
+    # a e i o u
+    return 2 <= code <= 6
 
 
 def read_pairs(path):
@@ -99,46 +106,82 @@ def weak_form(pron):
     return out
 
 
-def features(codes, x, hist):
+def features(codes, x, hist, ahead=None):
+    # the letters around x, the classes given before it, which of those letters are vowels, and (second tree) the
+    # first tree's classes after it
     win = [codes[y] if 0 <= y < len(codes) else 0 for y in range(x - WINDOW, x + WINDOW + 1)]
-    return win + hist
+    f = win + hist + [int(is_vowel(c)) for c in win]
+    if ahead is not None:
+        f += [ahead[x + k] if x + k < len(ahead) else START for k in range(1, HISTORY + 1)]
+    return f
+
+
+def first_pass(tree, words):
+    """the first tree's class for every letter of every word (lists of letter codes), all words at once"""
+    hists = [[START] * HISTORY for _ in words]
+    out = [[] for _ in words]
+    for x in range(max(len(w) for w in words)):
+        idx = [i for i, w in enumerate(words) if len(w) > x]
+        got = tree.predict(np.array([features(words[i], x, hists[i]) for i in idx], dtype=np.int16))
+        for i, k in zip(idx, got):
+            out[i].append(int(k))
+            hists[i] = hists[i][1:] + [int(k)]
+    return out
 
 
 def train(aligned):
+    words = [[letter_code(c) for c in g] for g, _ in aligned]
+    targets = [[PHONE_ID[c] for c in p] for _, p in aligned]
+    fit = lambda X, y: DecisionTreeClassifier(max_depth=DEPTH, ccp_alpha=ALPHA, random_state=42).fit(
+        np.array(X, dtype=np.int16), np.array(y))
     X, y = [], []
-    for g, p in aligned:
-        codes = [letter_code(c) for c in g]
-        ids = [PHONE_ID[c] for c in p]
+    for codes, ids in zip(words, targets):
         hist = [START] * HISTORY
         for x in range(len(codes)):
             X.append(features(codes, x, hist))
             y.append(ids[x])
             hist = hist[1:] + [ids[x]]
-    return DecisionTreeClassifier(max_depth=DEPTH, ccp_alpha=ALPHA, random_state=42).fit(np.array(X), np.array(y))
+    first = fit(X, y)
+    # the second tree learns from the first one's own guesses on the right, as it gets them at run time
+    ahead = first_pass(first, words)
+    X = []
+    for codes, ids, a in zip(words, targets, ahead):
+        hist = [START] * HISTORY
+        for x in range(len(codes)):
+            X.append(features(codes, x, hist, a))
+            hist = hist[1:] + [ids[x]]
+    return first, fit(X, y)
 
 
 class Tables:
-    """the fitted tree as the flat tables src/_lts_tree.rs carries"""
-    def __init__(self, tree):
-        t = tree.tree_
-        classes = list(tree.classes_)
-        prim = np.array([PRIMARY[c] for c in classes])
-        self.n = t.node_count
-        self.feat = [255 if t.children_left[i] < 0 else int(t.feature[i]) for i in range(self.n)]
-        self.thr = [0 if t.children_left[i] < 0 else int(np.floor(t.threshold[i])) for i in range(self.n)]
-        self.left = [max(int(t.children_left[i]), 0) for i in range(self.n)]
-        self.right = [max(int(t.children_right[i]), 0) for i in range(self.n)]
-        v = t.value[:, 0, :]
-        v = v / v.sum(1, keepdims=True)
-        self.cls = [classes[int(np.argmax(v[i]))] for i in range(self.n)]
-        self.prim = [int(round(255 * v[i][prim].sum())) for i in range(self.n)]
-        best = [int(np.argmax(np.where(prim, v[i], -1.0))) for i in range(self.n)]
-        self.best = [classes[b] if prim.any() else 0 for b in best]
+    """the fitted trees as the flat tables src/_lts_tree.rs carries, one after the other; a node's left child is
+    the node after it"""
+    def __init__(self, trees):
+        self.feat, self.thr, self.right, self.cls, self.prim, self.best, self.roots = [], [], [], [], [], [], []
+        for tree in trees:
+            t = tree.tree_
+            base = len(self.feat)
+            self.roots.append(base)
+            classes = list(tree.classes_)
+            prim = np.array([PRIMARY[c] for c in classes])
+            v = t.value[:, 0, :]
+            v = v / v.sum(1, keepdims=True)
+            for i in range(t.node_count):
+                leaf = t.children_left[i] < 0
+                assert leaf or t.children_left[i] == i + 1
+                self.feat.append(255 if leaf else int(t.feature[i]))
+                self.thr.append(0 if leaf else int(np.floor(t.threshold[i])))
+                self.right.append(0 if leaf else base + int(t.children_right[i]))
+                self.cls.append(classes[int(np.argmax(v[i]))])
+                self.prim.append(int(round(255 * v[i][prim].sum())))
+                b = int(np.argmax(np.where(prim, v[i], -1.0)))
+                self.best.append(classes[b] if prim.any() else 0)
+        self.n = len(self.feat)
 
-    def leaf(self, f):
-        i = 0
+    def leaf(self, root, f):
+        i = root
         while self.feat[i] != 255:
-            i = self.left[i] if f[self.feat[i]] <= self.thr[i] else self.right[i]
+            i = i + 1 if f[self.feat[i]] <= self.thr[i] else self.right[i]
         return i
 
 
@@ -146,9 +189,14 @@ def decode(tab, letters):
     """phone class ids for a word, as the synthesizer plays them"""
     codes = [letter_code(c) for c in letters]
     hist = [START] * HISTORY
+    ahead = []
+    for x in range(len(codes)):
+        ahead.append(tab.cls[tab.leaf(tab.roots[0], features(codes, x, hist))])
+        hist = hist[1:] + [ahead[-1]]
+    hist = [START] * HISTORY
     cls, prim, best = [], [], []
     for x in range(len(codes)):
-        i = tab.leaf(features(codes, x, hist))
+        i = tab.leaf(tab.roots[1], features(codes, x, hist, ahead))
         cls.append(tab.cls[i]); prim.append(tab.prim[i]); best.append(tab.best[i])
         hist = hist[1:] + [tab.cls[i]]
     if cls and sum(PRIMARY[c] for c in cls) != 1:
@@ -258,15 +306,16 @@ def write_tree(tab, samples, path):
     def table(name, ty, vals):
         rows = [', '.join(str(v) for v in vals[i:i + 24]) + ',' for i in range(0, len(vals), 24)]
         return [f'pub static {name}: [{ty}; {len(vals)}] = ['] + ['\t' + r for r in rows] + ['];', '']
-    lines = ['// letter-to-sound tree, generated by tools/build_lexicon.py: do not edit', '',
-             f'pub const START: u8 = {START};', f'pub const SILENT: u8 = {SILENT};', '']
+    lines = ['// letter-to-sound trees, generated by tools/build_lexicon.py: do not edit', '',
+             f'pub const START: u8 = {START};', f'pub const SILENT: u8 = {SILENT};',
+             '// where the second tree starts (the first starts at 0)', f'pub const SECOND: usize = {tab.roots[1]};', '']
     lines += table('PRIMARY', 'bool', ['true' if p else 'false' for p in PRIMARY])
     lines += table('DEMOTE', 'u8', DEMOTE)
     lines += ['// per node: the feature it splits on (255 for a leaf: 0-8 the letters l4..r4, 9-10 the classes given',
-              '// two and one letters back), the threshold, the children; per leaf: the class, how likely (0-255)',
-              '// some primary-stressed class is, and the likeliest primary-stressed class']
-    lines += table('FEATURE', 'u8', tab.feat) + table('THRESHOLD', 'u8', tab.thr)
-    lines += table('LEFT', 'u16', tab.left) + table('RIGHT', 'u16', tab.right)
+              '// two and one letters back, 11-19 whether l4..r4 are vowels, 20-21 the first tree\'s classes one and two',
+              '// letters on), the threshold, the right child (the left one is the next node); per leaf: the class,',
+              '// how likely (0-255) some primary-stressed class is, and the likeliest primary-stressed class']
+    lines += table('FEATURE', 'u8', tab.feat) + table('THRESHOLD', 'u8', tab.thr) + table('RIGHT', 'u32', tab.right)
     lines += table('CLASS', 'u8', tab.cls) + table('PRIMARY_P', 'u8', tab.prim) + table('BEST_PRIMARY', 'u8', tab.best)
     lines += ['// words and the classes the trained tree gives them, for the tests', '#[cfg(test)]',
               f'pub static SAMPLES: [(&str, &[u8]); {len(samples)}] = [']
