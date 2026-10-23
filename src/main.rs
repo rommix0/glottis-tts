@@ -408,4 +408,15 @@ mod tests {
 			panic!("sound after the final pause, peak {}", peak);
 		}
 	}
+
+	// the normalizer's output with spaces collapsed
+	fn says(t: &str) -> String { normalize(t).split_whitespace().collect::<Vec<_>>().join(" ") }
+
+	#[test]
+	fn long_input_does_not_crash() {
+		let long = "Dr. Smith paid $45.50 for 3 km of road. ".repeat(250);
+		assert!(says(&long).contains("doctor smith"));
+		let digits = "7".repeat(3000);
+		assert_eq!(says(&digits).matches("seven").count(), 3000);
+	}
 }

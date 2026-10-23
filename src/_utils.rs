@@ -1,7 +1,7 @@
 // ring buffer
 pub struct cbuf {
-	size:   isize,			// buffer size
-	buffer: [u8; 2048],		// buffer itself (2048 is hard coded here)
+	size:   isize,			// buffer size (a power of two; doubles when full)
+	buffer: Vec<u8>,		// buffer itself
 	head:   isize,			// producer
 	tail:   isize,			// consumer
 	prev:   u8				// previous character for trimming when writing text
@@ -10,7 +10,7 @@ impl cbuf {
 	pub fn new() -> cbuf {
 		cbuf {
 			size:   2048,
-			buffer: [0; 2048],
+			buffer: vec![0; 2048],
 			head:   0,
 			tail:   0,
 			prev:   0,
@@ -20,9 +20,25 @@ impl cbuf {
 		if self.head == self.tail { return false; }
 		true
 	}
+	fn grow(&mut self) {
+		// double the buffer, keeping the queued bytes in order from the start; cursors saved before this are
+		// stale, so a buffer only grows while it is filled, before it is read with saved cursors
+		let mut b = vec![0u8; 2 * self.size as usize];
+		let mut n = 0;
+		let mut t = self.tail;
+		while t != self.head {
+			b[n] = self.buffer[t as usize];
+			n += 1;
+			t = (t + 1) & (self.size - 1);
+		}
+		self.buffer = b;
+		self.size *= 2;
+		self.tail = 0;
+		self.head = n as isize;
+	}
 	fn enqueue(&mut self, x: u8) {
+		if (self.head + 1) & (self.size - 1) == self.tail { self.grow(); }
 		let nxt = (self.head + 1) & (self.size - 1);
-		if nxt == self.tail { panic!("cbuf:BUFFER OVERFLOW!!"); }
 		self.buffer[self.head as usize] = x;
 		self.head = nxt;
 		//println!("enqueue: t: {}, h: {}", self.tail, self.head);
