@@ -79,7 +79,7 @@ pub fn phone_dur(p: u8) -> PhoneDur {
 		42 => PhoneDur { inherent:  85.0, min:  38.0 },	// y (35 seen)
 		43 => PhoneDur { inherent:  88.0, min:  40.0 },	// z (132 seen)
 		44 => PhoneDur { inherent:  94.0, min:  42.0 },	// zh (2 seen)
-		47 => PhoneDur { inherent:  77.0, min:  35.0 },	// dx (0 seen)
+		47 => PhoneDur { inherent:  30.0, min:  20.0 },	// dx: a single quick tap
 		_  => PhoneDur { inherent:  80.0, min:  40.0 },
 	}
 }

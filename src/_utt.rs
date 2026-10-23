@@ -144,6 +144,7 @@ impl Utterance {
 		if u.words.len() > phrase_start {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::None });
 		}
+		u.flap();
 		u.kind = match u.phrases.last().map(|p| p.end) {
 			Some(Boundary::Exclaim) => Kind::Exclamation,
 			Some(Boundary::Question) => {
@@ -153,6 +154,25 @@ impl Utterance {
 			_ => Kind::Statement,
 		};
 		u
+	}
+	fn flap(&mut self) {
+		// a t or d after a vowel or r is said as a flap before an unstressed vowel in its word ("city", "rider"),
+		// or ending its word before a vowel in the same phrase ("got it"); a word's first stop, a stop before a
+		// stressed vowel and a t before a word-final syllabic n ("button") keep their closure
+		const T: u8 = 36; const D: u8 = 11; const DX: u8 = 47; const N: u8 = 27; const RX: u8 = 33;
+		let vowel = |p: u8| is_vowel(p) && !matches!(p, 48 | 49);
+		for i in 1..self.segs.len().saturating_sub(1) {
+			let (prev, cur, next) = (&self.segs[i - 1], &self.segs[i], &self.segs[i + 1]);
+			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(vowel(prev.phone) || prev.phone == RX) { continue; }
+			let w = &self.words[cur.word];
+			let flaps = if next.word == cur.word {
+				let syllabic_n = matches!(next.phone, 6 | 20) && i + 3 == w.segs.end && self.segs[i + 2].phone == N;
+				vowel(next.phone) && next.stress == 0 && !syllabic_n
+			} else {
+				vowel(next.phone) && self.words[next.word].phrase == w.phrase && self.words[next.word].segs.start == i + 1
+			};
+			if flaps { self.segs[i].phone = DX; }
+		}
 	}
 	fn drop_empty_word(&mut self) {
 		// a word boundary with no phones after it is not a word
@@ -298,5 +318,49 @@ mod tests {
 		assert!(u.words[0].function);
 		assert!(!u.words[1].function);
 		assert_eq!(u.words[1].text, "cat");
+	}
+
+	fn phones(u: &Utterance) -> Vec<u8> { u.segs.iter().map(|s| s.phone).collect() }
+
+	#[test]
+	fn flaps_between_a_vowel_and_an_unstressed_vowel() {
+		// s 'ih t iy: the t flaps
+		let u = Utterance::build(&[CW, 72, 25, 76, 54, PERIOD], &texts(&["city"]));
+		assert_eq!(phones(&u), vec![34, 19, 47, 21]);
+	}
+
+	#[test]
+	fn keeps_the_stop_before_a_stressed_vowel() {
+		// ax t 'ae k
+		let u = Utterance::build(&[CW, 36, 76, 16, 56, PERIOD], &texts(&["attack"]));
+		assert_eq!(phones(&u)[1], 36);
+	}
+
+	#[test]
+	fn keeps_a_words_first_stop() {
+		// ax | t 'aa p
+		let u = Utterance::build(&[CW, 36, CW, 76, 15, 68, PERIOD], &texts(&["a", "top"]));
+		assert_eq!(phones(&u)[1], 36);
+	}
+
+	#[test]
+	fn flaps_a_word_final_stop_before_a_vowel() {
+		// g 'aa t | 'ih t: the first t flaps, the phrase-final one does not
+		let u = Utterance::build(&[CW, 48, 15, 76, CW, 25, 76, PERIOD], &texts(&["got", "it"]));
+		assert_eq!(phones(&u), vec![17, 1, 47, 19, 36]);
+	}
+
+	#[test]
+	fn keeps_the_stop_before_a_syllabic_n() {
+		// b 'ah t ax n
+		let u = Utterance::build(&[CW, 39, 17, 76, 36, 64, PERIOD], &texts(&["button"]));
+		assert_eq!(phones(&u)[2], 36);
+	}
+
+	#[test]
+	fn no_flap_across_a_phrase_break() {
+		// g 'aa t , 'ih t
+		let u = Utterance::build(&[CW, 48, 15, 76, COMMA, CW, 25, 76, PERIOD], &texts(&["got", "it"]));
+		assert_eq!(phones(&u)[2], 36);
 	}
 }
