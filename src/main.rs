@@ -33,16 +33,19 @@ struct Opts {
 	text:  String,
 	rate:  f32,
 	trace: bool,
+	text_only: bool,	// print the normalized text instead of speaking
 	seg_dump: Option<String>,	// file for the playing segment index of every sample
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, seg_dump: None };
+	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(a) = args.next() {
 		if a == "--trace" {
 			opts.trace = true;
+		} else if a == "--text" {
+			opts.text_only = true;
 		} else if a == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
 		} else if a == "--rate" {
@@ -74,6 +77,23 @@ fn morph_word(word: &str, dict_reader: &mut dictreader) -> Option<Vec<u8>> {
 		Some(out)
 	};
 	_morph::compose(&word.to_ascii_lowercase(), &mut lookup, 2)
+}
+
+// the text normalizer's output for a whole input
+fn normalize(text: &str) -> String {
+	let mut buf = cbuf::new();
+	buf.write(0x20);
+	buf.write_text(text);
+	buf.write(0x20);
+	buf.write(0x00);
+	let mut eng = _text::engine::new();
+	let mut out = Vec::new();
+	while buf.is_not_empty() {
+		let done = eng.lex(&mut buf);
+		while eng.is_not_empty() { out.push(eng.read()); }
+		if done { break; }
+	}
+	String::from_utf8_lossy(&out).into_owned()
 }
 
 // the engines that run across sentences
@@ -210,6 +230,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			std::process::exit(1);
 		}
 	};
+
+	if opts.text_only {
+		println!("{}", normalize(&opts.text));
+		return Ok(());
+	}
 
 	// setup wav file stuff here
 	let spec = hound::WavSpec {
@@ -355,7 +380,7 @@ mod tests {
 		let path = env::temp_dir().join(format!("tts_synth_test_{}.wav", std::process::id()));
 		let spec = hound::WavSpec { channels: 1, sample_rate: m_sr as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
 		let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, seg_dump: None };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);
