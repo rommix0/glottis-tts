@@ -61,6 +61,8 @@ const NASAL_EDGE_MS: f32 = 15.0;
 const BACK_TRANSITION_MS: f32 = 80.0;
 // a vowel's F3 is this much (Hz) lower at its end before an r
 const RHOTIC_F3: f32 = 200.0;
+// a vowel's move into the next phone takes at most this long (ms)
+const VOWEL_EXIT_MS: f32 = 50.0;
 // out of a vowel an r reaches its formants within this long (ms)
 const R_ONSET_MS: f32 = 50.0;
 // while F2 glides, F1 still opens into the back vowel within this long (ms)
@@ -1391,6 +1393,11 @@ impl engine {
 				self.update_B_to_Next();
 				self.marker_BA = self.get_control_A_duration(self.C_B_src, self.pdr_c);
 			}
+			if self.pft_c & 0x1 != 0 && self.marker_BA > samples(VOWEL_EXIT_MS) {
+				// a long vowel keeps its own formants longer, the move into the next phone takes the same time
+				self.marker_B += self.marker_BA - samples(VOWEL_EXIT_MS);
+				self.marker_BA = samples(VOWEL_EXIT_MS);
+			}
 			if self.phn_c == PAU {
 				// no transition carried into the next phone, so the pause keeps its length
 				self.marker_BA = 0;
@@ -2464,4 +2471,19 @@ mod tests {
 		}
 	}
 
+	#[test]
+	fn a_long_vowel_moves_into_the_next_phone_in_set_time() {
+		// ah carries over half its length into the next phone; a long one holds that to VOWEL_EXIT_MS
+		let carried = |d: i32| {
+			let out = trace_moves(&[(PAU, 50, false), (23, 90, false), (3, d, true), (36, 90, false), (6, 100, false), (48, 80, false), (0, 50, false)]);
+			// the counter has stepped once by the first sample
+			(1 - out.iter().find(|x| x.0 == 36).unwrap().1, out.len())
+		};
+		let (long, n_long) = carried(200);
+		assert_eq!(long, samples(VOWEL_EXIT_MS), "carried {} ms", long as f32 * 1000.0 / m_sr as f32);
+		let (short, n_short) = carried(60);
+		assert!(short < samples(VOWEL_EXIT_MS) && short > samples(25.0), "short ah carries {} samples", short);
+		// the vowel's length does not change
+		assert!((n_long as i32 - n_short as i32 - samples(140.0)).abs() <= 1, "{} samples apart", n_long - n_short);
+	}
 }
