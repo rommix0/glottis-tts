@@ -46,10 +46,13 @@ const LABIAL_BURST_F3: f32 = 2300.0;
 const BURST_SIBILANT_DB: f32 = -6.0;
 // an unreleased stop plays this share of its duration, as closure merging with the next one
 const UNRELEASED_SHARE: f32 = 0.5;
-// sibilant fricatives fade in and out over this long (ms), centred on their boundary with a vowel or sonorant
+// sibilant fricatives fade out into a vowel or sonorant over this long (ms), centred on the boundary
 const SIB_RAMP_MS: f32 = 40.0;
-// other fricatives crossfade with a vowel or sonorant over this long (ms), centred on the boundary
+// other fricatives crossfade into a vowel or sonorant over this long (ms), centred on the boundary
 const FRIC_RAMP_MS: f32 = 40.0;
+// out of a vowel or sonorant into a fricative, the crossfade takes this long (ms), sibilant and not
+const SIB_ENTRY_MS: f32 = 60.0;
+const FRIC_ENTRY_MS: f32 = 70.0;
 // fricative noise rises and falls over this long (ms) next to silence or the phrase-final release
 const FRIC_SILENCE_MS: f32 = 70.0;
 // a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
@@ -1430,7 +1433,14 @@ impl engine {
 			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
 				// a fricative fades in and out across its boundary, as far as the carried-over region allows
 				let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
-				let half = samples(if sib { SIB_RAMP_MS } else { FRIC_RAMP_MS } / 2.0);
+				let entry = fricative(self.phn_c);
+				let len = match (sib, entry) {
+					(true, true) => SIB_ENTRY_MS,
+					(true, false) => SIB_RAMP_MS,
+					(false, true) => FRIC_ENTRY_MS,
+					(false, false) => FRIC_RAMP_MS,
+				};
+				let half = samples(len / 2.0);
 				self.amp_start = (-half).max(self.counter);
 				self.amp_len = half - self.amp_start;
 			} else if (fricative(self.phn_c) && quiet(self.phn_l1)) || (fricative(self.phn_l1) && quiet(self.phn_c)) {
@@ -1858,20 +1868,24 @@ mod tests {
 	}
 
 	#[test]
-	fn sibilant_ramp_is_centered() {
-		// frication fades in across the vowel-to-S boundary and out across the S-to-vowel one
-		let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (34, 150, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
-		let half = ms(SIB_RAMP_MS / 2.0);
-		let af = |p: u8, c: i32| out.iter().find(|x| x.0 == p && x.1 == c).unwrap().2;
-		let full = af(34, half + ms(10.0));
-		assert_eq!(af(34, -half - ms(2.0)), 0.0, "frication before the ramp");
-		let mid = af(34, 0);
-		assert!(mid > 0.0 && mid < full - 3.0, "frication at the boundary {} (full {})", mid, full);
-		assert!((af(34, half) - full).abs() < 0.5, "frication not full {} ms after the boundary", SIB_RAMP_MS / 2.0);
-		assert!((af(1, -half - ms(2.0)) - full).abs() < 0.5, "frication fades before the exit ramp");
-		let out_mid = af(1, 0);
-		assert!(out_mid > 0.0 && out_mid < full - 3.0, "frication at the exit boundary {}", out_mid);
-		assert_eq!(af(1, half + ms(1.0)), 0.0, "frication after the exit ramp");
+	fn fricative_ramps_are_centered() {
+		// frication fades in across the vowel-to-fricative boundary over the entry crossfade,
+		// and out across the fricative-to-vowel one over the shorter exit crossfade
+		for &(f, entry, exit) in &[(34u8, SIB_ENTRY_MS, SIB_RAMP_MS), (16, FRIC_ENTRY_MS, FRIC_RAMP_MS)] {
+			let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (f, 150, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
+			let (half, half_out) = (ms(entry / 2.0), ms(exit / 2.0));
+			let af = |p: u8, c: i32| out.iter().find(|x| x.0 == p && x.1 == c).unwrap().2;
+			let full = af(f, half + ms(10.0));
+			assert_eq!(af(f, -half - ms(2.0)), 0.0, "{}: frication before the ramp", f);
+			assert!(af(f, -half + ms(2.0)) > 0.0, "{}: frication not started {} ms before the boundary", f, entry / 2.0 - 2.0);
+			let mid = af(f, 0);
+			assert!(mid > 0.0 && mid < full - 3.0, "{}: frication at the boundary {} (full {})", f, mid, full);
+			assert!((af(f, half) - full).abs() < 0.5, "{}: frication not full {} ms after the boundary", f, entry / 2.0);
+			assert!((af(1, -half_out - ms(2.0)) - full).abs() < 0.5, "{}: frication fades before the exit ramp", f);
+			let out_mid = af(1, 0);
+			assert!(out_mid > 0.0 && out_mid < full - 3.0, "{}: frication at the exit boundary {}", f, out_mid);
+			assert_eq!(af(1, half_out + ms(1.0)), 0.0, "{}: frication after the exit ramp", f);
+		}
 	}
 
 	#[test]
