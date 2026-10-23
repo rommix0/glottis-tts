@@ -1,7 +1,5 @@
 mod _utils;
 mod _text;
-//mod _duration;
-//mod _pitch;
 mod _lts;
 mod _vtm;
 mod _vtbl;
