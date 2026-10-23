@@ -22,6 +22,9 @@ const LIP_D: f32 = 0.5;
 const LIP_TUNED_SR: f32 = 32000.0;
 const LIP_MATCH: f32 = 0.5;
 
+// pitch flutter amount, on the KLGLOTT88 flutter scale (0 to 100)
+const FLUTTER: f32 = 75.0;
+
 // output trim, keeps peaks under the soft clip
 const OUT_DB: f32 = -2.0;
 
@@ -262,7 +265,6 @@ struct LfSource {
 	n: usize,					// absolute sample index
 	glottal: Biquad,
 	tilt: LpPole,
-	rng_state: u32,
 	counter: u32,
 	ra: f32,
 }
@@ -275,7 +277,6 @@ impl LfSource {
 			n: 0,
 			glottal: Biquad::new(),
 			tilt: LpPole::new(),
-			rng_state: 0x12345678,
 			counter: 0,
 			ra: 0.0,
 		}
@@ -300,13 +301,6 @@ impl LfSource {
 		for (k, wk) in w.iter().enumerate() {
 			self.exc[(first + k) % PULSE_RING] += wk / sum;
 		}
-	}
-	fn xorshift(&mut self) -> f32 {
-		self.rng_state ^= self.rng_state << 13;
-		self.rng_state ^= self.rng_state >> 17;
-		self.rng_state ^= self.rng_state << 5;
-		if self.rng_state & 0x1 == 0 { return 1.0; }
-		-1.0
 	}
 	fn calc_fant(&mut self, f0: f32, rd: f32) {
 		// get Fant 1997 parameters
@@ -346,14 +340,9 @@ impl LfSource {
 		self.counter = (self.counter + 1) % (10 * m_sr);
 		a * (flutter / 50.0) * (f0 / 100.0)
 	}
-	pub fn step(&mut self, f0: f32, rd: f32, flutter: f32, jitter: f32, di: f32) -> (f32, f32, f32) {
-		// calculate variations in F0
-		let f0_with_flutter = f0 + self.calc_flutter(f0, flutter);
-		let mut f0_final = f0_with_flutter;
-		if jitter > 0.0 {
-			let b = jitter / 100.0 * 4.5;
-			f0_final += b * self.xorshift() * f0_with_flutter * (f0_with_flutter / m_sr as f32).sqrt();
-		}
+	pub fn step(&mut self, f0: f32, rd: f32, flutter: f32) -> (f32, f32, f32) {
+		// slow F0 flutter on top of the asked pitch
+		let f0_final = f0 + self.calc_flutter(f0, flutter);
 
 		// determine noise modulation amount
 		let nmod = if self.pos_in_period >= 0.5 { 0.5 } else { 1.0 };
@@ -371,11 +360,7 @@ impl LfSource {
 		self.n += 1;
 
 		// construct glottal pulse
-		// and add diplophonic pulsing if need be
-		let mut sample = self.tilt.step(self.glottal.step(impulse));
-		if di > 0.0 && self.counter % 2 == 1 {
-			sample *= 1.0 - di / 100.0;
-		}
+		let sample = self.tilt.step(self.glottal.step(impulse));
 
 		// advance position and return sample
 		self.last_inc = f0_final / m_sr as f32;
@@ -701,7 +686,7 @@ impl vtm {
 
 		// get noise and glottal sound sources
 		let (n, mut f) = self.noisegen.step();
-		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, 75.0, 0.0, 0.0);
+		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, FLUTTER);
 		self.RA = ra;
 		voice *= 0.01;
 		f *= 0.6;
@@ -821,7 +806,7 @@ mod tests {
 	fn glottal_pulses_keep_exact_time() {
 		// at a period that is no whole number of samples, the voice's highs are still harmonic
 		let mut g = LfSource::new();
-		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| g.step(120.0, 0.6, 0.0, 0.0, 0.0).0).collect();
+		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| g.step(120.0, 0.6, 0.0).0).collect();
 		let tail = &x[x.len() - 8192..];
 		let h = hnr(tail, 120.0, 2000.0, 4000.0);
 		assert!(h > 40.0, "2-4 kHz harmonics only {} dB over the rest", h);
