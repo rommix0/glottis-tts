@@ -375,7 +375,7 @@ mod tests {
 		let mut run = 0;
 		let mut pause_end = None;
 		for (i, x) in out.iter().enumerate() {
-			if silent(x) { run += 1; } else { if run > 9600 { pause_end = Some(i); } run = 0; }
+			if silent(x) { run += 1; } else { if run > m_sr * 3 / 10 { pause_end = Some(i); } run = 0; }
 		}
 		if let Some(i) = pause_end {
 			let peak = out[i..].iter().fold(0.0f32, |m, x| m.max(x.abs()));

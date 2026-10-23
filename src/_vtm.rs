@@ -11,10 +11,13 @@
 use core::f32::consts::PI;
 
 // master sample rate
-pub const m_sr: u32 = 32000;
+pub const m_sr: u32 = 22050;
 
 // soft clip default
 const CLIP_LIMIT: f32 = 0.85;
+
+// output trim, keeps peaks under the soft clip
+const OUT_DB: f32 = -2.0;
 
 // makeup gain for the cascade branch (unity DC gain per resonator)
 const CASC_GAIN: f32 = 2328.0;
@@ -382,8 +385,6 @@ pub struct vtm {
 	VR6:      resonator,
 	VR7:      resonator,
 	VR8:      resonator,
-	VR9:      resonator,
-	VR10:     resonator,
 	NPR:      resonator,
 	NZR:      resonator,
 	FR2:      resonator,
@@ -451,8 +452,6 @@ impl vtm {
 			VR6      : resonator::new(F6_INIT,  B6_INIT,  false),
 			VR7      : resonator::new(F7_INIT,  B7_INIT,  false),
 			VR8      : resonator::new(F8_INIT,  B8_INIT,  false),
-			VR9      : resonator::new(F9_INIT,  B9_INIT,  false),
-			VR10     : resonator::new(F10_INIT, B10_INIT, false),
 			NPR      : resonator::new(FN_INIT,  BN_INIT,  false),
 			NZR      : resonator::new(FN_INIT,  BN_INIT,  true),
 			FR2      : resonator::new(F2_INIT,  B2_INIT,  false),
@@ -484,8 +483,6 @@ impl vtm {
 		self.VR6.init();
 		self.VR7.init();
 		self.VR8.init();
-		self.VR9.init();
-		self.VR10.init();
 		self.NPR.init();
 		self.NZR.init();
 		self.FR2.init();
@@ -512,8 +509,6 @@ impl vtm {
 		self.VR6.reset();
 		self.VR7.reset();
 		self.VR8.reset();
-		self.VR9.reset();
-		self.VR10.reset();
 		self.NPR.reset();
 		self.NZR.reset();
 		self.FR2.reset();
@@ -625,8 +620,6 @@ impl vtm {
 		yy = self.VR6.step(yy, 0.0, 0.0);
 		yy = self.VR7.step(yy, 0.0, 0.0);
 		yy = self.VR8.step(yy, 0.0, 0.0);
-		yy = self.VR9.step(yy, 0.0, 0.0);
-		yy = self.VR10.step(yy, 0.0, 0.0);
 		yy
 	}
 	fn softclip(&mut self, x: f32) -> f32 {
@@ -694,7 +687,7 @@ impl vtm {
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
 		// add them together and return
-		let out = self.lip(casc_out + parr_out, 0.5);
+		let out = self.lip(casc_out + parr_out, 0.5) * 10.0_f32.powf(OUT_DB / 20.0);
 		self.softclip(out)
 	}
 }

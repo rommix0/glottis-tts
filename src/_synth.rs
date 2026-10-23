@@ -1647,7 +1647,7 @@ mod tests {
 		let plain = render(&[(1, 150), (1, 150)]);
 		let paused = render(&[(1, 150), (PAU, 300), (1, 150)]);
 		let diff = paused.len() as i64 - plain.len() as i64;
-		assert!((diff - 9600).abs() <= 800, "pause added {} samples", diff);
+		assert!((diff - ms(300.0) as i64).abs() <= ms(25.0) as i64, "pause added {} samples", diff);
 
 		// the pause is a run of silence
 		let mut run = 0;
@@ -1655,7 +1655,7 @@ mod tests {
 		for x in &paused {
 			if x.abs() < 1e-3 { run += 1; if run > best { best = run; } } else { run = 0; }
 		}
-		assert!(best >= 8000, "longest silent run {} samples", best);
+		assert!(best >= ms(250.0), "longest silent run {} samples", best);
 	}
 
 	fn ms(x: f32) -> i32 { (x * m_sr as f32 / 1000.0) as i32 }
