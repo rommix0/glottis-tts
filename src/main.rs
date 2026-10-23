@@ -4,6 +4,7 @@
 mod _utils;
 mod _text;
 mod _lts;
+mod _lts_tree;
 mod _vtm;
 mod _vtbl;
 mod _synth;
@@ -21,7 +22,6 @@ use hound;
 
 use crate::_utils::cbuf;
 use crate::_dread::dictreader;
-use crate::_lts::lts;
 use crate::_utt::{Utterance, Boundary, PAU};
 
 type Wav = hound::WavWriter<BufWriter<File>>;
@@ -217,26 +217,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut eng = new_engines();
 	if let Some(path) = &opts.seg_dump { eng.dump = Some(BufWriter::new(File::create(path)?)); }
 	let mut text_engine  = _text::engine::new();
-	let mut lts_engine   = _lts::pvec::new();
 
 	// current sentence: phone tokens and the text of each word
 	let mut tokens: Vec<u8>      = Vec::new();
 	let mut texts:  Vec<String>  = Vec::new();
 
-	let mut l4: u8;
-	let mut l3: u8;
-	let mut l2: u8;
-	let mut l1: u8;
-	let mut c:  u8;
-	let mut r1: u8;
-	let mut r2: u8;
-	let mut r3: u8;
-	let mut r4: u8;
 	let mut pout: u8;
-	let mut prev: u8;
 	let mut cc: u8;
 	let mut cin: u8;
-	let mut yyreset: usize;
 
 	// proceed with the text normalizer/LTS pipeline
 	while buf.is_not_empty() {
@@ -247,7 +235,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				// process word when whitespace is
 				// hit and word buffer is not empty
 				dict_reader.reset();
-				yyreset = wbuf.getcurs();
 				let mut word_text = String::new();
 				while wbuf.is_not_empty() {
 					// read word into dictionary reader
@@ -280,42 +267,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				} else {
 					// if no dictionary match, then
 					// do letter-to-sound stuff here!
-					lts_engine.reset();
-					wbuf.setcurs(yyreset);
-					prev = 0;
 					let mut wb_written: bool = false;
-					while lts_engine.is_not_last() {
-						cin = wbuf.read();
-						wbuf.advance();
-						(l4, l3, l2, l1, c, r1, r2, r3, r4) = lts_engine.step(cin);
-						if lts_engine.is_ready() {
-							if c == 28 {
-								// exclamation point
-								tokens.push(94);
-							} else if c == 29 {
-								// comma
-								tokens.push(91);
-							} else if c == 30 {
-								// period
-								tokens.push(92);
-							} else if c == 31 {
-								// question mark
-								tokens.push(93);
-							} else {
-								// normal case
-								pout = lts(l4, l3, l2, l1, c, r1, r2, r3, r4);
-								if pout != 31 && pout != prev {
-									// content word boundary once, before the word's first phoneme
-									if !wb_written {
-										tokens.push(90);
-										texts.push(word_text.clone());
-										wb_written = true;
-									}
-									// write out phoneme when not null and not a run-on
-									tokens.push(pout);
-									prev = pout;
-								}
+					let mut run: Vec<u8> = Vec::new();
+					for &b in word_text.as_bytes().iter().chain(std::iter::once(&0u8)) {
+						let code = _lts::letter_code(b);
+						if code != 0 { run.push(code); continue; }
+						// a run of letters ends: say it, then the punctuation that ended it
+						if !run.is_empty() {
+							let classes = _lts::word(&run);
+							if !classes.is_empty() && !wb_written {
+								// content word boundary once, before the word's first phoneme
+								tokens.push(90);
+								texts.push(word_text.clone());
+								wb_written = true;
 							}
+							tokens.extend(classes);
+							run.clear();
+						}
+						match b {
+							b'!' => tokens.push(94),
+							b',' => tokens.push(91),
+							b'.' => tokens.push(92),
+							b'?' => tokens.push(93),
+							_ => {}
 						}
 					}
 				}
