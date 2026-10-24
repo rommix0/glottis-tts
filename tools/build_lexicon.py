@@ -5,7 +5,9 @@ usage: python tools/build_lexicon.py ALIGNED CMUDICT [--heldout]
 
 ALIGNED is CMUdict aligned letter by letter ("spaced letters<TAB>one phone class per letter", "_" for a silent
 letter, "a|b" for a letter that makes two phones). CMUDICT is CMUdict in the synthesizer's phone notation, one
-pronunciation per word.
+pronunciation per word. Both are in tools/, so the rebuild is
+
+    python tools/build_lexicon.py tools/eng.fixed.aligned tools/eng.dict
 
 Two trees pick each letter's phone class, left to right. Both see the 4 letters either side (coded with the
 letters grouped by kind, so one threshold splits off the vowels or the stops), whether each of those is a vowel,
