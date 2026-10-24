@@ -43,10 +43,11 @@ struct Opts {
 	text_only: bool,	// print the normalized text instead of speaking
 	seg_dump: Option<String>,	// file for the playing segment index of every sample
 	pcm16: bool,	// write 16-bit integer samples instead of 32-bit float
+	voice: usize,	// voice profile number
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false };
+	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0 };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(a) = args.next() {
@@ -58,6 +59,10 @@ fn parse_args() -> Result<Opts, String> {
 			opts.text_only = true;
 		} else if a == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
+		} else if a == "--voice" {
+			let n = args.next().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
+			if n >= _vtm::VOICES.len() { return Err(format!("voice must be between 0 and {}", _vtm::VOICES.len() - 1)); }
+			opts.voice = n;
 		} else if a == "--rate" {
 			let r: f32 = args.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
 			if !(0.5..=2.0).contains(&r) { return Err("rate must be between 0.5 and 2.0".to_string()); }
@@ -269,6 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// initialize engines
 	let mut eng = new_engines();
+	eng.synth.set_voice(_vtm::VOICES[opts.voice]);
 	if let Some(path) = &opts.seg_dump { eng.dump = Some(BufWriter::new(File::create(path)?)); }
 	let mut text_engine  = _text::engine::new();
 
@@ -396,7 +402,7 @@ mod tests {
 	fn render_file(tokens: &[u8], texts: &[&str], pcm16: bool, tag: &str) -> std::path::PathBuf {
 		let path = env::temp_dir().join(format!("tts_synth_test_{}_{}.wav", std::process::id(), tag));
 		let mut writer = hound::WavWriter::create(&path, wav_spec(pcm16)).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0 };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);

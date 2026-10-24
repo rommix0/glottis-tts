@@ -9,6 +9,7 @@
 
 */
 use core::f32::consts::PI;
+use crate::_f0::REF_HZ;
 
 // master sample rate
 pub const m_sr: u32 = 22050;
@@ -76,6 +77,36 @@ pub const FN_INIT: f32 = 250.0;
 const BN_INIT: f32 = 100.0;
 // bandwidth of the nasal pole when it is a nasal consonant's murmur
 const BN_MURMUR: f32 = 200.0;
+
+// highest frequency a scaled formant may reach, as a share of the sample rate
+const F_MAX_SR: f32 = 0.45;
+
+// a voice profile: scales in percent of the formant table's voice (100 leaves it alone), plus source changes
+#[derive(Clone, Copy)]
+pub struct Voice {
+	pub f0:    f32,		// pitch
+	pub range: f32,		// pitch excursion around the contour's reference pitch
+	pub f1:    f32,		// F1
+	pub f2:    f32,		// F2
+	pub f3:    f32,		// F3
+	pub fhi:   f32,		// F4 and up, and the nasal pole
+	pub rd:    f32,		// glottal tilt (Rd), higher is softer
+	pub br:    f32,		// breath noise added, in dB
+	pub db:    f32,		// output level change, in dB, to match the table voice's loudness
+}
+
+// voice profiles, picked by number; 0-5 follow head size, 6 and up are silly
+pub const VOICES: [Voice; 9] = [
+	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.0 },	// 0 table voice
+	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.5 },	// 1 large head
+	Voice { f0: 115.0, range: 105.0, f1: 109.0, f2: 108.0, f3: 108.0, fhi: 107.0, rd: 105.0, br: 0.0, db: -0.5 },	// 2 small head
+	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -2.5 },	// 3 female
+	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -5.0 },	// 4 child
+	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.0 },	// 5 giant
+	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  1.5 },	// 6 deep voice, tiny head
+	Voice { f0: 200.0, range: 130.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd: 110.0, br: 0.0, db: -2.0 },	// 7 squeaky giant
+	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0 },	// 8 pulled apart
+];
 
 // nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
 // sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at a vowel's nasalized edge
@@ -427,6 +458,8 @@ pub struct vtm {
 	ep1:      f32,
 	shelf_y1: f32,
 	fric_y1:  f32,		// frication noise lowpass state
+	voice:    Voice,	// voice profile
+	vgain:    f32,		// the voice profile's output level, linear
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -498,7 +531,43 @@ impl vtm {
 			ep1: 0.0,
 			shelf_y1: 0.0,
 			fric_y1: 0.0,
+			voice: VOICES[0],
+			vgain: 1.0,
 		}
+	}
+	pub fn set_voice(&mut self, v: Voice) {
+		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
+		self.voice = v;
+		self.vgain = 10.0_f32.powf(v.db / 20.0);
+		let f = |hz: f32| (hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32);
+		self.VR4  = resonator::new(f(F4_INIT),  B4_INIT,  false);
+		self.VR5  = resonator::new(f(F5_INIT),  B5_INIT,  false);
+		self.VR6  = resonator::new(f(F6_INIT),  B6_INIT,  false);
+		self.VR7  = resonator::new(f(F7_INIT),  B7_INIT,  false);
+		self.VR8  = resonator::new(f(F8_INIT),  B8_INIT,  false);
+		self.FR4  = resonator::new(f(F4_INIT),  B4_INIT,  false);
+		self.FR5  = resonator::new(f(F5_INIT),  B5_INIT,  false);
+		self.FR6  = resonator::new(f(F6_INIT),  B6_INIT,  false);
+		self.FR7  = resonator::new(f(F7_INIT),  B7_INIT,  false);
+		self.FR8  = resonator::new(f(F8_INIT),  B8_INIT,  false);
+		self.FR9  = resonator::new(f(F9_INIT),  B9_INIT,  false);
+		self.FR10 = resonator::new(f(F10_INIT), B10_INIT, false);
+		self.init();
+	}
+	fn apply_voice(&mut self) {
+		// scale this sample's pitch, formants and source by the voice profile; like fix_bw, this relies on _synth
+		// setting them again every sample
+		let v = self.voice;
+		let top = F_MAX_SR * m_sr as f32;
+		if v.range != 100.0 {
+			self.F0 = REF_HZ * (self.F0 / REF_HZ).powf(v.range / 100.0);
+		}
+		self.F0 *= v.f0 / 100.0;
+		self.F1 = (self.F1 * (v.f1 / 100.0)).min(top);
+		self.F2 = (self.F2 * (v.f2 / 100.0)).min(top);
+		self.F3 = (self.F3 * (v.f3 / 100.0)).min(top);
+		self.RD *= v.rd / 100.0;
+		self.BR += v.br;
 	}
 	pub fn init(&mut self) {
 		// resonator initialization (absolutely needed for them to work correctly)
@@ -588,7 +657,7 @@ impl vtm {
 		self.B2_ADJ += 1.0;
 
 		// B3 adjust
-		self.B3_ADJ = (self.F3 - F4_INIT).abs();
+		self.B3_ADJ = (self.F3 - self.VR4.bf).abs();
 		if self.B3_ADJ < self.MIN_D {
 			self.B3_ADJ = self.MUL_B * ((self.MIN_D - self.B3_ADJ) / self.MIN_D);
 		} else {
@@ -632,11 +701,12 @@ impl vtm {
 
 		// nasal coupling (Hawkins & Stevens 1985)
 		let k = self.NC.clamp(0.0, 1.0);
-		self.FNZ = nasal_zero(self.F1, k);
+		let s = self.voice.fhi / 100.0;
+		self.FNZ = nasal_zero(self.F1 / s, k) * s;
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 
-		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT, bnp);	// NASAL TRACT
+		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT * s, bnp);	// NASAL TRACT
 		yy = self.VR1.step(yy, self.F1, bb1);								// F1 - tongue height
 		yy = self.VR2.step(yy, self.F2, bb2);								// F2 - tongue fronting
 		yy = self.VR3.step(yy, self.F3, bb3);								// F3 - R-coloring
@@ -684,6 +754,9 @@ impl vtm {
 		# MAIN OPERATIONS #
 		#################*/
 
+		// scale by the voice profile
+		self.apply_voice();
+
 		// get noise and glottal sound sources
 		let (n, mut f) = self.noisegen.step();
 		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, FLUTTER);
@@ -714,7 +787,7 @@ impl vtm {
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
 		// add them together and return
-		let out = self.radiate(casc_out + parr_out) * 10.0_f32.powf(OUT_DB / 20.0);
+		let out = self.radiate(casc_out + parr_out) * 10.0_f32.powf(OUT_DB / 20.0) * self.vgain;
 		self.softclip(out)
 	}
 }
@@ -849,6 +922,37 @@ mod tests {
 		let x: Vec<f32> = (0..4 * m_sr).map(|_| n.step().0).collect();
 		let head = &x[..64];
 		assert!(!x[1..].windows(64).any(|w| w == head), "noise repeats within 4 s");
+	}
+
+	#[test]
+	fn voices_scale_the_formants_they_are_given() {
+		// a voice at 150% renders the table's formants as the table voice renders them 1.5 times higher
+		let render = |voice: Voice, f1: f32, f2: f32| {
+			let mut v = vtm::new();
+			v.set_voice(voice);
+			let mut out = Vec::new();
+			for _ in 0..4000 {
+				v.F0 = 120.0; v.AV = 60.0; v.RD = 0.6;
+				v.F1 = f1; v.F2 = f2; v.F3 = 2500.0;
+				v.B1 = 80.0; v.B2 = 90.0; v.B3 = 150.0;
+				out.push(v.step());
+			}
+			out
+		};
+		let big = Voice { f1: 150.0, f2: 150.0, ..VOICES[0] };
+		assert_eq!(render(big, 400.0, 1000.0), render(VOICES[0], 600.0, 1500.0));
+		assert_ne!(render(big, 400.0, 1000.0), render(VOICES[0], 400.0, 1000.0));
+	}
+
+	#[test]
+	fn voices_keep_formants_below_nyquist() {
+		for (i, voice) in VOICES.iter().enumerate() {
+			let mut v = vtm::new();
+			v.set_voice(*voice);
+			for r in [&v.VR8, &v.FR9, &v.FR10] {
+				assert!(r.bf <= F_MAX_SR * m_sr as f32, "voice {} puts a formant at {} Hz", i, r.bf);
+			}
+		}
 	}
 
 	#[test]

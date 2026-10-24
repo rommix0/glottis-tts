@@ -6,7 +6,7 @@
 ---------------------------------------*/
 
 
-use crate::_vtm::vtm;
+use crate::_vtm::{vtm, Voice};
 use crate::_vtm::m_sr;
 use crate::_vtbl::formant_tbl;
 use crate::_utt::PAU;
@@ -560,6 +560,10 @@ impl engine {
 	pub fn init(&mut self) {
 		// initialize VTM for first time usage
 		self.vtm_eng.init();
+	}
+	pub fn set_voice(&mut self, v: Voice) {
+		// pick a voice profile for the VTM
+		self.vtm_eng.set_voice(v);
 	}
 	pub fn reset(&mut self) {
 		/////////////////////////////
