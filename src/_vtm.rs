@@ -5,7 +5,7 @@
 #########################################
 
   author: anthony c. bartman (@rommix0)
-  date:   4/6/2026 - 10/23/2026
+  date:   4/6/2026 - 10/24/2026
 
 */
 use core::f32::consts::PI;
@@ -733,10 +733,10 @@ impl vtm {
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 
-		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT * s, bnp);	// NASAL TRACT
-		yy = self.VR1.step(yy, self.F1, bb1);								// F1 - tongue height
-		yy = self.VR2.step(yy, self.F2, bb2);								// F2 - tongue fronting
-		yy = self.VR3.step(yy, self.F3, bb3);								// F3 - R-coloring
+		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT * s, bnp);		// NASAL TRACT
+		yy = self.VR1.step(yy, self.F1, bb1);												// F1 - tongue height
+		yy = self.VR2.step(yy, self.F2, bb2);												// F2 - tongue fronting
+		yy = self.VR3.step(yy, self.F3, bb3);												// F3 - R-coloring
 		yy = self.VR4.step(yy, 0.0, 0.0);
 		yy = self.VR5.step(yy, 0.0, 0.0);
 		yy = self.VR6.step(yy, 0.0, 0.0);
