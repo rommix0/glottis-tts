@@ -14,10 +14,18 @@ the segment), in semitones from REF_HZ:
 	+ phrase ends: a fall for statements, a rise for yes/no questions,
 	  a small rise at commas and a smaller one at minor breaks
 
+and short offsets on top of the targets:
+
+	+ microprosody: a sonorant or vowel after an obstruent starts raised,
+	  more and for longer after a voiceless one, and decays
+	+ glottal dips: a fall into a word-final t before a consonant, and a
+	  low start to a stressed vowel that begins a content word after a
+	  sonorant or a pause
+
 the contour is evaluated per sample from the synthesizer's position.
 
 */
-use crate::_utt::{Utterance, Kind, Boundary, is_vowel, is_voiced};
+use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstruent, is_sonorant};
 use core::f32::consts::PI;
 
 pub const REF_HZ: f32 = 110.0;
@@ -42,8 +50,15 @@ const LOW_ACCENT_ST:        f32 = -1.0;
 const LOW_ACCENT_FRAC:      f32 = 0.3;
 const CONTINUATION_RISE_ST: f32 = 3.0;
 const MINOR_RISE_ST:        f32 = 1.5;	// at a minor break inside a long phrase
-const ONSET_BUMP_ST:        f32 = 0.5;
-const ONSET_BUMP_MS:        f32 = 40.0;
+const VOICELESS_BUMP_ST:    f32 = 0.6;	// microprosody after a voiceless obstruent, decaying over ..._MS
+const VOICELESS_BUMP_MS:    f32 = 50.0;
+const VOICED_BUMP_ST:       f32 = 0.3;	// ... and after a voiced one
+const VOICED_BUMP_MS:       f32 = 20.0;
+const BUMP_SPAN_MS:         f32 = 200.0;	// a bump is drawn over this long at most
+const T_DIP_ST:             f32 = 1.5;	// fall into a pre-glottalized word-final t, over T_DIP_MS before it
+const T_DIP_MS:             f32 = 40.0;
+const ONSET_DIP_ST:         f32 = 1.5;	// glottal onset: a stressed word-initial vowel starts this low, back by ONSET_DIP_MS
+const ONSET_DIP_MS:         f32 = 60.0;
 const MERGE_MS:             f32 = 20.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,8 +74,26 @@ pub struct Target {
 	pub hold: bool,			// hold this value until the next target
 }
 
-// a short pitch offset at a vowel onset
-struct Bump { seg: usize, st: f32, frac_end: f32 }
+// a short pitch offset, drawn on each segment it covers; age is the ms since the offset began
+struct Bump { seg: usize, age0: f32, dur: f32, shape: Shape }
+
+#[derive(Clone, Copy)]
+enum Shape {
+	Decay { st: f32, ms: f32 },		// st at age 0, decaying with time constant ms
+	Fall  { st: f32, ms: f32 },		// 0 at age 0, falling to -st at ms, then held
+	Rise  { st: f32, ms: f32 },		// -st at age 0, back to 0 at ms
+}
+
+impl Shape {
+	fn at(self, age: f32) -> f32 {
+		if age < 0.0 { return 0.0; }
+		match self {
+			Shape::Decay { st, ms } => if age < BUMP_SPAN_MS { st * (-age / ms).exp() } else { 0.0 },
+			Shape::Fall  { st, ms } => -st * (age / ms).min(1.0),
+			Shape::Rise  { st, ms } => -st * (1.0 - age / ms).max(0.0),
+		}
+	}
+}
 
 pub struct Contour {
 	targets: Vec<Target>,
@@ -173,14 +206,55 @@ impl Contour {
 		self.targets.extend(kept.into_iter().map(|(_, _, tg)| tg));
 		self.targets.sort_by(|a, b| (a.seg, a.frac).partial_cmp(&(b.seg, b.frac)).unwrap());
 
-		// small pitch offsets at vowel onsets after a consonant
-		for i in 1..utt.segs.len() {
-			let (p, q) = (utt.segs[i].phone, utt.segs[i - 1].phone);
-			if !is_vowel(p) || is_vowel(q) { continue; }
-			let st = if is_voiced(q) { -ONSET_BUMP_ST } else { ONSET_BUMP_ST };
-			let frac_end = if utt.segs[i].dur_ms > 0.0 { (ONSET_BUMP_MS / utt.segs[i].dur_ms).min(1.0) } else { 0.0 };
-			self.bumps.push(Bump { seg: stream[i], st, frac_end });
+		// short offsets: microprosody and glottal dips
+		const T: u8 = 36;
+		const FLAP: u8 = 47;
+		let n = utt.segs.len();
+		let phone = |i: usize| utt.segs[i].phone;
+		let word_start = |i: usize| utt.words[utt.segs[i].word].segs.start == i;
+		let word_end = |i: usize| utt.words[utt.segs[i].word].segs.end == i + 1;
+		let same_phrase = |i: usize, j: usize| utt.phrase_of_seg(i) == utt.phrase_of_seg(j);
+		let mut bumps: Vec<Bump> = Vec::new();
+		let draw = |bumps: &mut Vec<Bump>, segs: std::ops::Range<usize>, start: f32, shape: Shape| {
+			for j in segs { bumps.push(Bump { seg: stream[j], age0: t0[j] - start, dur: utt.segs[j].dur_ms, shape }); }
+		};
+		for i in 0..n {
+			let after_pause = i == 0 || !same_phrase(i - 1, i);
+			let (p, q) = (phone(i), if after_pause { PAU } else { phone(i - 1) });
+
+			// a sonorant or vowel after an obstruent (not a flap): raised, decaying until the next obstruent or the phrase end
+			if !after_pause && is_sonorant(p) && is_obstruent(q) && q != FLAP {
+				let shape = if is_voiced(q) {
+					Shape::Decay { st: VOICED_BUMP_ST, ms: VOICED_BUMP_MS }
+				} else {
+					Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS }
+				};
+				let end = (i..n).find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= BUMP_SPAN_MS).unwrap_or(n);
+				draw(&mut bumps, i..end, t0[i], shape);
+			}
+
+			// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays low through it
+			if p == T && !after_pause && is_sonorant(q) && word_end(i) && i + 1 < n && same_phrase(i, i + 1) && !is_vowel(phone(i + 1)) {
+				let start = t0[i] - T_DIP_MS;
+				let first = (0..i).rev().take_while(|&j| t0[j + 1] > start && same_phrase(j, i)).last().unwrap_or(i);
+				draw(&mut bumps, first..i + 1, start, Shape::Fall { st: T_DIP_ST, ms: T_DIP_MS });
+			}
+
+			// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
+			let s = &utt.segs[i];
+			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function && (after_pause || is_sonorant(q)) {
+				let end = (i..n).find(|&j| t0[j] - t0[i] >= ONSET_DIP_MS || !same_phrase(i, j)).unwrap_or(n);
+				draw(&mut bumps, i..end, t0[i], Shape::Rise { st: ONSET_DIP_ST, ms: ONSET_DIP_MS });
+			}
 		}
+		bumps.sort_by_key(|b| b.seg);
+		self.bumps.extend(bumps);
+	}
+
+	// the short offsets at a position, in semitones
+	fn bump_at(&self, seg: usize, frac: f32) -> f32 {
+		let k = self.bumps.partition_point(|b| b.seg < seg);
+		self.bumps[k..].iter().take_while(|b| b.seg == seg).map(|b| b.shape.at(b.age0 + frac * b.dur)).sum()
 	}
 
 	pub fn hz_at(&self, seg: usize, frac: f32) -> f32 {
@@ -202,9 +276,7 @@ impl Contour {
 				}
 			},
 		};
-		let k = self.bumps.partition_point(|b| b.seg < seg);
-		let bump = self.bumps.get(k).filter(|b| b.seg == seg && frac < b.frac_end).map(|b| b.st * (1.0 - frac / b.frac_end)).unwrap_or(0.0);
-		(REF_HZ * 2.0_f32.powf((st + bump) / 12.0)).clamp(MIN_HZ, MAX_HZ)
+		(REF_HZ * 2.0_f32.powf((st + self.bump_at(seg, frac)) / 12.0)).clamp(MIN_HZ, MAX_HZ)
 	}
 }
 
@@ -373,5 +445,57 @@ mod tests {
 				assert!((70.0..=250.0).contains(&hz), "{} Hz", hz);
 			}
 		}
+	}
+
+	// tokens from PHNIDToPhoneme, a word boundary before each word
+	const S: u8 = 72; const L: u8 = 59; const M: u8 = 61; const D: u8 = 42; const T: u8 = 76; const K: u8 = 56;
+	const OW1: u8 = 27; const IH1: u8 = 25;
+
+	fn offsets(toks: &[u8]) -> (Utterance, Contour) {
+		let words = toks.iter().filter(|&&t| t == CW || t == FW).count();
+		let mut u = Utterance::build(toks, &vec!["w".to_string(); words]);
+		crate::_dur::assign(&mut u, 1.0);
+		let stream: Vec<usize> = (0..u.segs.len()).collect();
+		let mut c = Contour::new();
+		c.add_utterance(&u, &stream);
+		(u, c)
+	}
+
+	#[test]
+	fn obstruents_raise_the_following_sonorant() {
+		// "slow": the l starts raised and the rise carries on, decaying, into the vowel
+		let (_, c) = offsets(&[CW, S, L, OW1, PERIOD]);
+		assert!((c.bump_at(1, 0.0) - VOICELESS_BUMP_ST).abs() < 0.01);
+		assert!(c.bump_at(2, 0.0) > 0.0 && c.bump_at(2, 0.0) < c.bump_at(1, 0.0));
+		// a voiced obstruent raises it less
+		let (_, c) = offsets(&[CW, D, OW1, PERIOD]);
+		assert!((c.bump_at(1, 0.0) - VOICED_BUMP_ST).abs() < 0.01);
+		// a nasal does nothing
+		let (u, c) = offsets(&[CW, M, OW1, PERIOD]);
+		assert!((0..u.segs.len()).all(|i| c.bump_at(i, 0.0) == 0.0));
+	}
+
+	#[test]
+	fn word_final_t_before_a_consonant_dips() {
+		// "mitt cow": F0 falls over the end of the vowel and stays low through the t
+		let (u, c) = offsets(&[CW, M, IH1, T, CW, K, OW1, PERIOD]);
+		assert!(u.segs[1].dur_ms > T_DIP_MS);
+		assert_eq!(c.bump_at(1, 0.0), 0.0);
+		assert!((c.bump_at(1, 1.0) + T_DIP_ST).abs() < 0.01);
+		assert!((c.bump_at(2, 0.5) + T_DIP_ST).abs() < 0.01);
+		// "mitt owe": not before a vowel
+		let (_, c) = offsets(&[CW, M, IH1, T, CW, OW1, PERIOD]);
+		assert_eq!(c.bump_at(2, 0.5), 0.0);
+	}
+
+	#[test]
+	fn stressed_vowel_starting_a_content_word_has_a_glottal_onset() {
+		// "mow it" with "it" a content word: starts low after the vowel, back to the contour later
+		let (u, c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
+		assert!((c.bump_at(2, 0.0) + ONSET_DIP_ST).abs() < 0.01);
+		assert!(u.segs[2].dur_ms > ONSET_DIP_MS && c.bump_at(2, 1.0) == 0.0);
+		// not for a function word
+		let (_, c) = offsets(&[CW, M, OW1, FW, IH1, T, PERIOD]);
+		assert_eq!(c.bump_at(2, 0.0), 0.0);
 	}
 }

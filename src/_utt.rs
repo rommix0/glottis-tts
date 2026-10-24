@@ -30,6 +30,10 @@ pub fn is_voiced(p: u8) -> bool {
 pub fn is_obstruent(p: u8) -> bool {
 	is_stop(p) || is_fricative(p)
 }
+pub fn is_sonorant(p: u8) -> bool {
+	// vowels, nasals, liquids and glides
+	is_vowel(p) || matches!(p, 24..=28 | 32 | 33 | 41 | 42)
+}
 
 // legal word onsets, used to split consonants between syllables
 fn is_legal_onset(c: &[u8]) -> bool {

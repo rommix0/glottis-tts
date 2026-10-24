@@ -23,8 +23,9 @@ const LIP_D: f32 = 0.5;
 const LIP_TUNED_SR: f32 = 32000.0;
 const LIP_MATCH: f32 = 0.5;
 
-// pitch flutter amount, on the KLGLOTT88 flutter scale (0 to 100)
-const FLUTTER: f32 = 75.0;
+// jitter and shimmer are drawn uniformly up to this many times their average cycle-to-cycle change (2/3 of the
+// largest draw), so the voice profile's numbers are that average
+const PERTURB_SPREAD: f32 = 1.5;
 
 // output trim, keeps peaks under the soft clip
 const OUT_DB: f32 = -2.0;
@@ -93,19 +94,23 @@ pub struct Voice {
 	pub rd:    f32,		// glottal tilt (Rd), higher is softer
 	pub br:    f32,		// breath noise added, in dB
 	pub db:    f32,		// output level change, in dB, to match the table voice's loudness
+	pub fl:    f32,		// slow pitch flutter, on the KLGLOTT88 flutter scale (100 is strong)
+	pub jit:   f32,		// jitter: average change of the period from one pulse to the next, in %
+	pub shim:  f32,		// shimmer: average change of the level from one pulse to the next, in dB
 }
 
 // voice profiles, picked by number; 0-5 follow head size, 6 and up are silly
-pub const VOICES: [Voice; 9] = [
-	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.0 },	// 0 table voice
-	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.5 },	// 1 large head
-	Voice { f0: 115.0, range: 105.0, f1: 109.0, f2: 108.0, f3: 108.0, fhi: 107.0, rd: 105.0, br: 0.0, db: -0.5 },	// 2 small head
-	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -2.5 },	// 3 female
-	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -5.0 },	// 4 child
-	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.0 },	// 5 giant
-	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  1.5 },	// 6 deep voice, tiny head
-	Voice { f0: 200.0, range: 130.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd: 110.0, br: 0.0, db: -2.0 },	// 7 squeaky giant
-	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0 },	// 8 pulled apart
+pub const VOICES: [Voice; 10] = [
+	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 0 table voice
+	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 1 large head
+	Voice { f0: 115.0, range: 105.0, f1: 109.0, f2: 108.0, f3: 108.0, fhi: 107.0, rd: 105.0, br: 0.0, db: -0.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 2 small head
+	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -2.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 3 female
+	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -5.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 4 child
+	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.0, fl:  75.0, jit: 0.6, shim: 0.4 },	// 5 giant
+	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  1.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 6 deep voice, tiny head
+	Voice { f0: 200.0, range: 130.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd: 110.0, br: 0.0, db: -2.0, fl: 100.0, jit: 0.4, shim: 0.3 },	// 7 squeaky giant
+	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 8 pulled apart
+	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 9 shaky
 ];
 
 // nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
@@ -298,6 +303,10 @@ struct LfSource {
 	tilt: LpPole,
 	counter: u32,
 	ra: f32,
+	jitter: f32,				// average period change between pulses, in %
+	shimmer: f32,				// average level change between pulses, in dB
+	rng: u32,					// state for jitter and shimmer
+	jit_k: f32,					// this period's rate factor
 }
 impl LfSource {
 	pub fn new() -> LfSource {
@@ -310,14 +319,27 @@ impl LfSource {
 			tilt: LpPole::new(),
 			counter: 0,
 			ra: 0.0,
+			jitter: 0.0,
+			shimmer: 0.0,
+			rng: 0x6C8E9CF5,
+			jit_k: 1.0,
 		}
 	}
 	pub fn reset(&mut self) {
 		self.glottal.reset();
 		self.tilt.reset();
 		self.exc = [0.0; PULSE_RING];
+		self.rng = 0x6C8E9CF5;
+		self.jit_k = 1.0;
 	}
-	fn add_pulse(&mut self, ago: f32) {
+	fn rand(&mut self) -> f32 {
+		// uniform in -1..1
+		self.rng ^= self.rng << 13;
+		self.rng ^= self.rng >> 17;
+		self.rng ^= self.rng << 5;
+		self.rng as f32 / u32::MAX as f32 * 2.0 - 1.0
+	}
+	fn add_pulse(&mut self, ago: f32, amp: f32) {
 		// a band-limited unit impulse at (n - ago), written PULSE_HALF samples ahead of what plays now
 		let h = PULSE_HALF as f32;
 		let t = (self.n + PULSE_HALF) as f32 - ago;
@@ -330,7 +352,7 @@ impl LfSource {
 		}
 		let sum: f32 = w.iter().sum();
 		for (k, wk) in w.iter().enumerate() {
-			self.exc[(first + k) % PULSE_RING] += wk / sum;
+			self.exc[(first + k) % PULSE_RING] += wk / sum * amp;
 		}
 	}
 	fn calc_fant(&mut self, f0: f32, rd: f32) {
@@ -383,7 +405,10 @@ impl LfSource {
 			self.calc_fant(f0, rd);
 			let ago = if self.last_inc > 0.0 { ((self.pos_in_period - 1.0) / self.last_inc).clamp(0.0, 0.999) } else { 0.0 };
 			self.pos_in_period %= 1.0;
-			self.add_pulse(ago);
+			// jitter stretches or shrinks this period, shimmer scales this pulse
+			self.jit_k = 1.0 / (1.0 + PERTURB_SPREAD * self.jitter / 100.0 * self.rand());
+			let amp = 10.0_f32.powf(PERTURB_SPREAD * self.shimmer * self.rand() / 20.0);
+			self.add_pulse(ago, amp);
 		}
 		let slot = self.n % PULSE_RING;
 		let impulse = self.exc[slot];
@@ -394,7 +419,7 @@ impl LfSource {
 		let sample = self.tilt.step(self.glottal.step(impulse));
 
 		// advance position and return sample
-		self.last_inc = f0_final / m_sr as f32;
+		self.last_inc = f0_final * self.jit_k / m_sr as f32;
 		self.pos_in_period += self.last_inc;
 		(sample, nmod, self.ra)
 	}
@@ -539,6 +564,8 @@ impl vtm {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
 		self.voice = v;
 		self.vgain = 10.0_f32.powf(v.db / 20.0);
+		self.glottal.jitter = v.jit;
+		self.glottal.shimmer = v.shim;
 		let f = |hz: f32| (hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32);
 		self.VR4  = resonator::new(f(F4_INIT),  B4_INIT,  false);
 		self.VR5  = resonator::new(f(F5_INIT),  B5_INIT,  false);
@@ -759,7 +786,7 @@ impl vtm {
 
 		// get noise and glottal sound sources
 		let (n, mut f) = self.noisegen.step();
-		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, FLUTTER);
+		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, self.voice.fl);
 		self.RA = ra;
 		voice *= 0.01;
 		f *= 0.6;
@@ -889,7 +916,7 @@ mod tests {
 	fn pulse_is_centred_on_its_time() {
 		let mut g = LfSource::new();
 		g.n = 100;
-		g.add_pulse(0.3);
+		g.add_pulse(0.3, 1.0);
 		let (mut sum, mut at) = (0.0f32, 0.0f32);
 		for j in 96..96 + PULSE_RING {
 			let w = g.exc[j % PULSE_RING];
@@ -899,6 +926,29 @@ mod tests {
 		assert!((sum - 1.0).abs() < 1e-4, "pulse sums to {}", sum);
 		let want = (100 + PULSE_HALF) as f32 - 0.3;
 		assert!((at / sum - want).abs() < 0.02, "pulse at {} not {}", at / sum, want);
+	}
+
+	#[test]
+	fn jitter_and_shimmer_average_what_they_are_set_to() {
+		// the period and level change between pulses by the set amount on average
+		let mut g = LfSource::new();
+		let (mut k, mut a) = (Vec::new(), Vec::new());
+		g.jitter = 1.0;
+		g.shimmer = 0.5;
+		for _ in 0..20000 {
+			let r = PERTURB_SPREAD * g.rand();
+			k.push(1.0 + g.jitter / 100.0 * r);
+			a.push(g.shimmer * PERTURB_SPREAD * g.rand());
+		}
+		let avg = |v: &[f32]| v.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f32>() / (v.len() - 1) as f32;
+		assert!((avg(&k) * 100.0 - 1.0).abs() < 0.05, "jitter {} %", avg(&k) * 100.0);
+		assert!((avg(&a) - 0.5).abs() < 0.03, "shimmer {} dB", avg(&a));
+		// and the pulses feel it: 1% jitter blurs the 2-4 kHz harmonics that stay clean without it
+		let mut g = LfSource::new();
+		g.jitter = 1.0;
+		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| g.step(120.0, 0.6, 0.0).0).collect();
+		let h = hnr(&x[x.len() - 8192..], 120.0, 2000.0, 4000.0);
+		assert!(h < 30.0, "2-4 kHz harmonics {} dB over the rest with jitter", h);
 	}
 
 	#[test]
