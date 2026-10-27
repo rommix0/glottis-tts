@@ -8,6 +8,8 @@
   date:   4/6/2026 - 10/24/2026
 
 */
+
+// use core's PI and reference hertz for pitch track stuff
 use core::f32::consts::PI;
 use crate::_f0::REF_HZ;
 
@@ -76,7 +78,6 @@ const F10_INIT: f32 = 9500.0;
 const B10_INIT: f32 = 4750.0;
 pub const FN_INIT: f32 = 250.0;
 const BN_INIT: f32 = 100.0;
-// bandwidth of the nasal pole when it is a nasal consonant's murmur
 const BN_MURMUR: f32 = 200.0;
 
 // highest frequency a scaled formant may reach, as a share of the sample rate
@@ -112,13 +113,6 @@ pub const VOICES: [Voice; 10] = [
 	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 8 pulled apart
 	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 9 shaky
 ];
-
-// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
-// sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at a vowel's nasalized edge
-pub fn nasal_zero(f1: f32, k: f32) -> f32 {
-	let k = k.clamp(0.0, 1.0);
-	FN_INIT + k * (f1 - FN_INIT)
-}
 
 // noise generator
 struct noise { alpha: f32, nxt: u32, xp1: f32 }
@@ -289,8 +283,7 @@ impl LpPole {
 	}
 }
 
-// a glottal pulse is spread over this many samples either side of its exact time, so the voice plays this many
-// samples late
+// a glottal pulse is spread over this many samples either side of its exact time, so the voice plays this many samples late
 const PULSE_HALF: usize = 4;
 const PULSE_RING: usize = 16;
 
@@ -692,6 +685,12 @@ impl vtm {
 		}
 		self.B3_ADJ += 1.0;
 	}
+	fn nasal_zero(&mut self, s: f32, k: f32) -> f32 {
+		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
+		// sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at a vowel's nasalized edge
+		let k = k.clamp(0.0, 1.0);
+		FN_INIT + k * ((self.F1 / s) - FN_INIT)
+	}
 	fn parallel(&mut self, x: f32) -> f32 {
 		/*#########################
 		# PARALLEL FILTER NETWORK #
@@ -729,7 +728,7 @@ impl vtm {
 		// nasal coupling (Hawkins & Stevens 1985)
 		let k = self.NC.clamp(0.0, 1.0);
 		let s = self.voice.fhi / 100.0;
-		self.FNZ = nasal_zero(self.F1 / s, k) * s;
+		self.FNZ = self.nasal_zero(s, k) * s;
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 
@@ -818,8 +817,6 @@ impl vtm {
 		self.softclip(out)
 	}
 }
-
-
 
 #[cfg(test)]
 mod tests {
