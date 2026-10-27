@@ -37,7 +37,6 @@ otherwise the consonants may not sound as good as they should due to interpolati
 
 pub static formant_tbl: [u16; 1550] = [
 
-	// READY
 	// _
 	25, 25,
 	50, 50,
@@ -50,7 +49,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// AA
 	32, 38,
 	84, 84,
@@ -63,7 +61,6 @@ pub static formant_tbl: [u16; 1550] = [
 	760, 1300, 2677,
 	185, 310, 292,
 
-	// READY
 	// AE
 	31, 34,
 	84, 84,
@@ -76,7 +73,6 @@ pub static formant_tbl: [u16; 1550] = [
 	712, 1589, 2511,
 	169, 81, 175,
 
-	// READY
 	// AH
 	24, 53,
 	84, 84,
@@ -89,7 +85,6 @@ pub static formant_tbl: [u16; 1550] = [
 	592, 1254, 2705,
 	85, 138, 300,
 
-	// READY
 	// AO
 	15, 41,
 	84, 84,
@@ -102,7 +97,6 @@ pub static formant_tbl: [u16; 1550] = [
 	630, 1110, 2589,
 	226, 137, 156,
 
-	// READY
 	// AW
 	16, 19,
 	84, 105,
@@ -115,7 +109,6 @@ pub static formant_tbl: [u16; 1550] = [
 	446, 707, 2639,
 	80, 200, 68,
 
-	// READY
 	// AX
 	32, 32,
 	91, 91,
@@ -128,7 +121,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// AXR
 	18, 25,
 	91, 105,
@@ -141,7 +133,6 @@ pub static formant_tbl: [u16; 1550] = [
 	400, 1325, 1710,
 	90, 170, 150,
 
-	// READY
 	// AY
 	26, 18,
 	91, 77,
@@ -202,7 +193,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// EH
 	35, 43,
 	90, 90,
@@ -215,7 +205,6 @@ pub static formant_tbl: [u16; 1550] = [
 	500, 1626, 2577,
 	66, 135, 120,
 
-	// READY
 	// ER
 	31, 29,
 	84, 84,
@@ -228,7 +217,6 @@ pub static formant_tbl: [u16; 1550] = [
 	433, 1100, 1250,
 	140, 115, 220,
 
-	// READY
 	// EY
 	29, 38,
 	90, 95,
@@ -265,7 +253,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// HH
 	25, 25,
 	50, 50,
@@ -278,7 +265,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// IH
 	24, 33,
 	87, 87,
@@ -291,7 +277,6 @@ pub static formant_tbl: [u16; 1550] = [
 	410, 1640, 2746,
 	40, 118, 129,
 
-	// READY
 	// IX
 	27, 27,
 	95, 95,
@@ -304,7 +289,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// IY
 	29, 32,
 	90, 95,
@@ -341,7 +325,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// L
 	10, 10,
 	80, 80,
@@ -354,7 +337,6 @@ pub static formant_tbl: [u16; 1550] = [
 	300, 1100, 2800,
 	100, 150, 200,
 
-	// READY
 	// LX
 	10, 10,
 	80, 80,
@@ -367,7 +349,6 @@ pub static formant_tbl: [u16; 1550] = [
 	450, 800, 2700,
 	100, 100, 200,
 
-	// READY
 	// M
 	10, 10,
 	100, 100,
@@ -380,7 +361,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// N
 	10, 10,
 	100, 100,
@@ -393,7 +373,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// NG
 	10, 10,
 	100, 100,
@@ -406,7 +385,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// OW
 	24, 22,
 	84, 91,
@@ -419,7 +397,6 @@ pub static formant_tbl: [u16; 1550] = [
 	330, 850, 2717,
 	100, 110, 195,
 
-	// READY
 	// OY
 	38, 19,
 	84, 101,
@@ -444,7 +421,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// R
 	10, 10,
 	80, 80,
@@ -457,7 +433,6 @@ pub static formant_tbl: [u16; 1550] = [
 	425, 976, 1550,
 	100, 110, 120,
 
-	// READY
 	// RX
 	10, 10,
 	80, 80,
@@ -518,7 +493,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// UH
 	37, 21,
 	60, 60,
@@ -531,7 +505,6 @@ pub static formant_tbl: [u16; 1550] = [
 	440, 1503, 2721,
 	70, 200, 205,
 
-	// READY
 	// UW
 	36, 25,
 	84, 84,
@@ -556,7 +529,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// W
 	30, 30,
 	80, 80,
@@ -569,7 +541,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// Y
 	30, 30,
 	80, 80,
@@ -606,7 +577,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// L (DEVOICED - INTERNAL USE)
 	10, 10,
 	50, 50,
@@ -619,7 +589,6 @@ pub static formant_tbl: [u16; 1550] = [
 	350, 639, 3011,
 	115, 70, 233,
 
-	// READY
 	// R (DEVOICED - INTERNAL USE)
 	10, 10,
 	50, 50,
@@ -632,7 +601,6 @@ pub static formant_tbl: [u16; 1550] = [
 	425, 976, 1307,
 	40, 90, 195,
 
-	// READY
 	// DX (ALVEOLAR FLAP)
 	45, 45,
 	60, 60,
@@ -645,7 +613,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// AXP (plosive/phrase-final release)
 	50, 25,
 	50, 50,
@@ -658,7 +625,6 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// READY
 	// IXP (plosive/phrase-final release - alveolar)
 	50, 25,
 	50, 50,
