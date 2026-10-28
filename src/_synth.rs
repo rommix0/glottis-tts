@@ -1340,7 +1340,9 @@ impl engine {
 			let fricative = |p: u8| matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44);
 			let quiet = |p: u8| p == PAU || p == 0 || p == 48 || p == 49;
 			self.dip_half = 0;
-			if fricative(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
+			// h is breath noise too: without the dip a fricative runs into it as one hiss
+			let hiss = |p: u8| fricative(p) || p == 18;
+			if hiss(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
 				self.dip_mid = self.amp_len / 2;
 				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
 				self.dip_db = FRIC_DIP_DB;
