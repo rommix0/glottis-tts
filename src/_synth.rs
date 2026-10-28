@@ -120,6 +120,8 @@ const ASP_B1_WIDEN: f32 = 400.0;
 const ASP_B2_WIDEN: f32 = 70.0;
 // voiced stop closure after a voiced sound: the voice bar fades this much (dB) over the closure
 const VOICE_BAR_FADE_DB: f32 = 6.0;
+// and is muffled: the voice's Rd rises this much over the first 10 ms of the closure
+const VOICE_BAR_RD: f32 = 1.0;
 
 // longest share of a vowel the transition into it may take
 const ramp_share: f32 = 0.6;
@@ -1365,7 +1367,10 @@ impl engine {
 		let breath = if matches!(self.phn_c, 48 | 49) {
 			((self.counter - self.seg_start) as f32 / samples(BREATH_RAMP_MS) as f32).clamp(0.0, 1.0)
 		} else { 0.0 };
-		self.vtm_eng.RD  = self.RD_reg + BREATH_END_RD * breath;
+		let bar = if self.stop_on && self.stop_bar && self.counter >= 0 && self.counter < self.marker_A {
+			(self.counter as f32 / ten_ms as f32).min(1.0)
+		} else { 0.0 };
+		self.vtm_eng.RD  = self.RD_reg + BREATH_END_RD * breath + VOICE_BAR_RD * bar;
 		self.vtm_eng.BR  = BREATH_DB + BREATH_END_DB * breath;
 		self.vtm_eng.NC  = self.NZP_reg;
 		self.vtm_eng.A2  = self.A2_reg;
@@ -1645,6 +1650,25 @@ mod tests {
 			let at = v.iter().find(|x| x.1 == ms(VOICE_ONSET_MS + 2.0)).unwrap().4;
 			assert!(full - at < 3.0, "voicing {} at onset+12 ms vs {} later", at, full);
 		}
+	}
+
+	#[test]
+	fn voice_bar_is_muffled() {
+		// the voice's Rd rises by VOICE_BAR_RD in a voiced closure and is back to the stop's own at the burst
+		let mut e = engine::new();
+		let mut rd = Vec::new();
+		for &(p, d) in &[(PAU, 50), (1, 150), (11, 80), (1, 150), (48, 100), (0, 50)] {
+			if e.load(p, d, true, 0, true) {
+				while e.is_running() {
+					e.sample(120.0);
+					if e.phn_c == 11 && e.counter >= 0 { rd.push((e.counter, e.marker_A, e.vtm_eng.RD - e.RD_reg)); }
+				}
+			}
+		}
+		let at = |c: i32| rd.iter().find(|x| x.0 == c).unwrap();
+		assert!((at(ms(15.0)).2 - VOICE_BAR_RD).abs() < 1e-4, "Rd +{} 15 ms into the closure", at(ms(15.0)).2);
+		let burst = at(ms(15.0)).1;
+		assert_eq!(at(burst).2, 0.0, "Rd still raised at the burst");
 	}
 
 	#[test]
