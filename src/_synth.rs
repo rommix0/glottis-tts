@@ -77,6 +77,9 @@ const FRIC_SILENCE_MS: f32 = 70.0;
 // the two don't run together into one hiss
 const FRIC_DIP_DB: f32 = 10.0;
 const FRIC_DIP_MS: f32 = 30.0;
+// out of a nasal into a voiceless fricative the velum closes before the tongue lets go: the fricative starts with a
+// silent closure this long (ms), and its noise comes in sharply after it
+const NASAL_GAP_MS: f32 = 25.0;
 // a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
 const NASAL_EDGE_MS: f32 = 15.0;
 // out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
@@ -292,6 +295,7 @@ pub struct engine {
 	voice_start: i32,	// counter value where that switch starts
 	dip_mid: i32,		// counter value at the middle of the dip between two fricatives
 	dip_half: i32,		// samples either side of it the dip takes (0: no dip)
+	gap: i32,			// samples of closure at the start of a fricative after a nasal (0: none)
 	ab_at: i32,			// counter value where the formants start moving from the A to the B targets
 	marker_B: i32,
 	marker_BA: i32,
@@ -446,6 +450,7 @@ impl engine {
 			voice_start: 0,
 			dip_mid: 0,
 			dip_half: 0,
+			gap: 0,
 			marker_B:  0,
 			marker_BA: 0,
 			is_first:  true,
@@ -1015,6 +1020,10 @@ impl engine {
 			let g = (-FRIC_DIP_DB / 12.0 * (1.0 + (std::f32::consts::PI * t).cos())).exp2();
 			(g_af, g_ah, g_av) = (g, g, g);
 		}
+		if self.gap > 0 && c >= 0 {
+			let k = ((c - self.gap) as f32 / two_ms as f32).clamp(0.0, 1.0);
+			(g_af, g_ah) = (k, k);
+		}
 		if self.asp_db > 0.0 && c < 0 {
 			// aspiration rises over 2 ms after the burst
 			let rise = ((c - self.asp_start) as f32 / two_ms as f32).min(1.0);
@@ -1321,6 +1330,7 @@ impl engine {
 				self.dip_mid = self.amp_len / 2;
 				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
 			}
+			self.gap = if nasal(self.pft_l1) && fricative(self.phn_c) && self.pft_c & 0x2 == 0 { samples(NASAL_GAP_MS) } else { 0 };
 			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
 				// a fricative fades in and out across its boundary, as far as the carried-over region allows
 				let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
@@ -1851,6 +1861,22 @@ mod tests {
 				assert!(dip < low - FRIC_DIP_DB + 1.0, "S-SH dips to {} (lower fricative {})", dip, low);
 			} else {
 				assert!(dip > low - 0.5, "S-S dips to {} ({})", dip, low);
+			}
+		}
+	}
+
+	#[test]
+	fn voiceless_fricative_after_nasal_starts_closed() {
+		// AA-N-S-AA: no noise for the first NASAL_GAP_MS of the S, then it comes in; AA-N-Z-AA runs straight on
+		for &(f, closed) in &[(34u8, true), (43, false)] {
+			let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (27, 100, 2), (f, 150, 3), (1, 150, 4), (48, 100, 5), (0, 50, 6)]);
+			let af = |c: i32| out.iter().find(|x| x.0 == f && x.1 == c).unwrap().2;
+			let gap = ms(NASAL_GAP_MS);
+			if closed {
+				for c in 0..gap { assert_eq!(af(c), 0.0, "noise {} ms into the closure", c as f32 / ms(1.0) as f32); }
+				assert!(af(gap + ms(3.0)) > 0.0, "no noise after the closure");
+			} else {
+				assert!(af(gap / 2) > 0.0, "N-Z has a closure");
 			}
 		}
 	}
