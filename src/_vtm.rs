@@ -79,6 +79,8 @@ const B10_INIT: f32 = 4750.0;
 pub const FN_INIT: f32 = 250.0;
 const BN_INIT: f32 = 100.0;
 const BN_MURMUR: f32 = 200.0;
+// the nasal pole's frequency (Hz) in a nasal consonant's murmur
+const FN_MURMUR: f32 = 320.0;
 
 // highest frequency a scaled formant may reach, as a share of the sample rate
 const F_MAX_SR: f32 = 0.45;
@@ -731,8 +733,9 @@ impl vtm {
 		self.FNZ = self.nasal_zero(s, k) * s;
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
+		let fnp = FN_INIT + k * (FN_MURMUR - FN_INIT);
 
-		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), FN_INIT * s, bnp);		// NASAL TRACT
+		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), fnp * s, bnp);		// NASAL TRACT
 		yy = self.VR1.step(yy, self.F1, bb1);												// F1 - tongue height
 		yy = self.VR2.step(yy, self.F2, bb2);												// F2 - tongue fronting
 		yy = self.VR3.step(yy, self.F3, bb3);												// F3 - R-coloring

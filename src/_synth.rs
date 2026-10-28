@@ -77,6 +77,11 @@ const BACK_F1_MS: f32 = 40.0;
 const GLIDE_HZ: f32 = 100.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
+// a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over its last NASAL_ANTIC_MS before one and its first
+// NASAL_CARRY_MS after one
+const NASAL_VOWEL_K: f32 = 0.3;
+const NASAL_ANTIC_MS: f32 = 80.0;
+const NASAL_CARRY_MS: f32 = 40.0;
 // aspiration level (AH, dB) by place
 const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
 // aspiration's share before an unstressed vowel or a sonorant (none after a sibilant in the same word)
@@ -1125,6 +1130,12 @@ impl engine {
 
 		// the nasal coupling switches with the amplitudes
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
+		if self.pft_c & 0x1 != 0 {
+			// the velum lowers during a vowel before a nasal and is still rising after one, so the vowel is partly nasal
+			let near = |nasal: bool, d: i32, len: f32| if nasal { NASAL_VOWEL_K * (1.0 - d as f32 / samples(len) as f32).clamp(0.0, 1.0) } else { 0.0 };
+			let k = near(self.pft_r1 & 0x10 != 0, self.marker_B - c, NASAL_ANTIC_MS).max(near(self.pft_l1 & 0x10 != 0, c, NASAL_CARRY_MS));
+			self.NZP_reg = self.NZP_reg.max(k);
+		}
 
 		// update the interpolator for the parallel amps
 		self.A2_reg  = lerp_db_gain(self.A2_reg_src, self.A2_reg_trg, y);
