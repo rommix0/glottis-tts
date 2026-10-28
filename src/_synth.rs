@@ -22,6 +22,12 @@ const sixty_ms:  i32 = (m_sr as f32 * 0.060) as i32;
 const fifteen_ms: i32 = (m_sr as f32 * 0.015) as i32;
 const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
 
+// per-sample steps: the master fader comes back over 2 ms, the glottalizer moves over 10 ms, the phrase-final fade
+// takes 50 ms
+const optime:    f32 = 1.0 / two_ms   as f32;
+const glot_time: f32 = 1.0 / ten_ms   as f32;
+const end_time:  f32 = 1.0 / fifty_ms as f32;
+
 // shortest plosive closure before the burst
 const min_closure: i32 = thirty_ms;
 
@@ -290,7 +296,6 @@ pub struct engine {
 	asp_seg_next: usize,
 	pub pst_c: bool,
 	pst_r1: bool,
-	GL: f32,
 	GL_V: f32,
 	RD_reg: f32,
 	NZP_reg: f32,
@@ -358,9 +363,6 @@ pub struct engine {
 	slope: f32,
 	interp: f32,
 	master_fade: f32,
-	optime: f32,
-	glot_time: f32,
-	end_time: f32,
 	C_A_src: u8,
 	C_B_src: u8,
 	RD_A_src: f32,
@@ -385,7 +387,6 @@ pub struct engine {
 	AF_src: f32,
 	AH_src: f32,
 	AV_src: f32,
-	NZP_B_src: f32,
 	F1_B_src: f32,
 	F2_B_src: f32,
 	F3_B_src: f32,
@@ -450,7 +451,6 @@ impl engine {
 			//        REGISTERS        //
 			/////////////////////////////
 			// traversal registers
-			GL:      1.0,				// glottalization F0 level
 			GL_V:    1.0,				// glottalization AV level
 			RD_reg:  0.0,
 			NZP_reg: 0.0,
@@ -523,9 +523,6 @@ impl engine {
 			slope:        0.0,
 			interp:       0.0,
 			master_fade:  1.0,							// master fader for phrase-final trigger
-			optime:       1.0 / two_ms   as f32,		// time the master fader takes to come back
-			glot_time:    1.0 / ten_ms   as f32,		// glottalization timing
-			end_time:     1.0 / fifty_ms as f32,		// phrase-final fade time
 			/////////////////////////////
 			//         SOURCE          //
 			/////////////////////////////
@@ -553,7 +550,6 @@ impl engine {
 			AF_src:    0.0,
 			AH_src:    0.0,
 			AV_src:    0.0,
-			NZP_B_src: 0.0,
 			F1_B_src:  0.0,
 			F2_B_src:  0.0,
 			F3_B_src:  0.0,
@@ -564,10 +560,6 @@ impl engine {
 	}
 	pub fn set_voice(&mut self, v: Voice) {
 		self.vtm_eng.set_voice(v);
-	}
-	fn ms_to_samples(&mut self, x: i32) -> i32 {
-		// convert milliseconds to samples
-		((x as f32 / 1000.0) * m_sr as f32) as i32
 	}
 	fn advance(&mut self, x: u8, d: i32, s: bool, seg: usize, w: bool) {
 		// x is phone_id
@@ -589,7 +581,7 @@ impl engine {
 		//        DURATION         //
 		/////////////////////////////
 		self.pdr_c  = self.pdr_r1;
-		self.pdr_r1 = self.ms_to_samples(d);
+		self.pdr_r1 = samples(d as f32);
 		/////////////////////////////
 		//         STRESS          //
 		/////////////////////////////
@@ -625,7 +617,7 @@ impl engine {
 		self.C_B_src   = formant_tbl[offset_src+1] as u8;
 		self.RD_A_src  = formant_tbl[offset_src+2] as f32 / 100.0;
 		self.RD_B_src  = formant_tbl[offset_src+3] as f32 / 100.0;
-		self.NZP_A_src = self.fetch_nsl();
+		self.NZP_A_src = if self.pft_c & 0x10 != 0 { 1.0 } else { 0.0 };	// nasal coupling: 1 for a nasal consonant
 		self.F1_A_src  = formant_tbl[offset_src+5] as f32;
 		self.F2_A_src  = formant_tbl[offset_src+6] as f32;
 		self.F3_A_src  = formant_tbl[offset_src+7] as f32;
@@ -645,7 +637,6 @@ impl engine {
 		self.AF_src    = formant_tbl[offset_src+21] as f32;
 		self.AH_src    = formant_tbl[offset_src+22] as f32;
 		self.AV_src    = formant_tbl[offset_src+23] as f32;
-		self.NZP_B_src = self.NZP_A_src;
 		self.F1_B_src  = formant_tbl[offset_src+25] as f32;
 		self.F2_B_src  = formant_tbl[offset_src+26] as f32;
 		self.F3_B_src  = formant_tbl[offset_src+27] as f32;
@@ -676,10 +667,6 @@ impl engine {
 			self.B2_B_src = self.B2_reg;
 			self.B3_B_src = self.B3_reg;
 		}
-	}
-	fn fetch_nsl(&mut self) -> f32 {
-		// nasal coupling: 1 for a nasal consonant, 0 otherwise
-		if self.pft_c & 0x10 != 0 { 1.0 } else { 0.0 }
 	}
 	fn ptar(&mut self) {
 		if self.phn_c == 24 && self.pft_r1 & 0x42 == 0x40 {
@@ -815,7 +802,7 @@ impl engine {
 			self.AF_src -= 3.0;
 		}
 
-		if self.pst_l1 == false && self.pst_r1 == false && self.pft_c & 0x1 == 0 {
+		if !self.pst_l1 && !self.pst_r1 && self.pft_c & 0x1 == 0 {
 			// unstressed consonant has lower AF
 			self.AF_src -= 3.0;
 		}
@@ -875,13 +862,8 @@ impl engine {
 	fn get_control_A_duration(&mut self, x: u8, d: i32) -> i32 {
 		(d as f32 * (x as f32 / 100.0)) as i32
 	}
-	fn get_control_B_duration(&mut self, x: u8, d: i32) -> i32 {
-		let xx = 100 - x;
-		self.get_control_A_duration(xx, d)
-	}
 	fn load_registers(&mut self) {
 		// load for the first time
-		// reset counter
 		self.counter = 0;
 		// source
 		self.RD_reg_src  = self.RD_A_src;
@@ -929,19 +911,12 @@ impl engine {
 		self.AV_reg_trg  = self.AV_src;
 	}
 	fn lin2smooth(&mut self, x: f32) -> f32 {
-		// linear to smooth mapping
-		// used by interpolator for smoothing
 		x * x * (3.0 - 2.0 * x)
 	}
 	fn update_registers(&mut self) {
-		// x is interpolation factor (0 < x < 1)
 		if self.interp < 1.0 {
-			self.interp += self.slope;
-			if self.interp > 1.0 { self.interp = 1.0; }
+			self.interp = (self.interp + self.slope).min(1.0);
 		}
-
-		// assign self.interp to y. this will give us and opportunity
-		// to use smooth mappings (such as linear to cosine)
 		let y = self.lin2smooth(self.interp);
 		let y1 = self.lin2smooth((self.interp * self.f1_speed).min(1.0));
 
@@ -955,15 +930,7 @@ impl engine {
 		self.B3_reg  = self.B3_reg_src  * (1.0 - y) + self.B3_reg_trg  * y;
 	}
 	fn update_amp_registers(&mut self, c: i32, l: i32) {
-		// interpolation smooth mapping algorithm
-		let mut y: f32 = 0.0;
-		if l > 0 {
-			let mut rr: f32 = (c - self.amp_start) as f32 / l as f32;
-			if rr < 0.0 { rr = 0.0; }
-			if rr > 1.0 { rr = 1.0; }
-			y = self.lin2smooth(rr);
-		}
-
+		let y = if l > 0 { self.lin2smooth(((c - self.amp_start) as f32 / l as f32).clamp(0.0, 1.0)) } else { 0.0 };
 
 		// the nasal coupling switches with the amplitudes
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
@@ -1054,7 +1021,6 @@ impl engine {
 		self.B3_reg_trg  = self.B3_B_src;
 	}
 	fn update_B_to_Next(&mut self) {
-		// calculate transition slope here
 		let mut dist = if self.stop_on {
 			// the formants reach a stop by its closure, where the sound stops
 			self.marker_BA
@@ -1139,16 +1105,12 @@ impl engine {
 			self.f1_len = 0;
 			let mut stop_asp: Option<i32> = None;
 
-			// do ptar before anything else
 			self.ptar();
 			
 			// the previous phone's formant targets at its end, before fetch replaces them
-			let prev_f2 = self.F2_B_src;
 			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
 			let prev_rd = self.RD_B_src;
 
-			// phoneme is ready and loaded up
-			// load in formant data
 			self.fetch();
 
 			// do formant target re-adjustments before doing anything else
@@ -1158,7 +1120,7 @@ impl engine {
 			self.reduce();
 
 			// consonants take their formants at each edge from the neighbouring vowel
-			self.loci(prev_f2);
+			self.loci(prev_f[1]);
 
 			// the phrase-end release is the last phone's voice dying away, so it keeps that voice's Rd
 			if self.phn_c == 48 || self.phn_c == 49 {
@@ -1177,17 +1139,6 @@ impl engine {
 				self.marker_B = self.pdr_c;
 			} else if self.pft_c & 0x8040 == 0 {
 				// not plosive nor affricate
-
-				// adjust phoneme duration and make sure they don't dip below a minimum threshold.
-				//if self.pdr_c < thirty_ms: self.pdr_c = thirty_ms
-
-				//==============================================
-				// typical transition times for certain sounds:
-				//
-				//   + stop  -> 30 ms (~20-40ms)
-				//   + fric  -> 40 ms (~30-50ms)
-				//   + sonor -> 50 ms (~40-60ms) [default]
-				//==============================================
 				if self.pft_c & 0x10 != 0 {
 					// nasal: the formants arrive by the closure, the murmur holds
 					self.marker_A = 0;
@@ -1214,7 +1165,7 @@ impl engine {
 					// l, r, w and y: get transition from formant table
 					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
 				}
-				self.marker_B = self.get_control_B_duration(self.C_B_src, self.pdr_c);
+				self.marker_B = self.get_control_A_duration(100 - self.C_B_src, self.pdr_c);
 				if self.pft_c & 0x1 != 0 {
 					// short vowels get a shorter transition so they still reach their target
 					self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
@@ -1340,46 +1291,30 @@ impl engine {
 	fn step(&mut self) {
 		self.counter += 1;
 		self.update_amp_registers(self.counter, self.amp_len);
-		if self.counter == self.ab_at && self.ab_at != self.marker_A {
-			// a consonant starting its move to the B targets early
+		if self.counter == self.ab_at {
+			// the move to the B targets: at marker A, or earlier for a consonant
 			self.update_A_to_B();
 		}
-		if self.counter == self.marker_A {
-			
-			// update registers for diphthongnization (all phonemes)
-			if self.ab_at == self.marker_A { self.update_A_to_B(); }
-			
-		} else if self.counter >= 0 && self.counter < self.marker_A {
-			
-			// update glottalizer when switching to unvoiced phoneme (for AV and F0)
-			if self.pft_c & 0x2 == 0 && self.GL > 0.75 {
-				self.GL   -= self.glot_time;
-				self.GL_V -= self.glot_time;
+		if self.counter >= 0 && self.counter < self.marker_A {
+			// the glottalizer lowers the voicing into a voiceless phone
+			if self.pft_c & 0x2 == 0 && self.GL_V > 0.75 {
+				self.GL_V -= glot_time;
 			}
-				
 		} else if self.counter > self.marker_A && self.counter < self.marker_B {
-			
-			// return glottalizer to 1.0 if less than when switching back to voiced phoneme
-			if self.pft_c & 0x2 != 0 && self.GL < 1.0 {
-				self.GL   += self.glot_time;
-				self.GL_V += self.glot_time;
-				if self.GL   > 1.0 { self.GL   = 1.0; }
-				if self.GL_V > 1.0 { self.GL_V = 1.0; }
+			// and brings it back in a voiced one
+			if self.pft_c & 0x2 != 0 && self.GL_V < 1.0 {
+				self.GL_V = (self.GL_V + glot_time).min(1.0);
 			}
 
-			// do phrase-final fade out if AXP or IXP is the phoneme
+			// phrase-final fade out in AXP or IXP
 			if self.phn_c == 48 || self.phn_c == 49 {
 				if self.master_fade > 0.0 {
-					self.master_fade -= self.end_time;
-					if self.master_fade < 0.0 { self.master_fade = 0.0; }
+					self.master_fade = (self.master_fade - end_time).max(0.0);
 				}
 			} else if self.master_fade < 1.0 {
-				self.master_fade += self.optime;
-				if self.master_fade > 1.0 { self.master_fade = 1.0; }
+				self.master_fade = (self.master_fade + optime).min(1.0);
 			}
-			
 		}
-		// update the interpolator
 		self.update_registers()
 	}
 	pub fn sample(&mut self, f0: f32) -> f32 {
@@ -1427,7 +1362,6 @@ impl engine {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::_utt::PAU;
 
 	// render phones (id, ms) the way main.rs drives the engine
 	fn render(phones: &[(u8, i32)]) -> Vec<f32> {
