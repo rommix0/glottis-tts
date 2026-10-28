@@ -103,7 +103,7 @@ const NASAL_CARRY_MS: f32 = 40.0;
 const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
 // aspiration's share before an unstressed vowel or a sonorant (none after a sibilant in the same word)
 const ASP_UNSTRESSED: f32 = 0.6;
-const ASP_BEFORE_SONORANT: f32 = 0.5;
+const ASP_BEFORE_SONORANT: f32 = 0.8;
 // after aspiration, voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it (ms)
 const VOICE_ONSET_MS: f32 = 10.0;
 const ASP_OVERLAP_MS: f32 = 20.0;
@@ -1553,7 +1553,7 @@ mod tests {
 		assert_eq!(t(35, 1, true, false).asp, 0, "after sh in the word");
 		assert!((t(34, 1, true, true).asp - ms(55.0)).abs() <= 1, "after s across a word start");
 		assert!((t(1, 1, false, true).asp - ms(33.0)).abs() <= 1, "before an unstressed vowel");
-		assert!((t(1, 24, true, true).asp - ms(27.5)).abs() <= 1, "before l");
+		assert!((t(1, 24, true, true).asp - ms(55.0 * ASP_BEFORE_SONORANT)).abs() <= 1, "before l");
 		assert_eq!(t(1, 34, true, true).asp, 0, "before s");
 		assert_eq!(t(1, 48, false, true).asp, 0, "phrase-final");
 		for &n in &[36u8, 27] {
