@@ -139,7 +139,7 @@ impl Utterance {
 				},
 				0 => {},
 				_ => {
-					if u.words.is_empty() || u.words.last().unwrap().phrase != u.phrases.len() || u.words.last().unwrap().segs.end != u.segs.len() {
+					if u.words.last().is_none_or(|w| w.phrase != u.phrases.len()) {
 						// phones before any word boundary, or after punctuation: start a content word
 						let n = u.segs.len();
 						let ns = u.syls.len();
