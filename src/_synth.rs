@@ -969,7 +969,7 @@ impl engine {
 			}
 			if self.pft_l1 & 0x1 == 1 && self.pft_c & 0x41 == 0 && self.pft_r1 & 0x1 == 1 {
 				// fricatives are stronger between two vowels
-				self.AF_src += 6.0;
+				self.AF_src += 3.0;
 			}
 		}
 
