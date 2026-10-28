@@ -35,7 +35,7 @@ const WORD_INITIAL_CONSONANT: f32 = 1.1;
 
 pub fn phone_dur(p: u8) -> PhoneDur {
 	match p {
-		// phone => inherent, min (ms); seeded by tools/dur_means.py, then tuned by ear
+		// phone => inherent, min (ms); tuned by ear
 		1  => PhoneDur { inherent: 129.0, min:  58.0 },	// aa
 		2  => PhoneDur { inherent: 110.0, min:  50.0 },	// ae
 		3  => PhoneDur { inherent: 114.0, min:  51.0 },	// ah
