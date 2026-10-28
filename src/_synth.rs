@@ -940,10 +940,10 @@ impl engine {
 		if self.interp < 1.0 {
 			self.interp = (self.interp + self.slope).min(1.0);
 		}
-		let y = self.lin2smooth(self.interp);
-		let y1 = self.lin2smooth((self.interp * self.f1_speed).min(1.0));
+		// formants move in straight lines (the amps, done elsewhere, ease in and out)
+		let y = self.interp;
+		let y1 = (self.interp * self.f1_speed).min(1.0);
 
-		// update the interpolator (except amps, those will be done elsewhere)
 		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;
 		self.F1_reg  = self.F1_reg_src  * (1.0 - y1) + self.F1_reg_trg  * y1;
 		self.F2_reg  = self.F2_reg_src  * (1.0 - y) + self.F2_reg_trg  * y;
