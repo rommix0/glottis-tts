@@ -86,6 +86,9 @@ const GLIDE_HZ: f32 = 100.0;
 const F1_FOLLOW: f32 = 0.5;
 const F1_FOLLOW_REF: f32 = 500.0;
 const F1_FOLLOW_MIN: f32 = 180.0;
+// an alveolar's F2 locus is pulled up by front vowels but not down by back ones: a vowel F2 below this (Hz) counts as
+// this
+const ALVEOLAR_F2_FLOOR: f32 = 1500.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
 // a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over its last NASAL_ANTIC_MS before one and its first
@@ -856,11 +859,13 @@ impl engine {
 			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
 			(self.F1_A_src, self.F1_B_src) = (f1, f1);
 		}
+		let alveolar = matches!(self.phn_c, 11 | 36 | 27 | 34 | 43 | 47);
+		let pull = |v: f32| if alveolar { v.max(ALVEOLAR_F2_FLOOR) } else { v };
 		let left = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
 		// a side with no vowel holds the other side's value
-		if let Some(v) = left.or(right) { self.F2_A_src = c + k * v; }
-		if let Some(v) = right.or(left) { self.F2_B_src = c + k * v; }
+		if let Some(v) = left.or(right) { self.F2_A_src = c + k * pull(v); }
+		if let Some(v) = right.or(left) { self.F2_B_src = c + k * pull(v); }
 		if stop_place(self.phn_c) == 2 && self.pft_c & 0x100 != 0 {
 			// velars: F3 comes down toward F2 by front vowels
 			let (k3, c3) = VELAR_F3;
@@ -1792,9 +1797,11 @@ mod tests {
 
 	#[test]
 	fn consonant_f2_follows_the_vowel() {
-		// the consonant's F2 on each side moves with the neighbouring vowel's F2, by its place's slope
-		let f2 = |v: u8| formant_tbl[v as usize * 31 + 6] as f32;
+		// the consonant's F2 on each side moves with the neighbouring vowel's F2, by its place's slope; an alveolar
+		// takes a back vowel's F2 as ALVEOLAR_F2_FLOOR
 		for &c in &[9u8, 11, 17, 26, 27, 34] {
+			let alveolar = matches!(c, 11 | 27 | 34);
+			let f2 = |v: u8| { let x = formant_tbl[v as usize * 31 + 6] as f32; if alveolar { x.max(ALVEOLAR_F2_FLOOR) } else { x } };
 			let slope = locus(c).unwrap().0;
 			let (_, b_iy, _) = cons_targets(6, c, 21);
 			let (_, b_uw, _) = cons_targets(6, c, 39);
