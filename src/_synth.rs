@@ -80,6 +80,8 @@ const FRIC_DIP_MS: f32 = 30.0;
 // out of a nasal into a voiceless fricative the velum closes before the tongue lets go: the fricative starts with a
 // silent closure this long (ms), and its noise comes in sharply after it
 const NASAL_GAP_MS: f32 = 25.0;
+// a nasal after an unstressed vowel is this much (dB) quieter, so it stays under that weaker vowel ("-ing", "-en")
+const NASAL_AFTER_UNSTRESSED_DB: f32 = 6.0;
 // a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
 const NASAL_EDGE_MS: f32 = 15.0;
 // out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
@@ -849,6 +851,10 @@ impl engine {
 		if !self.pst_l1 && !self.pst_r1 && self.pft_c & 0x1 == 0 {
 			// unstressed consonant has lower AF
 			self.AF_src -= 3.0;
+		}
+
+		if self.pft_c & 0x10 != 0 && self.pft_l1 & 0x1 != 0 && !self.pst_l1 {
+			self.AV_src -= NASAL_AFTER_UNSTRESSED_DB;
 		}
 	}
 	fn reduce(&mut self) {
@@ -1789,6 +1795,17 @@ mod tests {
 			assert!(seg.iter().filter(|x| x.1 < a).all(|x| x.2 == 0.0), "frication in the closure of {}", p);
 			assert!(seg.iter().filter(|x| x.1 >= a && x.1 <= b).all(|x| x.2 > 0.0), "frication gaps in {}", p);
 		}
+	}
+
+	#[test]
+	fn nasal_is_softer_after_unstressed_vowel() {
+		// AA-N-AA: the N's voicing is NASAL_AFTER_UNSTRESSED_DB lower when the AA before it is unstressed
+		let av = |unstressed: &[usize]| {
+			let (_, out, _) = trace_regs_st(&[(PAU, 50, 0), (1, 150, 1), (27, 100, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)], unstressed);
+			out.iter().find(|x| x.0 == 27 && x.1 == ms(50.0)).unwrap().4
+		};
+		let (st, un) = (av(&[]), av(&[1]));
+		assert!((st - un - NASAL_AFTER_UNSTRESSED_DB).abs() < 0.5, "after stressed {} unstressed {}", st, un);
 	}
 
 	#[test]
