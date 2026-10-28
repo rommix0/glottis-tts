@@ -140,17 +140,14 @@ fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: b
 }
 
 fn new_engines() -> Engines {
-	let mut eng = Engines {
+	Engines {
 		synth:    _synth::engine::new(),
 		contour:  _f0::Contour::new(),
 		next_seg: 0,
 		started:  false,
 		last:     0,
 		dump:     None,
-	};
-	eng.synth.init();
-	eng.synth.reset();
-	eng
+	}
 }
 
 fn finish(eng: &mut Engines, writer: &mut Wav) {

@@ -13,7 +13,6 @@
 use core::f32::consts::PI;
 use crate::_f0::REF_HZ;
 
-// master sample rate
 pub const m_sr: u32 = 22050;
 
 // soft clip default
@@ -43,6 +42,11 @@ const FRIC_LP_HZ: f32 = 4500.0;
 
 // narrowest F1/F2 bandwidth (Hz) the cascade uses
 const CASC_MIN_BW: f32 = 60.0;
+// amplitudes in dB are relative to this full scale
+const G_MAX: f32 = 87.0;
+// formants closer than MIN_D (Hz) get their bandwidths widened, by up to 1 + MUL_B times when they meet
+const MIN_D: f32 = 350.0;
+const MUL_B: f32 = 2.5;
 
 // low shelf on the cascade branch: this much more level (dB) below about LOW_SHELF_HZ
 const LOW_SHELF_DB: f32 = 4.0;
@@ -54,7 +58,6 @@ const FRIC_MOD: f32 = 0.3;
 // makeup gain for the parallel branch (frication)
 const PARR_GAIN: f32 = 2.5;
 
-// formant parameter inits
 const RA_REF:   f32 = 3.8;
 const F1_INIT:  f32 = 500.0;
 const B1_INIT:  f32 = 60.0;
@@ -76,7 +79,7 @@ const F9_INIT:  f32 = 8500.0;
 const B9_INIT:  f32 = 2125.0;
 const F10_INIT: f32 = 9500.0;
 const B10_INIT: f32 = 4750.0;
-pub const FN_INIT: f32 = 250.0;
+const FN_INIT: f32 = 250.0;
 const BN_INIT: f32 = 100.0;
 const BN_MURMUR: f32 = 200.0;
 // the nasal pole's frequency (Hz) in a nasal consonant's murmur
@@ -116,16 +119,11 @@ pub const VOICES: [Voice; 10] = [
 	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 9 shaky
 ];
 
-// noise generator
 struct noise { alpha: f32, nxt: u32, xp1: f32 }
 impl noise {
-	pub fn new() -> noise {
+	fn new() -> noise {
 		// the aspiration source's smoothing was tuned as 0.75 per sample at 32 kHz; keep that corner (~1.5 kHz)
 		noise { alpha: 0.75_f32.powf(32000.0 / m_sr as f32), nxt: 0x2545F491, xp1: 0.0 }
-	}
-	pub fn reset(&mut self) {
-		self.nxt  = 0x2545F491;
-		self.xp1  = 0.0;
 	}
 	fn xorshift(&mut self) {
 		// 32-bit state: repeats after 2^32 - 1 samples instead of 3 s
@@ -133,8 +131,8 @@ impl noise {
 		self.nxt ^= self.nxt >> 17;
 		self.nxt ^= self.nxt << 5;
 	}
-	pub fn step(&mut self) -> (f32, f32) {
-		// generate both white and fricative noise
+	fn step(&mut self) -> (f32, f32) {
+		// white noise and the smoothed aspiration noise
 		self.xorshift();
 		let n: f32 = ((self.nxt >> 16) as u16 as i16) as f32 / 32767.0;
 		let f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
@@ -154,30 +152,12 @@ struct resonator {
 	bf:    f32,
 	bw:    f32,
 	pfreq: f32,
-	anorm: f32,
 }
 impl resonator {
-	pub fn new(bf: f32, bw: f32, anti: bool) -> resonator {
-		resonator {
-			a:     0.0,
-			b:     0.0,
-			c:     0.0,
-			xp1:   0.0,
-			xp2:   0.0,
-			anti:  anti,
-			bf:    bf,
-			bw:    bw,
-			pfreq: 0.0,
-			anorm: 0.0,
-		}
-	}
-	pub fn init(&mut self) { self.set_coeffs(self.bf, self.bw); }
-	pub fn reset(&mut self) {
-		self.xp1 = 0.0;
-		self.xp2 = 0.0;
+	fn new(bf: f32, bw: f32, anti: bool) -> resonator {
+		resonator { a: 0.0, b: 0.0, c: 0.0, xp1: 0.0, xp2: 0.0, anti, bf, bw, pfreq: 0.0 }
 	}
 	fn set_coeffs(&mut self, bf: f32, bw: f32) {
-		// calculate the main coefficients here
 		let r: f32 = (-PI * bw / m_sr as f32).exp();
 		self.c = -(r * r);
 		self.b = 2.0 * r * (2.0 * PI * bf / m_sr as f32).cos();
@@ -186,11 +166,6 @@ impl resonator {
 		// anti-resonator switch for special
 		// resonators like nasal pairs
 		if self.anti {
-			if self.a == 0.0 {
-				self.a = 0.0;
-				self.b = 0.0;
-				self.c = 0.0;
-			}
 			self.a = 1.0 / self.a;
 			self.b = -self.a * self.b;
 			self.c = -self.a * self.c;
@@ -199,19 +174,15 @@ impl resonator {
 		// Fujisaki-style gain compensation (KLSYN88-Qlatt)
 		// replaces old DC gain equation as this works much better
 		if self.pfreq != 0.0 && bf < self.pfreq {
-			self.anorm = bf / self.anorm;
-			self.xp1 *= self.anorm;
-			self.xp2 *= self.anorm;
+			let g = bf / self.pfreq;
+			self.xp1 *= g;
+			self.xp2 *= g;
 		}
 		self.pfreq = bf;
-		self.anorm = bf;
-
-		// set internal bf and bw to new values
 		self.bf = bf;
 		self.bw = bw;
 	}
-	pub fn step(&mut self, x: f32, bf: f32, bw: f32) -> f32 {
-		// filter input x with resonator
+	fn step(&mut self, x: f32, bf: f32, bw: f32) -> f32 {
 		let mut bff: f32 = bf;
 		let mut bww: f32 = bw;
 		if bff == 0.0 { bff = self.bf; }
@@ -237,7 +208,7 @@ struct Biquad {
 	y2: f32,
 }
 impl Biquad {
-	pub fn new() -> Biquad {
+	fn new() -> Biquad {
 		Biquad {
 			b0: 0.0,
 			b1: 0.0,
@@ -250,20 +221,14 @@ impl Biquad {
 			y2: 0.0,
 		}
 	}
-	pub fn reset(&mut self) {
-		self.x1 = 0.0;
-		self.x2 = 0.0;
-		self.y1 = 0.0;
-		self.y2 = 0.0;
-	}
-	pub fn set(&mut self, a: f32, b: f32, c: f32, d: f32, e: f32) {
+	fn set(&mut self, a: f32, b: f32, c: f32, d: f32, e: f32) {
 		self.b0 = a;
 		self.b1 = b;
 		self.b2 = c;
 		self.a1 = d;
 		self.a2 = e;
 	}
-	pub fn step(&mut self, x: f32) -> f32 {
+	fn step(&mut self, x: f32) -> f32 {
 		let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2 - self.a1 * self.y1 - self.a2 * self.y2;
 		self.x2 = self.x1;
 		self.x1 = x;
@@ -275,10 +240,9 @@ impl Biquad {
 
 struct LpPole { a: f32, y1: f32, }
 impl LpPole {
-	pub fn new() -> LpPole { LpPole { a: 0.0, y1: 0.0, } }
-	pub fn reset(&mut self) { self.y1 = 0.0; }
-	pub fn set(&mut self, a: f32) { self.a = a; }
-	pub fn step(&mut self, x: f32) -> f32 {
+	fn new() -> LpPole { LpPole { a: 0.0, y1: 0.0, } }
+	fn set(&mut self, a: f32) { self.a = a; }
+	fn step(&mut self, x: f32) -> f32 {
 		let y = (1.0 - self.a) * x + self.a * self.y1;
 		self.y1 = y;
 		y
@@ -304,7 +268,7 @@ struct LfSource {
 	jit_k: f32,					// this period's rate factor
 }
 impl LfSource {
-	pub fn new() -> LfSource {
+	fn new() -> LfSource {
 		LfSource {
 			pos_in_period: 0.0,
 			last_inc: 0.0,
@@ -319,13 +283,6 @@ impl LfSource {
 			rng: 0x6C8E9CF5,
 			jit_k: 1.0,
 		}
-	}
-	pub fn reset(&mut self) {
-		self.glottal.reset();
-		self.tilt.reset();
-		self.exc = [0.0; PULSE_RING];
-		self.rng = 0x6C8E9CF5;
-		self.jit_k = 1.0;
 	}
 	fn rand(&mut self) -> f32 {
 		// uniform in -1..1
@@ -388,7 +345,7 @@ impl LfSource {
 		self.counter = (self.counter + 1) % (10 * m_sr);
 		a * (flutter / 50.0) * (f0 / 100.0)
 	}
-	pub fn step(&mut self, f0: f32, rd: f32, flutter: f32) -> (f32, f32, f32) {
+	fn step(&mut self, f0: f32, rd: f32, flutter: f32) -> (f32, f32) {
 		// slow F0 flutter on top of the asked pitch
 		let f0_final = f0 + self.calc_flutter(f0, flutter);
 
@@ -410,46 +367,39 @@ impl LfSource {
 		self.exc[slot] = 0.0;
 		self.n += 1;
 
-		// construct glottal pulse
 		let sample = self.tilt.step(self.glottal.step(impulse));
 
-		// advance position and return sample
 		self.last_inc = f0_final * self.jit_k / m_sr as f32;
 		self.pos_in_period += self.last_inc;
-		(sample, nmod, self.ra)
+		(sample, nmod)
 	}
 }
 
 // vocal tract model - the main event
 pub struct vtm {
-	G_MAX:    f32,
-	pub F0:   f32,		// this can be accessed by _synth.rs
-	pub AV:   f32,		// this can be accessed by _synth.rs
-	pub RD:   f32,		// this can be accessed by _synth.rs
-	pub AH:   f32,		// this can be accessed by _synth.rs
-	pub AF:   f32,		// this can be accessed by _synth.rs
-	pub BR:   f32,		// this can be accessed by _synth.rs
-	pub F1:   f32,		// this can be accessed by _synth.rs
-	pub B1:   f32,		// this can be accessed by _synth.rs
-	pub F2:   f32,		// this can be accessed by _synth.rs
-	pub B2:   f32,		// this can be accessed by _synth.rs
-	pub F3:   f32,		// this can be accessed by _synth.rs
-	pub B3:   f32,		// this can be accessed by _synth.rs
+	pub F0:   f32,
+	pub AV:   f32,
+	pub RD:   f32,
+	pub AH:   f32,
+	pub AF:   f32,
+	pub BR:   f32,
+	pub F1:   f32,
+	pub B1:   f32,
+	pub F2:   f32,
+	pub B2:   f32,
+	pub F3:   f32,
+	pub B3:   f32,
 	pub NC:   f32,		// nasal coupling, 0 (oral) to 1 (nasal consonant); set by _synth.rs
-	FNZ:      f32,
-	pub A2:   f32,		// this can be accessed by _synth.rs
-	pub A3:   f32,		// this can be accessed by _synth.rs
-	pub A4:   f32,		// this can be accessed by _synth.rs
-	pub A5:   f32,		// this can be accessed by _synth.rs
-	pub A6:   f32,		// this can be accessed by _synth.rs
-	pub A7:   f32,		// this can be accessed by _synth.rs
-	pub A8:   f32,		// this can be accessed by _synth.rs
-	pub A9:   f32,		// this can be accessed by _synth.rs
-	pub A10:  f32,		// this can be accessed by _synth.rs
-	pub AB:   f32,		// this can be accessed by _synth.rs
-	RA:       f32,
-	MIN_D:    f32,
-	MUL_B:    f32,
+	pub A2:   f32,
+	pub A3:   f32,
+	pub A4:   f32,
+	pub A5:   f32,
+	pub A6:   f32,
+	pub A7:   f32,
+	pub A8:   f32,
+	pub A9:   f32,
+	pub A10:  f32,
+	pub AB:   f32,
 	B1_ADJ:   f32,
 	B2_ADJ:   f32,
 	B3_ADJ:   f32,
@@ -484,10 +434,6 @@ pub struct vtm {
 impl vtm {
 	pub fn new() -> vtm {
 		vtm {
-			/*##############################
-			# vocal tract model parameters #
-			##############################*/
-			G_MAX  : 87.0,				// default max gain setting
 			F0     : 125.0,				// fundamental frequency (Hz)
 			AV     : 60.0,				// Amplitude of voicing, in dB
 			RD     : 0.0,				// RD fant tilt param (for glottal pulse model)
@@ -500,7 +446,6 @@ impl vtm {
 			B2     : B2_INIT,			// Bandwidth of 2nd formant, in Hz
 			F3     : F3_INIT,			// Frequency of 3rd formant, in Hz
 			B3     : B3_INIT,			// Bandwidth of 3rd formant, in Hz
-			FNZ    : FN_INIT,			// Frequency of nasal zero, in Hz
 			NC     : 0.0,				// nasal coupling
 			A2     : 0.0,				// Amp of parallel 2nd formant, in dB
 			A3     : 0.0,				// Amp of parallel 3rd formant, in dB
@@ -512,16 +457,9 @@ impl vtm {
 			A9     : 0.0,				// Amp of parallel 9th formant, in dB
 			A10    : 0.0,				// Amp of parallel 10th formant, in dB
 			AB     : 0.0,				// Amp of parallel bypass path, in dB
-			RA     : 0.0,
-			MIN_D  : 350.0,				// min distance between formants
-			MUL_B  : 2.5,				// bandwidth multiplier adjust
 			B1_ADJ : 1.0,				// B1 adjustment factor
 			B2_ADJ : 1.0,				// B2 adjustment factor
 			B3_ADJ : 1.0,				// B3 adjustment factor
-
-			/*##############################
-			# sound generators and filters #
-			##############################*/
 			noisegen : noise::new(),
 			glottal  : LfSource::new(),
 			VR1      : resonator::new(F1_INIT,  B1_INIT,  false),
@@ -574,7 +512,6 @@ impl vtm {
 		self.FR8  = resonator::new(f(F8_INIT),  B8_INIT,  false);
 		self.FR9  = resonator::new(f(F9_INIT),  B9_INIT,  false);
 		self.FR10 = resonator::new(f(F10_INIT), B10_INIT, false);
-		self.init();
 	}
 	fn apply_voice(&mut self) {
 		// scale this sample's pitch, formants and source by the voice profile; like fix_bw, this relies on _synth
@@ -591,62 +528,10 @@ impl vtm {
 		self.RD *= v.rd / 100.0;
 		self.BR += v.br;
 	}
-	pub fn init(&mut self) {
-		// resonator initialization (absolutely needed for them to work correctly)
-		self.VR1.init();
-		self.VR2.init();
-		self.VR3.init();
-		self.VR4.init();
-		self.VR5.init();
-		self.VR6.init();
-		self.VR7.init();
-		self.VR8.init();
-		self.NPR.init();
-		self.NZR.init();
-		self.FR2.init();
-		self.FR3.init();
-		self.FR4.init();
-		self.FR5.init();
-		self.FR6.init();
-		self.FR7.init();
-		self.FR8.init();
-		self.FR9.init();
-		self.FR10.init();
-	}
-	pub fn reset(&mut self) {
-		// reset the VTM
-		// prevents the weird DC offset bug
-		// when past samples have not been cleared
-		self.noisegen.reset();
-		self.glottal.reset();
-		self.VR1.reset();
-		self.VR2.reset();
-		self.VR3.reset();
-		self.VR4.reset();
-		self.VR5.reset();
-		self.VR6.reset();
-		self.VR7.reset();
-		self.VR8.reset();
-		self.NPR.reset();
-		self.NZR.reset();
-		self.FR2.reset();
-		self.FR3.reset();
-		self.FR4.reset();
-		self.FR5.reset();
-		self.FR6.reset();
-		self.FR7.reset();
-		self.FR8.reset();
-		self.FR9.reset();
-		self.FR10.reset();
-		self.xp1 = 0.0;
-		self.ep1 = 0.0;
-		self.shelf_y1 = 0.0;
-		self.fric_y1 = 0.0;
-	}
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
-		if gain >= self.G_MAX { return 1.0; }
-		0.5_f32.powf((self.G_MAX.floor() - gain) / 6.0)
+		if gain >= G_MAX { return 1.0; }
+		0.5_f32.powf((G_MAX - gain) / 6.0)
 	}
 	fn fix_bw(&mut self) {
 		// adjust bandwidths to improve sound quality
@@ -655,15 +540,15 @@ impl vtm {
 		self.B1 += 200.0 * (self.F0 / self.F1 - 0.5).powf(2.0);
 
 		// glottal leakage adjust (B1, B2)
-		let DB1 = 250.0 * (self.F1 / 500.0).powf(2.0) * (self.RA * 100.0 - RA_REF) / 12.0;
+		let DB1 = 250.0 * (self.F1 / 500.0).powf(2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0;
 		let DB2 = DB1 * self.F1 / (2.0 * self.F2);
 		self.B1 += DB1;
 		self.B2 += DB2;
 
 		// B1 adjust
 		self.B1_ADJ = (self.F1 - self.F2).abs();
-		if self.B1_ADJ < self.MIN_D {
-			self.B1_ADJ = self.MUL_B * ((self.MIN_D - self.B1_ADJ) / self.MIN_D);
+		if self.B1_ADJ < MIN_D {
+			self.B1_ADJ = MUL_B * ((MIN_D - self.B1_ADJ) / MIN_D);
 		} else {
 			self.B1_ADJ = 0.0;
 		}
@@ -671,8 +556,8 @@ impl vtm {
 
 		// B2 adjust
 		self.B2_ADJ = (self.F2 - self.F3).abs();
-		if self.B2_ADJ < self.MIN_D {
-			self.B2_ADJ = self.MUL_B * ((self.MIN_D - self.B2_ADJ) / self.MIN_D);
+		if self.B2_ADJ < MIN_D {
+			self.B2_ADJ = MUL_B * ((MIN_D - self.B2_ADJ) / MIN_D);
 		} else {
 			self.B2_ADJ = 0.0;
 		}
@@ -680,8 +565,8 @@ impl vtm {
 
 		// B3 adjust
 		self.B3_ADJ = (self.F3 - self.VR4.bf).abs();
-		if self.B3_ADJ < self.MIN_D {
-			self.B3_ADJ = self.MUL_B * ((self.MIN_D - self.B3_ADJ) / self.MIN_D);
+		if self.B3_ADJ < MIN_D {
+			self.B3_ADJ = MUL_B * ((MIN_D - self.B3_ADJ) / MIN_D);
 		} else {
 			self.B3_ADJ = 0.0;
 		}
@@ -690,13 +575,9 @@ impl vtm {
 	fn nasal_zero(&mut self, s: f32, k: f32) -> f32 {
 		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
 		// sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at a vowel's nasalized edge
-		let k = k.clamp(0.0, 1.0);
 		FN_INIT + k * ((self.F1 / s) - FN_INIT)
 	}
 	fn parallel(&mut self, x: f32) -> f32 {
-		/*#########################
-		# PARALLEL FILTER NETWORK #
-		#########################*/
 		let mut yy: f32 = 0.0;
 		let mut bb2 = self.B2 * self.B2_ADJ;
 		let mut bb3 = self.B3 * self.B3_ADJ;
@@ -716,10 +597,6 @@ impl vtm {
 		yy
 	}
 	fn cascade(&mut self, x: f32) -> f32 {
-		/*########################
-		# CASCADE FILTER NETWORK #
-		########################*/
-		// adjust first three bandwidths
 		let mut bb1 = self.B1 * self.B1_ADJ;
 		let mut bb2 = self.B2 * self.B2_ADJ;
 		let mut bb3 = self.B3 * self.B3_ADJ;
@@ -730,12 +607,12 @@ impl vtm {
 		// nasal coupling (Hawkins & Stevens 1985)
 		let k = self.NC.clamp(0.0, 1.0);
 		let s = self.voice.fhi / 100.0;
-		self.FNZ = self.nasal_zero(s, k) * s;
+		let fnz = self.nasal_zero(s, k) * s;
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 		let fnp = FN_INIT + k * (FN_MURMUR - FN_INIT);
 
-		let mut yy = self.NPR.step(self.NZR.step(x, self.FNZ, bnz), fnp * s, bnp);		// NASAL TRACT
+		let mut yy = self.NPR.step(self.NZR.step(x, fnz, bnz), fnp * s, bnp);		// NASAL TRACT
 		yy = self.VR1.step(yy, self.F1, bb1);												// F1 - tongue height
 		yy = self.VR2.step(yy, self.F2, bb2);												// F2 - tongue fronting
 		yy = self.VR3.step(yy, self.F3, bb3);												// F3 - R-coloring
@@ -747,12 +624,10 @@ impl vtm {
 		yy
 	}
 	fn softclip(&mut self, x: f32) -> f32 {
-		// use soft clipping to prevent overloading the audio
-		let a: f32 = if x < 0.0 { -x } else { x };
+		let a = x.abs();
 		if a <= CLIP_LIMIT { return x; }
-		let sign: f32 = if x < 0.0 { -1.0 } else { 1.0 };
 		let excess: f32 = a - CLIP_LIMIT;
-		sign * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
+		x.signum() * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
 	}
 	fn low_shelf(&mut self, x: f32) -> f32 {
 		// add a low-passed copy back on top, so only the bottom of the spectrum gains level
@@ -772,24 +647,14 @@ impl vtm {
 		self.lip(x, d) * (1.0 - LIP_D) / (1.0 - d)
 	}
 	fn lip(&mut self, x: f32, d: f32) -> f32 {
-		// apply lip radiation filter (start with 0.97 for d)
-		//let xx = (1.0 - d) * x - d * self.xp1;
 		let xx = x - d * self.xp1;
 		self.xp1 = x;
 		xx
 	}
 	pub fn step(&mut self) -> f32 {
-		/*#################
-		# MAIN OPERATIONS #
-		#################*/
-
-		// scale by the voice profile
 		self.apply_voice();
-
-		// get noise and glottal sound sources
 		let (n, mut f) = self.noisegen.step();
-		let (mut voice, nmod, ra) = self.glottal.step(self.F0, self.RD, self.voice.fl);
-		self.RA = ra;
+		let (mut voice, nmod) = self.glottal.step(self.F0, self.RD, self.voice.fl);
 		voice *= 0.01;
 		f *= 0.6;
 
@@ -809,13 +674,11 @@ impl vtm {
 		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
 		let parr_in: f32 = self.fric_y1 * self.db2lin(self.AF) * af_mod;
 
-		// pass them through the filters
 		let casc_out: f32 = self.cascade(casc_in);
 		let casc_out: f32 = self.emph(casc_out) * CASC_GAIN;
 		let casc_out: f32 = self.low_shelf(casc_out);
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
-		// add them together and return
 		let out = self.radiate(casc_out + parr_out) * 10.0_f32.powf(OUT_DB / 20.0) * self.vgain;
 		self.softclip(out)
 	}

@@ -562,171 +562,8 @@ impl engine {
 			B3_B_src:  0.0,
 		}
 	}
-	pub fn init(&mut self) {
-		// initialize VTM for first time usage
-		self.vtm_eng.init();
-	}
 	pub fn set_voice(&mut self, v: Voice) {
-		// pick a voice profile for the VTM
 		self.vtm_eng.set_voice(v);
-	}
-	pub fn reset(&mut self) {
-		/////////////////////////////
-		//          VTM            //
-		/////////////////////////////
-		self.vtm_eng.reset();
-		/////////////////////////////
-		//          MAIN           //
-		/////////////////////////////
-		self.marker_A =  0;
-		self.marker_B =  0;
-		self.marker_BA = 0;
-		self.is_first =  true;
-		self.counter =   0;
-		/////////////////////////////
-		//     CONTEXT WINDOW      //
-		/////////////////////////////
-		self.phn_l1 = 0;
-		self.phn_c =  0;
-		self.phn_r1 = 0;
-		self.pft_l1 = 0;
-		self.pft_c =  0;
-		self.pft_r1 = 0;
-		self.pdr_c =  0;
-		self.pdr_r1 = 0;
-		self.pst_l1 = false;
-		self.pst_c =  false;
-		self.pst_r1 = false;
-		self.seg_c = 0;
-		self.seg_r1 = 0;
-		self.seg_start = 0;
-		self.pwi_c = true;
-		self.pwi_r1 = true;
-		self.stop_on = false;
-		self.stop_bar = false;
-		self.stop_affric = false;
-		self.stop_labial = false;
-		self.burst_len = 0;
-		self.burst_decay = 0.0;
-		self.burst_gain = 1.0;
-		self.after_stop = false;
-		self.after_stop_next = false;
-		self.asp_db = 0.0;
-		self.asp_start = 0;
-		self.asp_seg = 0;
-		self.asp_db_next = 0.0;
-		self.asp_seg_next = 0;
-		/////////////////////////////
-		//        REGISTERS        //
-		/////////////////////////////
-		// traversal registers
-		self.GL =      1.0;
-		self.GL_V =    1.0;
-		self.RD_reg =  0.0;
-		self.NZP_reg = 0.0;
-		self.F1_reg =  0.0;
-		self.F2_reg =  0.0;
-		self.F3_reg =  0.0;
-		self.B1_reg =  0.0;
-		self.B2_reg =  0.0;
-		self.B3_reg =  0.0;
-		self.A2_reg =  0.0;
-		self.A3_reg =  0.0;
-		self.A4_reg =  0.0;
-		self.A5_reg =  0.0;
-		self.A6_reg =  0.0;
-		self.A7_reg =  0.0;
-		self.A8_reg =  0.0;
-		self.A9_reg =  0.0;
-		self.A10_reg = 0.0;
-		self.AB_reg =  0.0;
-		self.AF_reg =  0.0;
-		self.AH_reg =  0.0;
-		self.AV_reg =  0.0;
-		// source registers
-		self.RD_reg_src =  0.0;
-		self.NZP_reg_src = 0.0;
-		self.F1_reg_src =  0.0;
-		self.F2_reg_src =  0.0;
-		self.F3_reg_src =  0.0;
-		self.B1_reg_src =  0.0;
-		self.B2_reg_src =  0.0;
-		self.B3_reg_src =  0.0;
-		self.A2_reg_src =  0.0;
-		self.A3_reg_src =  0.0;
-		self.A4_reg_src =  0.0;
-		self.A5_reg_src =  0.0;
-		self.A6_reg_src =  0.0;
-		self.A7_reg_src =  0.0;
-		self.A8_reg_src =  0.0;
-		self.A9_reg_src =  0.0;
-		self.A10_reg_src =  0.0;
-		self.AB_reg_src =  0.0;
-		self.AF_reg_src =  0.0;
-		self.AH_reg_src =  0.0;
-		self.AV_reg_src =  0.0;
-		// target registers
-		self.RD_reg_trg =  0.0;
-		self.NZP_reg_trg = 0.0;
-		self.F1_reg_trg =  0.0;
-		self.F2_reg_trg =  0.0;
-		self.F3_reg_trg =  0.0;
-		self.B1_reg_trg =  0.0;
-		self.B2_reg_trg =  0.0;
-		self.B3_reg_trg =  0.0;
-		self.A2_reg_trg =  0.0;
-		self.A3_reg_trg =  0.0;
-		self.A4_reg_trg =  0.0;
-		self.A5_reg_trg =  0.0;
-		self.A6_reg_trg =  0.0;
-		self.A7_reg_trg =  0.0;
-		self.A8_reg_trg =  0.0;
-		self.A9_reg_trg =  0.0;
-		self.A10_reg_trg =  0.0;
-		self.AB_reg_trg =  0.0;
-		self.AF_reg_trg =  0.0;
-		self.AH_reg_trg =  0.0;
-		self.AV_reg_trg =  0.0;
-		/////////////////////////////
-		//         SLOPE           //
-		/////////////////////////////
-		self.slope =        0.0;
-		self.interp =       0.0;
-		self.master_fade =  1.0;
-		/////////////////////////////
-		//         SOURCE          //
-		/////////////////////////////
-		self.C_A_src =   0;
-		self.C_B_src =   0;
-		self.RD_A_src =  0.0;
-		self.RD_B_src =  0.0;
-		self.NZP_A_src = 0.0;
-		self.F1_A_src =  0.0;
-		self.F2_A_src =  0.0;
-		self.F3_A_src =  0.0;
-		self.B1_A_src =  0.0;
-		self.B2_A_src =  0.0;
-		self.B3_A_src =  0.0;
-		self.A2_src =    0.0;
-		self.A3_src =    0.0;
-		self.A4_src =    0.0;
-		self.A5_src =    0.0;
-		self.A6_src =    0.0;
-		self.A7_src =    0.0;
-		self.A8_src =    0.0;
-		self.A9_src =    0.0;
-		self.A10_src =    0.0;
-		self.AB_src =    0.0;
-		self.AF_src =    0.0;
-		self.AH_src =    0.0;
-		self.AV_src =    0.0;
-		self.NZP_B_src = 0.0;
-		self.F1_B_src =  0.0;
-		self.F2_B_src =  0.0;
-		self.F3_B_src =  0.0;
-		self.B1_B_src =  0.0;
-		self.B2_B_src =  0.0;
-		self.B3_B_src =  0.0;
 	}
 	fn ms_to_samples(&mut self, x: i32) -> i32 {
 		// convert milliseconds to samples
@@ -1595,8 +1432,6 @@ mod tests {
 	// render phones (id, ms) the way main.rs drives the engine
 	fn render(phones: &[(u8, i32)]) -> Vec<f32> {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut out: Vec<f32> = Vec::new();
 		for &(p, d) in phones {
 			if e.load(p, d, true, 0, true) {
@@ -1616,8 +1451,6 @@ mod tests {
 	// formant targets (F1-F3 at A) of phone p lasting d ms, between two AA's
 	fn targets_for(p: u8, d: i32) -> [f32; 3] {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		for &(q, dd) in &[(1, 150), (p, d), (1, 150)] {
 			if e.load(q, dd, true, 0, true) {
 				if e.phn_c == p { break; }
@@ -1654,8 +1487,6 @@ mod tests {
 	fn position_advances() {
 		// the reported segment follows the loaded order, and each runs to its end
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut seen: Vec<(usize, f32)> = Vec::new();
 		for &(p, d, seg) in &[(1u8, 150, 7usize), (21, 150, 8), (1, 150, 9), (48, 100, 10), (0, 50, 11)] {
 			if e.load(p, d, false, seg, true) {
@@ -1695,8 +1526,6 @@ mod tests {
 	fn ramp_scales() {
 		// a short vowel still reaches its target before its own segment ends
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		for &(p, d) in &[(1, 150), (6, 60), (1, 150)] {
 			if e.load(p, d, false, 0, true) {
 				if e.phn_c == 6 { break; }
@@ -1781,8 +1610,6 @@ mod tests {
 	// as trace_regs, with the segments listed in `unstressed` loaded unstressed
 	fn trace_regs_st(phones: &[(u8, i32, usize)], unstressed: &[usize]) -> (engine, Vec<(u8, i32, f32, f32, f32, (usize, f32))>, Vec<(i32, i32, f32)>) {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut out = Vec::new();
 		let mut marks = Vec::new();		// (marker_A, marker_B, AF_src) of each phone
 		for &(p, d, seg) in phones {
@@ -1963,8 +1790,6 @@ mod tests {
 	fn nasal_murmur_keeps_its_upper_formants() {
 		// AA-M-AA: the murmur's F2 region is not buried under a doubled low resonance
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut m: Vec<f32> = Vec::new();
 		for &(p, d) in &[(PAU, 50), (1, 150), (26, 120), (1, 150), (48, 100), (0, 50)] {
 			if e.load(p, d, true, 0, true) {
@@ -1983,8 +1808,6 @@ mod tests {
 	fn nasal_edges_are_fast() {
 		// AA-M-AA: the nasal coupling and the voicing level switch within NASAL_EDGE_MS of each boundary
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut tr: Vec<(u8, i32, f32, f32)> = Vec::new();		// (phone, counter, coupling, AV)
 		let mut f1: Vec<(u8, i32, f32, f32)> = Vec::new();		// (phone, counter, F1, the phone's F1 target)
 		for &(p, d) in &[(PAU, 50), (1, 150), (26, 120), (1, 150), (48, 100), (0, 50)] {
@@ -2014,8 +1837,6 @@ mod tests {
 	// (F2 at A, F2 at B, F1 at A) of phone c between vowels v1 and v2, all long
 	fn cons_targets(v1: u8, c: u8, v2: u8) -> (f32, f32, f32) {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		for &(q, d) in &[(PAU, 50), (v1, 1000), (c, 90), (v2, 1000)] {
 			if e.load(q, d, true, 0, true) {
 				if e.phn_c == c { break; }
@@ -2056,8 +1877,6 @@ mod tests {
 		// the vowel after a consonant starts from the consonant's right-side F2
 		for &c in &[9u8, 11, 17, 43, 40, 12, 31, 26] {
 			let mut e = engine::new();
-			e.init();
-			e.reset();
 			let (mut last, mut target) = (0.0f32, 0.0f32);
 			for &(q, d) in &[(PAU, 50), (6, 120), (c, 90), (21, 200), (48, 100), (0, 50)] {
 				if e.load(q, d, true, 0, true) {
@@ -2074,8 +1893,6 @@ mod tests {
 	// the burst samples (and AF/AH during them) of stop c, sentence-initially before vowel v
 	fn burst_of(c: u8, v: u8) -> (Vec<f32>, Vec<(f32, f32)>) {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let (mut x, mut amps) = (Vec::new(), Vec::new());
 		for &(p, d) in &[(PAU, 50), (c, 100), (v, 200), (48, 100), (0, 50)] {
 			if e.load(p, d, true, 0, true) {
@@ -2118,8 +1935,6 @@ mod tests {
 			let mut f3 = Vec::new();
 			for &v in &[21u8, 1] {
 				let mut e2 = engine::new();
-				e2.init();
-				e2.reset();
 				for &(q, d) in &[(PAU, 50), (6, 1000), (c, 90), (v, 1000)] {
 					if e2.load(q, d, true, 0, true) {
 						if e2.phn_c == c { break; }
@@ -2139,8 +1954,6 @@ mod tests {
 		// the vowel after a lip release peaks no higher than after a tongue release
 		let peak = |c: u8| {
 			let mut e = engine::new();
-			e.init();
-			e.reset();
 			let mut m = 0.0f32;
 			for &(p, d) in &[(PAU, 50), (c, 90), (8, 250), (48, 100), (0, 50)] {
 				if e.load(p, d, true, 0, true) {
@@ -2157,8 +1970,6 @@ mod tests {
 	fn aspiration_damps_f1() {
 		// the open glottis damps F1 (and a little F2) during aspiration; the vowel's own part is back to normal
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let (mut asp, mut voiced) = (Vec::new(), Vec::new());
 		for &(p, d) in &[(PAU, 50), (23, 100), (1, 200), (48, 100), (0, 50)] {
 			if e.load(p, d, true, 0, true) {
@@ -2178,8 +1989,6 @@ mod tests {
 	// per sample (phone, counter, AF gain, AH dB) through phones
 	fn noise_track(phones: &[(u8, i32)]) -> Vec<(u8, i32, f32, f32)> {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let g = |db: f32| if db <= 0.0 { 0.0 } else { 0.5_f32.powf((87.0 - db) / 6.0) };
 		let mut out = Vec::new();
 		for &(p, d) in phones.iter().chain([(48u8, 100), (0, 50)].iter()) {
@@ -2226,8 +2035,6 @@ mod tests {
 		// out of d, F2 still moves 50 ms into a back vowel but has arrived in a front one
 		let f2_at = |v: u8, at: f32| {
 			let mut e = engine::new();
-			e.init();
-			e.reset();
 			let mut f = (0.0, 0.0);
 			for &(p, d) in &[(PAU, 50), (6, 100), (11, 80), (v, 250), (48, 100), (0, 50)] {
 				if e.load(p, d, true, 0, true) {
@@ -2252,8 +2059,6 @@ mod tests {
 		// the aspiration a stop leaves for the next vowel drops with how front that vowel is
 		let asp_before = |v: u8| {
 			let mut e = engine::new();
-			e.init();
-			e.reset();
 			for &(q, d) in &[(PAU, 50), (6, 100), (36, 101), (v, 1000)] {
 				if e.load(q, d, true, 0, true) {
 					if e.phn_c == 36 { break; }
@@ -2272,8 +2077,6 @@ mod tests {
 	// (F1 at A, F2 at A, F2 at B) of stressed vowel v between consonants c1 and c2
 	fn vowel_targets(c1: u8, v: u8, c2: u8) -> (f32, f32, f32) {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		for &(q, d, st) in &[(PAU, 50, false), (6, 100, false), (c1, 80, false), (v, 200, true), (c2, 80, false), (6, 100, false)] {
 			if e.load(q, d, st, 0, true) {
 				if e.phn_c == v { break; }
@@ -2306,8 +2109,6 @@ mod tests {
 	fn f1_opens_into_a_back_vowel_before_f2_arrives() {
 		// out of d, ao's F1 is at its target while F2 is still gliding
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut at = None;
 		for &(p, d) in &[(PAU, 50), (6, 100), (11, 80), (4, 250), (48, 100), (0, 50)] {
 			if e.load(p, d, true, 0, true) {
@@ -2357,8 +2158,6 @@ mod tests {
 		// ow's own glide out of d keeps the timing it has out of b
 		let f1 = |c: u8| {
 			let mut e = engine::new();
-			e.init();
-			e.reset();
 			let mut f = 0.0;
 			for &(p, d) in &[(PAU, 50), (6, 100), (c, 80), (29, 250), (48, 100), (0, 50)] {
 				if e.load(p, d, true, 0, true) {
@@ -2388,8 +2187,6 @@ mod tests {
 		// before r a vowel starts as before t and its F3 is RHOTIC_F3 lower only at its end, stressed or not
 		let f3 = |v: u8, c2: u8, st: bool| {
 			let mut e = engine::new();
-			e.init();
-			e.reset();
 			for &(q, d, s) in &[(PAU, 50, false), (6, 100, false), (23, 80, false), (v, 200, st), (c2, 80, false), (6, 100, false)] {
 				if e.load(q, d, s, 0, true) {
 					if e.phn_c == v { break; }
@@ -2411,8 +2208,6 @@ mod tests {
 	// per sample (phone, F3, AV, the phone's own F3 A target) while rendering (phone, ms, stressed)
 	fn trace_f3(phones: &[(u8, i32, bool)]) -> Vec<(u8, f32, f32, f32)> {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut out = Vec::new();
 		for &(p, d, st) in phones {
 			if e.load(p, d, st, 0, true) {
@@ -2458,8 +2253,6 @@ mod tests {
 	// per sample (phone, counter, F1, F2, the F2 being moved toward) while rendering (phone, ms, stressed)
 	fn trace_moves(phones: &[(u8, i32, bool)]) -> Vec<(u8, i32, f32, f32, f32)> {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut out = Vec::new();
 		for &(p, d, st) in phones {
 			if e.load(p, d, st, 0, true) {
@@ -2503,8 +2296,6 @@ mod tests {
 	// per sample (phone, breath noise level, Rd) as the tract gets them, rendering (phone, ms, stressed)
 	fn trace_breath(phones: &[(u8, i32, bool)]) -> Vec<(u8, f32, f32)> {
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut out = Vec::new();
 		for &(p, d, st) in phones {
 			if e.load(p, d, st, 0, true) {
@@ -2540,8 +2331,6 @@ mod tests {
 	fn the_release_keeps_the_voice_rd() {
 		// the phrase-end release is the vowel's voice dying away, not a tenser one
 		let mut e = engine::new();
-		e.init();
-		e.reset();
 		let mut out = Vec::new();
 		for &(p, d, st) in &[(PAU, 50, false), (23, 90, false), (1, 200, true), (48, 80, false), (0, 50, false)] {
 			if e.load(p, d, st, 0, true) {
