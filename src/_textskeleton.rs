@@ -565,6 +565,23 @@ impl engine {
 					return true;
 				}
 			}
+			// an amount with cents before its currency word: 12.50 dollars
+			if at(n1) == b'.' {
+				let (c, nc) = Self::digits(&a, n1 + 1);
+				let mut j = n1 + 1 + nc;
+				while space(at(j)) { j += 1; }
+				let low: Vec<u8> = a.iter().skip(j).take(7).map(|c| c.to_ascii_lowercase()).collect();
+				let unit = [("dollars", "dollar"), ("dollar", "dollar"), ("euros", "euro"), ("euro", "euro")].into_iter()
+					.find(|(w, _)| low.starts_with(w.as_bytes()) && !letter(at(j + w.len())));
+				if let (2, true, Some((w, one))) = (nc, j > n1 + 3, unit) {
+					let cents = if c == 1 { " one cent".to_string() } else { format!(" {} cents", self.words(c, false, false)) };
+					let whole = format!(" {} {}{}", self.words(v1, false, false), one, if v1 == 1 { "" } else { "s" });
+					let text = match (v1, c) { (0, _) => cents, (_, 0) => whole, _ => format!("{} and{}", whole, cents) };
+					self.scratch_pad.write_text(&format!("{} ", text));
+					consume(buf, j + w.len());
+					return true;
+				}
+			}
 			// a date written year-month-day
 			if n1 == 4 && at(4) == b'-' {
 				let (m, nm) = Self::digits(&a, 5);

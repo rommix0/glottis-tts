@@ -511,7 +511,9 @@ mod tests {
 	fn pounds_euros_yen_and_heights() {
 		for (t, want) in [("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
 			("\u{20ac}1.50 each", "one euro and fifty cents each"), ("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"), ("only \u{20ac}0.99 each", "only ninety nine cents each"),
-			("a \u{a3}2 million deal", "two million pounds deal"), ("He's 6'2\" tall.", "six foot two tall"), ("She is 5'10\" tall.", "five foot ten tall")] {
+			("a \u{a3}2 million deal", "two million pounds deal"), ("He's 6'2\" tall.", "six foot two tall"), ("She is 5'10\" tall.", "five foot ten tall"),
+			("It costs 12.50 dollars.", "twelve dollars and fifty cents ."), ("only 1.01 euros", "one euro and one cent"), ("0.25 dollars", "twenty five cents"),
+			("3.00 dollars", "three dollars"), ("It rose 1.50 percent.", "one point five oh percent")] {
 			assert!(says(t).contains(want), "{} -> {}", t, says(t));
 		}
 	}
