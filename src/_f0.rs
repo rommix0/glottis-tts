@@ -29,7 +29,6 @@ use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstru
 use core::f32::consts::PI;
 
 pub const REF_HZ: f32 = 110.0;
-pub const LOW_RISE_QUESTION: bool = true;
 const MIN_HZ: f32 = 70.0;
 const MAX_HZ: f32 = 250.0;
 
@@ -70,8 +69,7 @@ pub struct Target {
 	pub frac: f32,			// position inside the segment (0..1)
 	pub st:   f32,			// semitones from REF_HZ
 	pub base: f32,			// the baseline here (for tracing and tests)
-	pub kind: Tk,
-	pub hold: bool,			// hold this value until the next target
+	pub kind: Tk,			// an End target holds its value until the next one
 }
 
 // a short pitch offset, drawn on each segment it covers; age is the ms since the offset began
@@ -127,8 +125,8 @@ impl Contour {
 		};
 
 		let mut new: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
-		let push = |new: &mut Vec<(usize, f32, Target)>, i: usize, frac: f32, st: f32, base: f32, kind: Tk, hold: bool| {
-			new.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind, hold }));
+		let push = |new: &mut Vec<(usize, f32, Target)>, i: usize, frac: f32, st: f32, base: f32, kind: Tk| {
+			new.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind }));
 		};
 
 		let last_phrase = utt.phrases.len() - 1;
@@ -143,7 +141,7 @@ impl Contour {
 			let (ts, te) = (t0[segs.start], t0[segs.end]);
 			let base = |t: f32| b0 - BASELINE_FALL_ST * if te > ts { (t - ts) / (te - ts) } else { 0.0 };
 
-			push(&mut new, first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), Tk::Start, false);
+			push(&mut new, first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), Tk::Start);
 
 			// accents, stepping down within the phrase
 			if k > 0 { first_height = (first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
@@ -159,7 +157,7 @@ impl Contour {
 				if n_acc > 0 { h = (h * DOWNSTEP).max(ACCENT_FLOOR_ST); }
 				n_acc += 1;
 				let is_last = Some(n) == last_accent_seg && k == last_phrase;
-				let (frac, kind) = if is_last && utt.kind == Kind::YesNo && LOW_RISE_QUESTION { (LOW_ACCENT_FRAC, Tk::Low) } else { (ACCENT_FRAC, Tk::Accent) };
+				let (frac, kind) = if is_last && utt.kind == Kind::YesNo { (LOW_ACCENT_FRAC, Tk::Low) } else { (ACCENT_FRAC, Tk::Accent) };
 				let tp = time(n, frac);
 				if let Some((pi, pt)) = prev_peak {
 					if tp - pt > TROUGH_GAP_MS {
@@ -167,7 +165,7 @@ impl Contour {
 						let tm = (pt + tp) / 2.0;
 						let i = (pi..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
 						let fr = if utt.segs[i].dur_ms > 0.0 { ((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0) } else { 0.0 };
-						push(&mut new, i, fr, base(tm), base(tm), Tk::Trough, false);
+						push(&mut new, i, fr, base(tm), base(tm), Tk::Trough);
 					}
 				}
 				let height = match kind {
@@ -175,7 +173,7 @@ impl Contour {
 					_ if is_last && utt.kind == Kind::Exclamation => h + EXCLAIM_BOOST_ST,
 					_ => h,
 				};
-				push(&mut new, n, frac, base(tp) + height, base(tp), kind, false);
+				push(&mut new, n, frac, base(tp) + height, base(tp), kind);
 				prev_peak = Some((n, tp));
 			}
 
@@ -190,7 +188,7 @@ impl Contour {
 			} else {
 				FINAL_FALL_ST
 			};
-			push(&mut new, last_v, 1.0, be + end_st, be, Tk::End, true);
+			push(&mut new, last_v, 1.0, be + end_st, be, Tk::End);
 		}
 
 		// targets closer than MERGE_MS within a phrase: keep the later one
@@ -267,7 +265,7 @@ impl Contour {
 			0 => self.targets[0].st,
 			j => {
 				let (a, b) = (&self.targets[j - 1], &self.targets[j]);
-				if a.hold {
+				if a.kind == Tk::End {
 					a.st
 				} else {
 					let (pa, pb) = (a.seg as f32 + a.frac, b.seg as f32 + b.frac);
