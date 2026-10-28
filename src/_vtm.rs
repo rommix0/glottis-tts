@@ -52,8 +52,9 @@ const MUL_B: f32 = 2.5;
 const LOW_SHELF_DB: f32 = 4.0;
 const LOW_SHELF_HZ: f32 = 250.0;
 
-// how much voicing modulates frication (1 is half-level noise in every other half period)
-const FRIC_MOD: f32 = 0.3;
+// how much voicing modulates breath noise and frication (1 is half-level noise in every other half period, 2 is none)
+const BREATH_MOD: f32 = 0.3;
+const FRIC_MOD: f32 = 1.0;
 
 // makeup gain for the parallel branch (frication)
 const PARR_GAIN: f32 = 2.5;
@@ -662,10 +663,11 @@ impl vtm {
 		self.fix_bw();
 
 		// noise modulation
-		let af_mod: f32 = if self.AV > 0.0 { 1.0 - FRIC_MOD * (1.0 - nmod) } else { 1.0 };
+		let modulate = |m: f32| if self.AV > 0.0 { 1.0 - m * (1.0 - nmod) } else { 1.0 };
+		let (br_mod, af_mod) = (modulate(BREATH_MOD), modulate(FRIC_MOD));
 
 		// route audio sources to a source fed in by cascade filter
-		voice   = voice + (n * self.db2lin(self.BR) * af_mod);
+		voice   = voice + (n * self.db2lin(self.BR) * br_mod);
 		let casc_in: f32 = voice * self.db2lin(self.AV) + f * self.db2lin(self.AH);
 
 		// route noise source to source fed in by parallel filter
