@@ -419,6 +419,51 @@ mod tests {
 	}
 
 	#[test]
+	fn playback_follows_the_schedule() {
+		// it is , cat . : every segment plays in turn, starting where the durations before it add up to, less the
+		// transition the phone before it carries in
+		let (tokens, texts) = ([95, 53, 76, 95, 53, 87, 91, 90, 56, 16, 76, 92], ["it", "is", "cat"]);
+		let wav = env::temp_dir().join(format!("tts_synth_test_{}_sched.wav", std::process::id()));
+		let dump = env::temp_dir().join(format!("tts_synth_test_{}_sched.bin", std::process::id()));
+		let mut writer = hound::WavWriter::create(&wav, wav_spec(false)).unwrap();
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0 };
+		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
+		let mut eng = new_engines();
+		eng.dump = Some(BufWriter::new(File::create(&dump).unwrap()));
+		synth_sentence(&tokens, &texts, &opts, &mut eng, &mut writer);
+		finish(&mut eng, &mut writer);
+		eng.dump.take().unwrap().flush().unwrap();
+		writer.finalize().unwrap();
+		let segs: Vec<u32> = std::fs::read(&dump).unwrap().chunks(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+		let _ = (std::fs::remove_file(&wav), std::fs::remove_file(&dump));
+
+		// the schedule the driver plays: the start pause, then each phrase's segments, release and pause
+		let mut utt = Utterance::build(&tokens, &texts);
+		_dur::assign(&mut utt, 1.0);
+		let mut durs = vec![(_dur::START_PAUSE_MS, true)];		// (ms, is a pause)
+		for ph in &utt.phrases {
+			let range = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
+			durs.extend(range.map(|i| (utt.segs[i].dur_ms, false)));
+			if ph.end != Boundary::None { durs.extend([(_dur::RELEASE_MS, false), (_dur::pause_after(ph.end, 1.0), true)]); }
+		}
+		let samples = |ms: f32| (ms.round() * m_sr as f32 / 1000.0) as i64;
+		let ms = |n: i64| n as f32 * 1000.0 / m_sr as f32;
+		assert!(segs.windows(2).all(|w| w[0] <= w[1]), "segments play out of order");
+		let mut due = 0;
+		for (k, &(d, _)) in durs.iter().enumerate() {
+			let start = segs.iter().position(|&s| s == k as u32).unwrap_or_else(|| panic!("segment {} never plays", k)) as i64;
+			let off = ms(start - due);
+			if k > 0 {
+				let (prev, after_pause) = durs[k - 1];
+				// a pause carries nothing over, so the timeline is back on schedule after one
+				if after_pause { assert!(off.abs() <= 1.0, "segment {} after a pause starts {} ms off", k, off); }
+				assert!(off <= 1.0 && off >= -prev, "segment {} starts {} ms off (the phone before lasts {} ms)", k, off, prev);
+			}
+			due += samples(d);
+		}
+	}
+
+	#[test]
 	fn nothing_sounds_after_the_final_pause() {
 		// it is .
 		let out = render(&[95, 53, 76, 95, 53, 87, 92], &["it", "is"]);
