@@ -517,6 +517,16 @@ mod tests {
 	}
 
 	#[test]
+	fn units_after_numbers() {
+		for (t, want) in [("5ft tall", "five feet tall"), ("1 ft", "one foot"), ("6ft2in", "six feet two inches"), ("2hrs later", "two hours later"),
+			("30mins", "thirty minutes"), ("50mg dose", "fifty milligrams dose"), ("5kgs", "five kilograms"), ("2.5kg", "two point five kilograms"),
+			("12oz can", "twelve ounces can"), ("1 mph", "one mile per hour"), ("1,000 ft", "one thousand feet"), ("10ms delay", "ten milliseconds delay"),
+			("6 in a row", "six in a row"), ("5 minutes", "five minutes"), ("3 secrets", "three secrets")] {
+			assert!(says(t).contains(want), "{} -> {}", t, says(t));
+		}
+	}
+
+	#[test]
 	fn pounds_euros_yen_and_heights() {
 		for (t, want) in [("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
 			("\u{20ac}1.50 each", "one euro and fifty cents each"), ("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"), ("only \u{20ac}0.99 each", "only ninety nine cents each"),

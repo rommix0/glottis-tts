@@ -583,6 +583,46 @@ impl engine {
 					return true;
 				}
 			}
+			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined to it)
+			const UNITS: [(&str, &str, &str, bool); 23] = [
+				("ft", "foot", "feet", false), ("in", "inch", "inches", true), ("yd", "yard", "yards", false),
+				("yds", "yard", "yards", false), ("mi", "mile", "miles", false), ("hr", "hour", "hours", false),
+				("hrs", "hour", "hours", false), ("min", "minute", "minutes", false), ("mins", "minute", "minutes", false),
+				("sec", "second", "seconds", false), ("secs", "second", "seconds", false), ("ms", "millisecond", "milliseconds", true),
+				("mg", "milligram", "milligrams", false), ("kg", "kilogram", "kilograms", false), ("kgs", "kilogram", "kilograms", false),
+				("lb", "pound", "pounds", false), ("lbs", "pound", "pounds", false), ("oz", "ounce", "ounces", false),
+				("ml", "milliliter", "milliliters", false), ("km", "kilometer", "kilometers", false),
+				("cm", "centimeter", "centimeters", false), ("mm", "millimeter", "millimeters", false),
+				("mph", "mile per hour", "miles per hour", false)];
+			{
+				let (mut v, mut k) = (v1, n1);
+				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
+					v = v * 1000 + Self::digits(&a, k + 1).0;
+					k += 4;
+				}
+				let mut frac: Vec<u8> = Vec::new();
+				if at(k) == b'.' && at(k + 1).is_ascii_digit() {
+					k += 1;
+					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
+				}
+				let joined = !space(at(k));
+				let mut j = k;
+				while space(at(j)) { j += 1; }
+				let low: Vec<u8> = a.iter().skip(j).take(5).map(|c| c.to_ascii_lowercase()).collect();
+				let unit = UNITS.iter()
+					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !letter(at(j + u.0.len())))
+					.max_by_key(|u| u.0.len());
+				if let Some(&(ab, one, many, _)) = unit {
+					let num = self.words(v, false, false);
+					let point: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
+					let point = if frac.is_empty() { point } else { format!(" point{}", point) };
+					let name = if v == 1 && frac.is_empty() { one } else { many };
+					self.scratch_pad.write_text(&format!(" {}{} {} ", num, point, name));
+					consume(buf, j + ab.len());
+					self.digit_prev = false;
+					return true;
+				}
+			}
 			// a date written year-month-day
 			if n1 == 4 && at(4) == b'-' {
 				let (m, nm) = Self::digits(&a, 5);
