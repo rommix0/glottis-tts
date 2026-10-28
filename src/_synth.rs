@@ -137,7 +137,7 @@ const ASP_OVERLAP_MS: f32 = 20.0;
 const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
 const ASP_FRONT_FROM_HZ: f32 = 700.0;
 // h's breath level (AH dB) before a vowel, cut like aspiration before front vowels
-const H_DB: f32 = 18.0;
+const H_DB: f32 = 12.0;
 // h's breath and the neighbouring vowel's voicing crossfade over this long (ms)
 const H_EDGE_MS: f32 = 20.0;
 // the open glottis damps F1 and F2 during aspiration: bandwidth added (Hz), fading out with the aspiration
