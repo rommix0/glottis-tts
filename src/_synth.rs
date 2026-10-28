@@ -81,6 +81,11 @@ const R_ONSET_MS: f32 = 50.0;
 const BACK_F1_MS: f32 = 40.0;
 // a back vowel whose own targets move this much (Hz, F1 or F2) starts that glide on time, not after the slow F2
 const GLIDE_HZ: f32 = 100.0;
+// a consonant's F1 is held through it and follows the next vowel: this share of that vowel's F1 above or below
+// F1_FOLLOW_REF (Hz) is added to the table's F1, never below F1_FOLLOW_MIN (Hz)
+const F1_FOLLOW: f32 = 0.5;
+const F1_FOLLOW_REF: f32 = 500.0;
+const F1_FOLLOW_MIN: f32 = 180.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
 // a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over its last NASAL_ANTIC_MS before one and its first
@@ -846,7 +851,11 @@ impl engine {
 			return;
 		}
 		let Some((k, c)) = locus(self.phn_c) else { return };
-		let next_f2 = self.next_vowel_formants()[1];
+		let [next_f1, next_f2, _] = self.next_vowel_formants();
+		if next_vowel {
+			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
+			(self.F1_A_src, self.F1_B_src) = (f1, f1);
+		}
 		let left = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
 		// a side with no vowel holds the other side's value
