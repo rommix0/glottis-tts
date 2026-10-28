@@ -826,6 +826,22 @@ mod tests {
 	use super::*;
 
 	#[test]
+	fn nasal_zero_moves_smoothly() {
+		// the zero sits on the nasal pole for oral sounds, on F1 for a nasal, and moves without jumps in between
+		let mut v = vtm::new();
+		let mut zero = |f1: f32, k: f32| { v.F1 = f1; v.nasal_zero(1.0, k) };
+		assert_eq!(zero(700.0, 0.0), FN_INIT);
+		assert_eq!(zero(250.0, 1.0), 250.0);
+		assert_eq!(zero(400.0, 1.0), 400.0);
+		let mut last = zero(500.0, 0.0);
+		for i in 1..=100 {
+			let z = zero(500.0, i as f32 / 100.0);
+			assert!((z - last).abs() < 10.0, "zero jumps {} -> {}", last, z);
+			last = z;
+		}
+	}
+
+	#[test]
 	fn low_shelf_lifts_only_the_bottom() {
 		// steady DC comes out LOW_SHELF_DB louder; an alternating (Nyquist) signal is nearly unchanged
 		let mut v = vtm::new();

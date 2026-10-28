@@ -1980,21 +1980,6 @@ mod tests {
 	}
 
 	#[test]
-	fn nasal_zero_moves_smoothly() {
-		// the zero sits on the nasal pole for oral sounds, on F1 for a nasal, and moves without jumps in between
-		use crate::_vtm::{nasal_zero, FN_INIT};
-		assert_eq!(nasal_zero(700.0, 0.0), FN_INIT);
-		assert_eq!(nasal_zero(250.0, 1.0), 250.0);
-		assert_eq!(nasal_zero(400.0, 1.0), 400.0);
-		let mut last = nasal_zero(500.0, 0.0);
-		for i in 1..=100 {
-			let z = nasal_zero(500.0, i as f32 / 100.0);
-			assert!((z - last).abs() < 10.0, "zero jumps {} -> {}", last, z);
-			last = z;
-		}
-	}
-
-	#[test]
 	fn nasal_edges_are_fast() {
 		// AA-M-AA: the nasal coupling and the voicing level switch within NASAL_EDGE_MS of each boundary
 		let mut e = engine::new();
@@ -2016,7 +2001,8 @@ mod tests {
 		assert!(at(26, edge).2 > 0.99, "coupling {} at {} ms into the nasal", at(26, edge).2, NASAL_EDGE_MS);
 		// the vowel after the nasal: the later of the two AA samples at each counter value
 		let at_v = |c: i32| *tr.iter().filter(|x| x.0 == 1 && x.1 == c).last().unwrap();
-		assert!(at_v(edge).2 < 0.01, "coupling {} at {} ms into the vowel", at_v(edge).2, NASAL_EDGE_MS);
+		assert!(at_v(edge).2 <= NASAL_VOWEL_K, "coupling {} at {} ms into the vowel", at_v(edge).2, NASAL_EDGE_MS);
+		assert!(at_v(ms(NASAL_CARRY_MS)).2 < 0.01, "coupling {} at {} ms into the vowel", at_v(ms(NASAL_CARRY_MS)).2, NASAL_CARRY_MS);
 		assert!((at_v(ms(40.0)).3 - at_v(edge).3).abs() < 1.0, "voicing {} at {} ms vs {} later", at_v(edge).3, NASAL_EDGE_MS, at_v(ms(40.0)).3);
 		// the formants reach the nasal by its closure, and the vowel's after its release
 		let m0 = f1.iter().find(|x| x.0 == 26 && x.1 == 1).unwrap();
