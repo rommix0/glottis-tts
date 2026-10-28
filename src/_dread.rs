@@ -46,58 +46,18 @@ impl dictreader {
 			is_valid: false,
 		}
 	}
-	pub fn reset(&mut self) {
-		self.start    = 0;
-		self.memcount = 0;
-		self.counter  = 0;
-		self.funcword = false;
-		self.is_valid = false;
-		self.wordlen  = 0;
-		for x in 0..32 { self.wordload[x] = 0; }
-	}
-	fn upperToLower(&mut self, x: u8) -> u8 {
-		let xx = x;
-		match xx {
-			0x41 => 0x61,
-			0x42 => 0x62,
-			0x43 => 0x63,
-			0x44 => 0x64,
-			0x45 => 0x65,
-			0x46 => 0x66,
-			0x47 => 0x67,
-			0x48 => 0x68,
-			0x49 => 0x69,
-			0x4A => 0x6A,
-			0x4B => 0x6B,
-			0x4C => 0x6C,
-			0x4D => 0x6D,
-			0x4E => 0x6E,
-			0x4F => 0x6F,
-			0x50 => 0x70,
-			0x51 => 0x71,
-			0x52 => 0x72,
-			0x53 => 0x73,
-			0x54 => 0x74,
-			0x55 => 0x75,
-			0x56 => 0x76,
-			0x57 => 0x77,
-			0x58 => 0x78,
-			0x59 => 0x79,
-			0x5A => 0x7A,
-			_    => xx,
-		}
-	}
+	pub fn reset(&mut self) { *self = dictreader::new(); }
 	pub fn isFunctionWord(&mut self) -> bool { self.funcword }
 	pub fn readIn(&mut self, x: u8) {
 		// read in the word to look up
 		if self.counter < 32 {
 			if x > 0x20 && x < 0x7F {
-				if self.is_valid == false { self.is_valid = true; }
+				self.is_valid = true;
 				self.wordload[self.counter] = x;
 				self.counter += 1;
 				self.wordlen += 1;
 			}
-		} else if self.is_valid {
+		} else {
 			self.is_valid = false;
 		}
 	}
@@ -109,13 +69,13 @@ impl dictreader {
 	}
 	pub fn search(&mut self) -> bool {
 		// return false if not valid
-		if self.is_valid == false { return false; }
+		if !self.is_valid { return false; }
 		
 		// find the word using naive lookup method
 		// set up some variables
 		let mut found:   bool = false;
 
-		self.start = getLetterOffset(self.upperToLower(self.wordload[0]));
+		self.start = getLetterOffset(self.wordload[0].to_ascii_lowercase());
 		self.memcount = self.start;
 
 		// search loop
@@ -125,7 +85,7 @@ impl dictreader {
 			if dictdat[self.memcount] == 0xFD { break; }
 
 			// check if function word
-			self.funcword = if dictdat[self.memcount] == 1 { true } else { false };
+			self.funcword = dictdat[self.memcount] == 1;
 			self.memcount += 1;
 			self.start = self.memcount;
 
@@ -138,7 +98,7 @@ impl dictreader {
 				loop {
 					let mut x = self.wordload[self.counter];
 					let y = dictdat[self.memcount];
-					if wmode == 1 { x = self.upperToLower(x); }
+					if wmode == 1 { x = x.to_ascii_lowercase(); }
 
 					self.counter  += 1;
 					self.memcount += 1;
@@ -153,15 +113,12 @@ impl dictreader {
 				}
 			}
 
-			// found routine
-			if found {
-				break;
-			} else {
-				loop {
-					let y = dictdat[self.memcount];
-					self.memcount += 1;
-					if y == 0xFF { break; }
-				}
+			if found { break; }
+			// skip this entry's phones
+			loop {
+				let y = dictdat[self.memcount];
+				self.memcount += 1;
+				if y == 0xFF { break; }
 			}
 		}
 		found
