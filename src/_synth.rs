@@ -54,6 +54,9 @@ const LABIAL_BURST_AH: [f32; 2] = [24.0, 30.0];
 // during the burst F2 and F3 are held at most at these (Hz), whatever the vowel
 const LABIAL_BURST_F2: f32 = 1100.0;
 const LABIAL_BURST_F3: f32 = 2300.0;
+// a formant stepped in one sample makes a resonator click, so they ease into those over the end of the closure and
+// back out after the burst, over this long (ms)
+const LIP_RAMP_MS: f32 = 5.0;
 // and the cut next to a sibilant (dB)
 const BURST_SIBILANT_DB: f32 = -6.0;
 // an unreleased stop plays this share of its duration, as closure merging with the next one
@@ -303,6 +306,7 @@ pub struct engine {
 	stop_bar: bool,		// voiced plosive after a voiced sound: a voice bar in the closure
 	stop_affric: bool,
 	stop_labial: bool,
+	lip_hold: f32,		// how far F2 and F3 are held down for a lip release (0..1)
 	burst_len: i32,
 	burst_decay: f32,
 	burst_gain: f32,	// linear gain on the burst
@@ -458,6 +462,7 @@ impl engine {
 			stop_bar: false,
 			stop_affric: false,
 			stop_labial: false,
+			lip_hold: 0.0,
 			burst_len: 0,
 			burst_decay: 0.0,
 			burst_gain: 1.0,
@@ -1372,11 +1377,13 @@ impl engine {
 		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
 		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN;
 		self.vtm_eng.B3  = self.B3_reg;
-		if self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A {
-			// a lip release: low and falling whatever the vowel
-			self.vtm_eng.F2 = self.F2_reg.min(LABIAL_BURST_F2);
-			self.vtm_eng.F3 = self.F3_reg.min(LABIAL_BURST_F3);
-		}
+		// a lip release: low and falling whatever the vowel
+		let ramp = samples(LIP_RAMP_MS);
+		let lips = self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A - ramp;
+		let dir = if lips { 1.0 } else { -1.0 };
+		self.lip_hold = (self.lip_hold + dir / ramp as f32).clamp(0.0, 1.0);
+		self.vtm_eng.F2 = self.F2_reg + self.lip_hold * (self.F2_reg.min(LABIAL_BURST_F2) - self.F2_reg);
+		self.vtm_eng.F3 = self.F3_reg + self.lip_hold * (self.F3_reg.min(LABIAL_BURST_F3) - self.F3_reg);
 		// as the voice dies away at a phrase end it gets breathier and laxer
 		let breath = if matches!(self.phn_c, 48 | 49) {
 			((self.counter - self.seg_start) as f32 / samples(BREATH_RAMP_MS) as f32).clamp(0.0, 1.0)
@@ -1663,6 +1670,27 @@ mod tests {
 			let full = v.iter().find(|x| x.1 == ms(40.0)).unwrap().4;
 			let at = v.iter().find(|x| x.1 == ms(VOICE_ONSET_MS + 2.0)).unwrap().4;
 			assert!(full - at < 3.0, "voicing {} at onset+12 ms vs {} later", at, full);
+		}
+	}
+
+	#[test]
+	fn formants_do_not_jump_at_a_lip_release() {
+		// a formant stepped in one sample makes a resonator click, so the lip release's low F2 and F3 come and go
+		// smoothly, even where they are far from the stop's own (a b after ay and before r)
+		for &(prev, stop, next) in &[(8u8, 9u8, 32u8), (21, 9, 21), (8, 31, 32), (26, 9, 24)] {
+			let mut e = engine::new();
+			let (mut f2, mut f3, mut worst) = (None::<f32>, 0.0f32, 0.0f32);
+			for &(p, d) in &[(PAU, 50), (prev, 120), (stop, 90), (next, 150), (48, 100), (0, 50)] {
+				if e.load(p, d, true, 0, true) {
+					while e.is_running() {
+						e.sample(120.0);
+						let (a, b) = (e.vtm_eng.F2, e.vtm_eng.F3);
+						if let Some(last) = f2 { worst = worst.max((a - last).abs()).max((b - f3).abs()); }
+						(f2, f3) = (Some(a), b);
+					}
+				}
+			}
+			assert!(worst < 50.0, "{}-{}-{}: F2/F3 jump {} Hz in one sample", prev, stop, next, worst);
 		}
 	}
 
