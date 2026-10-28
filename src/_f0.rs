@@ -10,7 +10,8 @@ the segment), in semitones from REF_HZ:
 	+ an accent peak on the stressed vowel of every content word, stepping
 	  down within the phrase and restarting at each phrase; a content word
 	  right after an accented one goes without, unless it ends the phrase
-	+ a trough on the baseline between accents that are far apart
+	+ a trough between accents that are far apart: a sag when they are
+	  fairly close, down to the baseline when further apart
 	+ phrase ends: a fall for statements, a rise for yes/no questions,
 	  a small rise at commas and a smaller one at minor breaks
 
@@ -19,8 +20,8 @@ and short offsets on top of the targets:
 	+ microprosody: a sonorant or vowel after an obstruent starts raised,
 	  more and for longer after a voiceless one, and decays
 	+ glottal dips: a fall into a word-final t before a consonant, and a
-	  low start to a stressed vowel that begins a content word after a
-	  sonorant or a pause
+	  low start to a stressed vowel that begins a content word, reached
+	  just after the vowel's start when a sonorant comes before it
 
 the contour is evaluated per sample from the synthesizer's position.
 
@@ -58,6 +59,8 @@ const T_DIP_ST:             f32 = 1.5;		// fall into a pre-glottalized word-fina
 const T_DIP_MS:             f32 = 40.0;
 const ONSET_DIP_ST:         f32 = 1.5;		// glottal onset: a stressed word-initial vowel starts this low, back by ONSET_DIP_MS
 const ONSET_DIP_MS:         f32 = 60.0;
+const ONSET_LEAD_MS:        f32 = 40.0;		// after a voiced sound the vowel's slot opens on that sound's tail: fall over this first
+const TROUGH_FULL_MS:       f32 = 500.0;	// accents this far apart dip to the baseline between them, closer ones sag less
 const MERGE_MS:             f32 = 20.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,6 +83,7 @@ enum Shape {
 	Decay { st: f32, ms: f32 },		// st at age 0, decaying with time constant ms
 	Fall  { st: f32, ms: f32 },		// 0 at age 0, falling to -st at ms, then held
 	Rise  { st: f32, ms: f32 },		// -st at age 0, back to 0 at ms
+	Vee   { st: f32, down: f32, up: f32 },	// 0 at age 0, -st at down, back to 0 up later
 }
 
 impl Shape {
@@ -89,6 +93,7 @@ impl Shape {
 			Shape::Decay { st, ms } => if age < BUMP_SPAN_MS { st * (-age / ms).exp() } else { 0.0 },
 			Shape::Fall  { st, ms } => -st * (age / ms).min(1.0),
 			Shape::Rise  { st, ms } => -st * (1.0 - age / ms).max(0.0),
+			Shape::Vee   { st, down, up } => if age < down { -st * age / down } else { -st * (1.0 - (age - down) / up).max(0.0) },
 		}
 	}
 }
@@ -147,7 +152,7 @@ impl Contour {
 			if k > 0 { first_height = (first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
 			let mut h = first_height;
 			let mut n_acc = 0;
-			let mut prev_peak: Option<(usize, f32)> = None;
+			let mut prev_peak: Option<(usize, f32, f32)> = None;
 			let last_content = ph.words.clone().rev().find(|&w| accent_of(w).is_some());
 			let mut accented: Option<usize> = None;
 			for w in ph.words.clone() {
@@ -159,22 +164,24 @@ impl Contour {
 				let is_last = Some(n) == last_accent_seg && k == last_phrase;
 				let (frac, kind) = if is_last && utt.kind == Kind::YesNo { (LOW_ACCENT_FRAC, Tk::Low) } else { (ACCENT_FRAC, Tk::Accent) };
 				let tp = time(n, frac);
-				if let Some((pi, pt)) = prev_peak {
-					if tp - pt > TROUGH_GAP_MS {
-						// trough on the baseline halfway between the peaks
-						let tm = (pt + tp) / 2.0;
-						let i = (pi..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
-						let fr = if utt.segs[i].dur_ms > 0.0 { ((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0) } else { 0.0 };
-						push(&mut new, i, fr, base(tm), base(tm), Tk::Trough);
-					}
-				}
 				let height = match kind {
 					Tk::Low => LOW_ACCENT_ST,
 					_ if is_last && utt.kind == Kind::Exclamation => h + EXCLAIM_BOOST_ST,
 					_ => h,
 				};
+				if let Some((pi, pt, ph)) = prev_peak {
+					if tp - pt > TROUGH_GAP_MS {
+						// trough on the baseline halfway between the peaks
+						let tm = (pt + tp) / 2.0;
+						let i = (pi..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
+						let fr = if utt.segs[i].dur_ms > 0.0 { ((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0) } else { 0.0 };
+						let k = ((tp - pt - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
+						let sag = (1.0 - k) * ph.min(height).max(0.0);
+						push(&mut new, i, fr, base(tm) + sag, base(tm), Tk::Trough);
+					}
+				}
 				push(&mut new, n, frac, base(tp) + height, base(tp), kind);
-				prev_peak = Some((n, tp));
+				prev_peak = Some((n, tp, height));
 			}
 
 			// phrase end
@@ -241,8 +248,13 @@ impl Contour {
 			// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
 			let s = &utt.segs[i];
 			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function && (after_pause || is_sonorant(q)) {
-				let end = (i..n).find(|&j| t0[j] - t0[i] >= ONSET_DIP_MS || !same_phrase(i, j)).unwrap_or(n);
-				draw(&mut bumps, i..end, t0[i], Shape::Rise { st: ONSET_DIP_ST, ms: ONSET_DIP_MS });
+				let (span, shape) = if !after_pause {
+					(ONSET_LEAD_MS + ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS })
+				} else {
+					(ONSET_DIP_MS, Shape::Rise { st: ONSET_DIP_ST, ms: ONSET_DIP_MS })
+				};
+				let end = (i..n).find(|&j| t0[j] - t0[i] >= span || !same_phrase(i, j)).unwrap_or(n);
+				draw(&mut bumps, i..end, t0[i], shape);
 			}
 		}
 		bumps.sort_by_key(|b| b.seg);
@@ -434,6 +446,32 @@ mod tests {
 	}
 
 	#[test]
+	fn close_accents_sag_rather_than_dip() {
+		// "ma baa ... ma": the trough between the accents sits above the baseline while they are close, on it once
+		// TROUGH_FULL_MS apart
+		let (mut close, mut far) = (false, false);
+		for fill in 0..8 {
+			let mut w = vec![MA];
+			w.extend(std::iter::repeat((true, 39, 15)).take(fill));
+			w.push(MA);
+			let (u, c) = utt(&w, &[(w.len() - 1, PERIOD)], "w");
+			let t0: Vec<f32> = u.segs.iter().scan(0.0, |a, s| { let t = *a; *a += s.dur_ms; Some(t) }).collect();
+			let time = |t: &Target| t0[t.seg] + t.frac * u.segs[t.seg].dur_ms;
+			let acc: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(time).collect();
+			let Some(tr) = c.targets.iter().find(|t| t.kind == Tk::Trough) else { continue };
+			let gap = acc[1] - acc[0];
+			if gap >= TROUGH_FULL_MS {
+				far = true;
+				assert!((tr.st - tr.base).abs() < 0.01, "{} ms apart: trough {} st over the baseline", gap, tr.st - tr.base);
+			} else {
+				close = true;
+				assert!(tr.st - tr.base > 0.1, "{} ms apart: trough on the baseline", gap);
+			}
+		}
+		assert!(close && far, "close {} far {}", close, far);
+	}
+
+	#[test]
 	fn clamped() {
 		let w = [BAA, DEE, GO, MA, NEE, BAA, DEE, GO, MA, NEE];
 		let (u, c) = utt(&w, &[(9, BANG)], "w");
@@ -488,10 +526,15 @@ mod tests {
 
 	#[test]
 	fn stressed_vowel_starting_a_content_word_has_a_glottal_onset() {
-		// "mow it" with "it" a content word: starts low after the vowel, back to the contour later
+		// "mow it" with "it" a content word: after the vowel F0 falls into the catch over ONSET_LEAD_MS, then comes back
 		let (u, c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
-		assert!((c.bump_at(2, 0.0) + ONSET_DIP_ST).abs() < 0.01);
-		assert!(u.segs[2].dur_ms > ONSET_DIP_MS && c.bump_at(2, 1.0) == 0.0);
+		let d = u.segs[2].dur_ms;
+		assert_eq!(c.bump_at(2, 0.0), 0.0);
+		assert!((c.bump_at(2, ONSET_LEAD_MS / d) + ONSET_DIP_ST).abs() < 0.01);
+		assert!(d > ONSET_LEAD_MS + ONSET_DIP_MS && c.bump_at(2, 1.0) == 0.0);
+		// "it" after a pause starts low
+		let (_, c) = offsets(&[CW, IH1, T, PERIOD]);
+		assert!((c.bump_at(0, 0.0) + ONSET_DIP_ST).abs() < 0.01);
 		// not for a function word
 		let (_, c) = offsets(&[CW, M, OW1, FW, IH1, T, PERIOD]);
 		assert_eq!(c.bump_at(2, 0.0), 0.0);
