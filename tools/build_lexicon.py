@@ -1,7 +1,6 @@
 """Build the letter-to-sound tree (src/_lts_tree.rs) and the exceptions dictionary (src/_dict.rs).
 
 usage: python tools/build_lexicon.py ALIGNED CMUDICT [--heldout]
-       python tools/build_lexicon.py --check-exceptions EXCEPTIONS FUNCTION_WORDS
 
 ALIGNED is CMUdict aligned letter by letter ("spaced letters<TAB>one phone class per letter", "_" for a silent
 letter, "a|b" for a letter that makes two phones). CMUDICT is CMUdict in the synthesizer's phone notation, one
@@ -24,8 +23,7 @@ The dictionary holds:
     said unaccented in running speech; longer ones keep CMUdict's stress.
 
 --heldout trains on 90 % of ALIGNED and reports how many of the other words decode() gets exactly right; nothing
-is written. --check-exceptions writes the dictionary straight from an exceptions file and a function-word list,
-to confirm the writer reproduces an existing src/_dict.rs byte for byte.
+is written.
 """
 import json
 import os
@@ -355,11 +353,6 @@ def write_dict(entries, path):
 
 
 def main():
-    if sys.argv[1] == '--check-exceptions':
-        fws = {l.strip() for l in open(sys.argv[3], encoding='utf-8') if l.strip()}
-        entries = [(g, p, ''.join(g) in fws) for g, p in read_pairs(sys.argv[2])]
-        print('%d bytes, %d entries' % write_dict(entries, os.path.join(SRC, '_dict.rs')))
-        return
     aligned = read_pairs(sys.argv[1])
     if '--heldout' in sys.argv:
         heldout(aligned)
