@@ -42,6 +42,9 @@ const AFFRIC_DECAY_DB: f32 = 6.0;
 // plosive bursts (not affricates): overall trim, and the extra cut before an unstressed vowel (dB)
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
+// formants move at a steady speed, but speed up and slow down over this share of each move at either end: one that
+// starts or stops at full speed clicks, most on the big F3 sweeps into and out of an r
+const TRACK_EASE: f32 = 0.1;
 // a burst before a vowel or sonorant quieter above F2 than an open vowel is cut by this share of the difference: that
 // level goes with 40 log10(F1 * F2), and RELEASE_REF (Hz^2) is an open central vowel's F1 * F2
 const RELEASE_FOLLOW: f32 = 0.5;
@@ -957,9 +960,13 @@ impl engine {
 		if self.interp < 1.0 {
 			self.interp = (self.interp + self.slope).min(1.0);
 		}
-		// formants move in straight lines (the amps, done elsewhere, ease in and out)
-		let y = self.interp;
-		let y1 = (self.interp * self.f1_speed).min(1.0);
+		// formants move in straight lines with rounded ends (the amps, done elsewhere, ease in and out)
+		let track = |x: f32| {
+			let (e, v) = (TRACK_EASE, 1.0 / (1.0 - TRACK_EASE));
+			if x < e { v * x * x / (2.0 * e) } else if x > 1.0 - e { 1.0 - v * (1.0 - x) * (1.0 - x) / (2.0 * e) } else { v * (x - e / 2.0) }
+		};
+		let y = track(self.interp);
+		let y1 = track((self.interp * self.f1_speed).min(1.0));
 
 		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;
 		self.F1_reg  = self.F1_reg_src  * (1.0 - y1) + self.F1_reg_trg  * y1;
@@ -1670,6 +1677,33 @@ mod tests {
 			let full = v.iter().find(|x| x.1 == ms(40.0)).unwrap().4;
 			let at = v.iter().find(|x| x.1 == ms(VOICE_ONSET_MS + 2.0)).unwrap().4;
 			assert!(full - at < 3.0, "voicing {} at onset+12 ms vs {} later", at, full);
+		}
+	}
+
+	#[test]
+	fn formants_start_and_stop_moving_gently() {
+		// a formant that starts or stops moving at full speed in one sample clicks, most on the big F3 sweeps into and
+		// out of an r, so its speed changes by only a little from one sample to the next
+		for seq in [[(4u8, 132), (33, 122)], [(1, 150), (32, 90)], [(14, 140), (36, 100)]] {
+			let mut e = engine::new();
+			let (mut last, mut speed, mut worst) = (None::<[f32; 3]>, [0.0f32; 3], 0.0f32);
+			for &(p, d) in [(PAU, 50)].iter().chain(seq.iter()).chain([(1, 150), (48, 100), (0, 50)].iter()) {
+				if e.load(p, d, true, 0, true) {
+					while e.is_running() {
+						e.sample(120.0);
+						let f = [e.F1_reg, e.F2_reg, e.F3_reg];
+						if let Some(l) = last {
+							for k in 0..3 {
+								let s = f[k] - l[k];
+								worst = worst.max((s - speed[k]).abs());
+								speed[k] = s;
+							}
+						}
+						last = Some(f);
+					}
+				}
+			}
+			assert!(worst < 0.1, "{:?}: a formant's speed changes {} Hz per sample in one sample", seq, worst);
 		}
 	}
 
