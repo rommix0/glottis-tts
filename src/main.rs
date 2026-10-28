@@ -508,6 +508,15 @@ mod tests {
 	}
 
 	#[test]
+	fn units_stay_out_of_words() {
+		for t in ["background", "bookmark", "acme", "a kgb agent", "kganakga"] {
+			assert_eq!(says(t), t);
+		}
+		assert!(says("5 kg").contains("five kilograms"), "{}", says("5 kg"));
+		assert!(says("5kg of rice").contains("five kilograms of rice"), "{}", says("5kg of rice"));
+	}
+
+	#[test]
 	fn pounds_euros_yen_and_heights() {
 		for (t, want) in [("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
 			("\u{20ac}1.50 each", "one euro and fifty cents each"), ("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"), ("only \u{20ac}0.99 each", "only ninety nine cents each"),

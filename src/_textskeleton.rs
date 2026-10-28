@@ -932,6 +932,16 @@ impl engine {
 		// there; the lexer's " for"/" the" rules come first, so they also win a tie
 		let first = buf.read();
 		let Some((n, r)) = self.table_best(buf) else { return false };
+		// a rule that starts (ends) with a letter starts (ends) a word: no "kg" inside "background" or "kgb"
+		let pat = RULES[r].0;
+		let letter = |c: Option<&u8>| c.is_some_and(|&c| c.is_ascii_alphabetic() || c == 0x02);
+		if letter(pat.first()) && Self::prev_byte(buf).is_ascii_alphabetic() { return false; }
+		if letter(pat.last()) {
+			for _ in 0..n { buf.advance(); }
+			let next = buf.read();
+			for _ in 0..n { buf.recede(); }
+			if next.is_ascii_alphabetic() { return false; }
+		}
 		let lex = Self::lexer_len(buf);
 		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
 		for _ in 0..n { buf.advance(); }
