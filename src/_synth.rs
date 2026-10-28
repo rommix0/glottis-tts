@@ -42,6 +42,12 @@ const AFFRIC_DECAY_DB: f32 = 6.0;
 // plosive bursts (not affricates): overall trim, and the extra cut before an unstressed vowel (dB)
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
+// a burst before a vowel or sonorant quieter above F2 than an open vowel is cut by this share of the difference: that
+// level goes with 40 log10(F1 * F2), and RELEASE_REF (Hz^2) is an open central vowel's F1 * F2
+const RELEASE_FOLLOW: f32 = 0.5;
+const RELEASE_REF: f32 = 600.0 * 1500.0;
+// the aspiration takes the larger of the front-vowel cut and this share of the same difference
+const ASP_FOLLOW: f32 = 0.5;
 // a lip release is weak noise through the vocal tract: its level (AH, dB) for p and b
 const LABIAL_BURST_AH: [f32; 2] = [24.0, 30.0];
 // the noise starts at the lips, in front of the tract, so the tract hardly shapes it:
@@ -838,6 +844,12 @@ impl engine {
 		self.F2_B_src = n2 + (self.F2_B_src - n2) * k2;
 		self.F3_B_src = n3 + (self.F3_B_src - n3) * k3;
 	}
+	fn quiet_next_db(&self) -> f32 {
+		// how much quieter above F2 the next vowel or sonorant is than an open vowel (dB; 0 if none or louder)
+		if self.pft_r1 & 0x1 == 0 && self.pft_r1 & 0x1C00 == 0 { return 0.0; }
+		let [f1, f2, _] = self.next_vowel_formants();
+		(-40.0 * (f1 * f2 / RELEASE_REF).log10()).max(0.0)
+	}
 	fn next_vowel_formants(&self) -> [f32; 3] {
 		// the next vowel's F1-F3 at its start, reduced for its length as reduce() will do
 		let o = self.phn_r1 as usize * 31;
@@ -1208,8 +1220,9 @@ impl engine {
 				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
 				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
 				let sibilant = (self.pft_l1 | self.pft_r1) & 0x200 != 0;
+				let follow = -RELEASE_FOLLOW * self.quiet_next_db();
 				let gain_db = if self.stop_affric { 0.0 } else {
-					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 }
+					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
 				};
 				self.burst_gain = (gain_db / 6.0).exp2();
 				self.after_stop_next = t.burst > 0;
@@ -1240,11 +1253,12 @@ impl engine {
 				self.marker_BA = a;
 				if a > 0 {
 					let mut level = ASP_DB[stop_place(self.phn_c)];
-					if self.pft_r1 & 0x1 != 0 {
-						// softer before a front, close vowel
+					// softer before a front, close vowel, or one quiet above F2
+					let front = if self.pft_r1 & 0x1 != 0 {
 						let [f1, f2, _] = self.next_vowel_formants();
-						level -= ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0;
-					}
+						ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0
+					} else { 0.0 };
+					level -= front.max(ASP_FOLLOW * self.quiet_next_db());
 					self.asp_db_next = level.max(1.0);
 					self.asp_seg_next = self.seg_c;
 				}
@@ -2066,6 +2080,11 @@ mod tests {
 		assert!(want > 3.0);
 		assert!(((asp_before(1) - asp_before(21)) - want).abs() < 0.3, "cut {} before iy, want {}", asp_before(1) - asp_before(21), want);
 		assert_eq!(asp_before(1), ASP_DB[1], "aspiration before aa changed");
+		// and before a vowel quiet above F2, by ASP_FOLLOW of how much quieter it is than an open vowel
+		let f = |v: u8, i: usize| formant_tbl[v as usize * 31 + i] as f32;
+		let want = ASP_FOLLOW * -40.0 * (f(39, 5) * f(39, 6) / RELEASE_REF).log10();
+		assert!(want > 3.0);
+		assert!(((asp_before(1) - asp_before(39)) - want).abs() < 0.3, "cut {} before uw, want {}", asp_before(1) - asp_before(39), want);
 	}
 
 	// (F1 at A, F2 at A, F2 at B) of stressed vowel v between consonants c1 and c2
