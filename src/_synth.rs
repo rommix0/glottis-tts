@@ -657,6 +657,8 @@ impl engine {
 	fn fetch(&mut self) {
 		// the pause uses the silent row
 		let row: u8 = if self.phn_c == PAU { 0 } else { self.phn_c };
+		// the phrase-end release after a nasal is that nasal dying away
+		let row = if matches!(row, 48 | 49) && self.pft_l1 & 0x10 != 0 { self.phn_l1 } else { row };
 		let offset_src: usize = row as usize * 31;
 		//---------------source---------------------
 		self.C_A_src   = formant_tbl[offset_src+0] as u8;		// also target during transition time
@@ -2400,6 +2402,20 @@ mod tests {
 		let end = out.iter().filter(|x| x.0 == 21).last().unwrap().1;
 		let low = out.iter().filter(|x| x.0 == 48 && x.2 > 0.0).map(|x| x.1).fold(9999.0f32, f32::min);
 		assert!(end - low > 200.0, "iy's release stays at F3 {} from {}", low, end);
+	}
+
+	#[test]
+	fn a_final_nasal_hums_away() {
+		// after an N the phrase-end release is the N's voice dying away, with no breath of an open vowel; after AA it breathes
+		let breath = |p: u8| {
+			let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (p, 100, 2), (48, 100, 3), (0, 50, 4)]);
+			let r: Vec<_> = out.iter().filter(|x| x.0 == 48 && x.1 >= 0).collect();
+			(r.iter().map(|x| x.3).fold(0.0f32, f32::max), r[0].4)
+		};
+		let ((n_ah, n_av), (a_ah, _)) = (breath(27), breath(1));
+		assert_eq!(n_ah, 0.0, "breath in the release after N");
+		assert!(a_ah > 0.0, "no breath in the release after AA");
+		assert!(n_av > 0.0, "the N's voice stops at the release");
 	}
 
 	// per sample (phone, counter, F1, F2, the F2 being moved toward) while rendering (phone, ms, stressed)
