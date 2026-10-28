@@ -841,8 +841,8 @@ impl engine {
 
 		// deal with fricative amp params below
 		if self.pft_c & 0x8000 == 0 {
-			if self.pft_c & 0x41 == 0 && self.pdr_c < eighty_ms {
-				// short fricatives don't reach AF target (less than 80 ms), lower AF
+			if self.pft_c & 0x41 == 0 && self.pdr_c < eighty_ms && self.pft_l1 & 0x40 == 0 {
+				// short fricatives don't reach AF target (less than 80 ms), lower AF; after a stop the noise starts at full level
 				self.AF_src -= 3.0;
 			}
 			if self.pft_l1 & 0x1 == 1 && self.pft_c & 0x41 == 0 && self.pft_r1 & 0x1 == 1 {
