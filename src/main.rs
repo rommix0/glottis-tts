@@ -21,7 +21,6 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use _vtm::m_sr;
-use hound;
 
 use crate::_utils::cbuf;
 use crate::_dread::dictreader;
@@ -239,7 +238,6 @@ fn synth_sentence(tokens: &[u8], texts: &[String], opts: &Opts, eng: &mut Engine
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-	// read in options and text from arguments
 	let opts = match parse_args() {
 		Ok(o) => o,
 		Err(e) => {
@@ -253,14 +251,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		return Ok(());
 	}
 
-	// setup wav file stuff here
 	let mut writer = hound::WavWriter::create("tts_demo.wav", wav_spec(opts.pcm16))?;
 
-	// initialize ring buffers
 	let mut buf  = cbuf::new();				// text stream buffer
 	let mut wbuf = cbuf::new();				// word buffer
 
-	// initialize dictionary reader
 	let mut dict_reader = dictreader::new();
 
 	// read in text stream into input ring buffer
@@ -269,7 +264,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	buf.write(0x20);
 	buf.write(0x00);
 
-	// initialize engines
 	let mut eng = new_engines();
 	eng.synth.set_voice(_vtm::VOICES[opts.voice]);
 	if let Some(path) = &opts.seg_dump { eng.dump = Some(BufWriter::new(File::create(path)?)); }
@@ -294,7 +288,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				dict_reader.reset();
 				let mut word_text = String::new();
 				while wbuf.is_not_empty() {
-					// read word into dictionary reader
 					cin = wbuf.read();
 					wbuf.advance();
 					if cin == 0x20 { continue; }
@@ -377,7 +370,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// if formant synth not done, let's finish up the synthesis
 	finish(&mut eng, &mut writer);
 
-	// flush WAV file and write to it
 	writer.finalize()?;
 
 	Ok(())
