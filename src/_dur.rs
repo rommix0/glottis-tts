@@ -32,6 +32,7 @@ const BEFORE_VOICED_OBS:      f32 = 1.15;
 const BEFORE_VOICELESS_OBS:   f32 = 0.9;
 const CLUSTER_CONSONANT:      f32 = 0.8;
 const WORD_INITIAL_CONSONANT: f32 = 1.1;
+const TENSE_VOWEL:            f32 = 1.4;		// long (tense) vowels and diphthongs: aa ae ao aw ay er ey iy ow oy uw
 
 pub fn phone_dur(p: u8) -> PhoneDur {
 	match p {
@@ -119,6 +120,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 				2 => apply("secondary", SECONDARY_VOWEL),
 				_ => {},
 			}
+			if matches!(p, 1 | 2 | 4 | 5 | 8 | 14 | 15 | 21 | 29 | 30 | 39) { apply("tense", TENSE_VOWEL); }
 			let n = word.syls.len();
 			if n >= 2 { apply("polysyllabic", POLYSYLLABIC.powi(n as i32 - 1).max(POLYSYLLABIC_FLOOR)); }
 			if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
@@ -201,6 +203,17 @@ mod tests {
 		assign(&mut u, 1.0);
 		let ratio = stretch(&u, 4) / stretch(&u, 1);
 		assert!((ratio - 0.7).abs() < 0.01, "ratio {}", ratio);
+	}
+
+	#[test]
+	fn tense_vowel_longer_than_lax() {
+		// b 'iy t  b 'ih t  b 'iy .
+		let mut u = build(&[CW, 39, 26, 76, CW, 39, 25, 76, CW, 39, 26, PERIOD]);
+		assign(&mut u, 1.0);
+		// each against its own stretchable range, so only the rule factors are compared
+		let k = |i: usize| { let pd = phone_dur(u.segs[i].phone); stretch(&u, i) / (pd.inherent - pd.min) };
+		let ratio = k(1) / k(4);
+		assert!((ratio - TENSE_VOWEL).abs() < 0.01, "ratio {}", ratio);
 	}
 
 	#[test]
