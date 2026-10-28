@@ -73,6 +73,10 @@ const SIB_ENTRY_MS: f32 = 60.0;
 const FRIC_ENTRY_MS: f32 = 70.0;
 // fricative noise rises and falls over this long (ms) next to silence or the phrase-final release
 const FRIC_SILENCE_MS: f32 = 70.0;
+// between two different fricatives the sound dips by this much (dB) over this long (ms), centred on the switch, so
+// the two don't run together into one hiss
+const FRIC_DIP_DB: f32 = 10.0;
+const FRIC_DIP_MS: f32 = 30.0;
 // a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
 const NASAL_EDGE_MS: f32 = 15.0;
 // out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
@@ -286,6 +290,8 @@ pub struct engine {
 	amp_start: i32,		// counter value where that ramp starts
 	voice_len: i32,		// samples the voicing takes to switch at a fricative edge (0: it follows amp_len)
 	voice_start: i32,	// counter value where that switch starts
+	dip_mid: i32,		// counter value at the middle of the dip between two fricatives
+	dip_half: i32,		// samples either side of it the dip takes (0: no dip)
 	ab_at: i32,			// counter value where the formants start moving from the A to the B targets
 	marker_B: i32,
 	marker_BA: i32,
@@ -438,6 +444,8 @@ impl engine {
 			amp_start: 0,
 			voice_len: 0,
 			voice_start: 0,
+			dip_mid: 0,
+			dip_half: 0,
 			marker_B:  0,
 			marker_BA: 0,
 			is_first:  true,
@@ -1002,6 +1010,11 @@ impl engine {
 		// update the interpolator for main amps
 		self.AB_reg = lerp_db_gain(self.AB_reg_src, self.AB_reg_trg, y);
 		let (mut g_af, mut g_ah, mut g_av) = (1.0, 1.0, 1.0);
+		let t = (c - self.dip_mid) as f32 / self.dip_half.max(1) as f32;
+		if self.dip_half > 0 && t.abs() < 1.0 {
+			let g = (-FRIC_DIP_DB / 12.0 * (1.0 + (std::f32::consts::PI * t).cos())).exp2();
+			(g_af, g_ah, g_av) = (g, g, g);
+		}
 		if self.asp_db > 0.0 && c < 0 {
 			// aspiration rises over 2 ms after the burst
 			let rise = ((c - self.asp_start) as f32 / two_ms as f32).min(1.0);
@@ -1303,6 +1316,11 @@ impl engine {
 			let sonorant = |f: u16| f & 0x1 != 0 || f & 0x1C10 != 0;
 			let fricative = |p: u8| matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44);
 			let quiet = |p: u8| p == PAU || p == 0 || p == 48 || p == 49;
+			self.dip_half = 0;
+			if fricative(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
+				self.dip_mid = self.amp_len / 2;
+				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
+			}
 			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
 				// a fricative fades in and out across its boundary, as far as the carried-over region allows
 				let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
@@ -1818,6 +1836,22 @@ mod tests {
 			assert_eq!(av(f, sw), 0.0, "{}: voicing {} ms into the fricative", f, VOICE_SWITCH_MS);
 			assert_eq!(av(1, -sw), 0.0, "{}: voicing before the switch into the vowel", f);
 			assert_eq!(af(1, half_out + ms(1.0)), 0.0, "{}: frication after the exit ramp", f);
+		}
+	}
+
+	#[test]
+	fn different_fricatives_dip_between() {
+		// S-SH dips at the switch so the two don't run together into one hiss; S-S runs on as one
+		for &(b, dips) in &[(35u8, true), (34, false)] {
+			let (_, out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (34, 120, 2), (b, 120, 3), (1, 150, 4), (48, 100, 5), (0, 50, 6)]);
+			let af = |seg: usize, c: i32| out.iter().find(|x| x.5.0 == seg && x.1 == c).unwrap().2;
+			let low = af(2, ms(60.0)).min(af(3, ms(60.0)));
+			let dip = out.iter().filter(|x| x.5.0 == 3 && x.1 < ms(30.0)).map(|x| x.2).fold(f32::MAX, f32::min);
+			if dips {
+				assert!(dip < low - FRIC_DIP_DB + 1.0, "S-SH dips to {} (lower fricative {})", dip, low);
+			} else {
+				assert!(dip > low - 0.5, "S-S dips to {} ({})", dip, low);
+			}
 		}
 	}
 
