@@ -89,6 +89,9 @@ const F1_FOLLOW_MIN: f32 = 180.0;
 // an alveolar's F2 locus is pulled up by front vowels but not down by back ones: a vowel F2 below this (Hz) counts as
 // this
 const ALVEOLAR_F2_FLOOR: f32 = 1500.0;
+// at a fricative's edge next to a vowel or sonorant the voicing switches within this long (ms), centred on the
+// boundary, while the noise keeps the longer crossfade
+const VOICE_SWITCH_MS: f32 = 10.0;
 // the vowel after a nasal reaches its formants this long (ms) after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
 // a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over its last NASAL_ANTIC_MS before one and its first
@@ -267,6 +270,8 @@ pub struct engine {
 	marker_A: i32,
 	amp_len: i32,		// samples the amplitudes take to reach this phone's values
 	amp_start: i32,		// counter value where that ramp starts
+	voice_len: i32,		// samples the voicing takes to switch at a fricative edge (0: it follows amp_len)
+	voice_start: i32,	// counter value where that switch starts
 	ab_at: i32,			// counter value where the formants start moving from the A to the B targets
 	marker_B: i32,
 	marker_BA: i32,
@@ -416,6 +421,8 @@ impl engine {
 			amp_len:   0,
 			ab_at: 0,
 			amp_start: 0,
+			voice_len: 0,
+			voice_start: 0,
 			marker_B:  0,
 			marker_BA: 0,
 			is_first:  true,
@@ -976,7 +983,8 @@ impl engine {
 		}
 		self.AF_reg = fade_db(lerp_db_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
 		self.AH_reg = fade_db(lerp_db_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
-		self.AV_reg = fade_db(lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, y), self.master_fade * g_av);
+		let yv = if self.voice_len > 0 { self.lin2smooth(((c - self.voice_start) as f32 / self.voice_len as f32).clamp(0.0, 1.0)) } else { y };
+		self.AV_reg = fade_db(lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
 		if self.stop_on && c >= 0 {
 			// the voice bar fades over the closure and holds through the burst
 			let bar = if self.stop_bar {
@@ -1262,6 +1270,7 @@ impl engine {
 				self.amp_len = samples(H_EDGE_MS);
 			}
 			self.amp_start = 0;
+			self.voice_len = 0;
 			let sibilant = |f: u16| f & 0x8200 == 0x200;
 			let sonorant = |f: u16| f & 0x1 != 0 || f & 0x1C10 != 0;
 			let fricative = |p: u8| matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44);
@@ -1279,6 +1288,9 @@ impl engine {
 				let half = samples(len / 2.0);
 				self.amp_start = (-half).max(self.counter);
 				self.amp_len = half - self.amp_start;
+				let hv = samples(VOICE_SWITCH_MS / 2.0);
+				self.voice_start = (-hv).max(self.counter);
+				self.voice_len = hv - self.voice_start;
 			} else if (fricative(self.phn_c) && quiet(self.phn_l1)) || (fricative(self.phn_l1) && quiet(self.phn_c)) {
 				// out of and into silence, fricative noise rises and falls slowly
 				self.amp_len = samples(FRIC_SILENCE_MS);
@@ -1699,6 +1711,12 @@ mod tests {
 			assert!((af(1, -half_out - ms(2.0)) - full).abs() < 0.5, "{}: frication fades before the exit ramp", f);
 			let out_mid = af(1, 0);
 			assert!(out_mid > 0.0 && out_mid < full - 3.0, "{}: frication at the exit boundary {}", f, out_mid);
+			// the voicing holds until just before each boundary and switches within VOICE_SWITCH_MS
+			let av = |p: u8, c: i32| out.iter().filter(|x| x.0 == p && x.1 == c).last().unwrap().4;
+			let sw = ms(VOICE_SWITCH_MS);
+			assert_eq!(av(f, -sw), av(f, -half - ms(2.0)), "{}: voicing fades before the switch", f);
+			assert_eq!(av(f, sw), 0.0, "{}: voicing {} ms into the fricative", f, VOICE_SWITCH_MS);
+			assert_eq!(av(1, -sw), 0.0, "{}: voicing before the switch into the vowel", f);
 			assert_eq!(af(1, half_out + ms(1.0)), 0.0, "{}: frication after the exit ramp", f);
 		}
 	}
