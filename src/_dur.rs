@@ -166,14 +166,17 @@ mod tests {
 		let mut b = build(&toks);
 		assign(&mut a, 1.0);
 		assign(&mut b, 1.5);
-		let mut shorter = false;
+		// the stretchable part above min shrinks by the rate, the min stays
 		for i in 0..a.segs.len() {
 			let pd = phone_dur(a.segs[i].phone);
-			assert!(b.segs[i].dur_ms <= a.segs[i].dur_ms);
 			assert!(b.segs[i].dur_ms >= pd.min);
-			if b.segs[i].dur_ms < a.segs[i].dur_ms { shorter = true; }
+			assert!((stretch(&b, i) * 1.5 - stretch(&a, i)).abs() < 0.01, "{}: {} ms at rate 1.5, {} at 1", i, b.segs[i].dur_ms, a.segs[i].dur_ms);
 		}
-		assert!(shorter);
+		// k and t are all min: the rate leaves them alone
+		assert_eq!(b.segs[0].dur_ms, a.segs[0].dur_ms);
+		assert!(b.segs[1].dur_ms < a.segs[1].dur_ms);
+		// pauses shrink by the rate too
+		assert_eq!(pause_after(Boundary::Comma, 2.0), COMMA_PAUSE_MS / 2.0);
 	}
 
 	#[test]
