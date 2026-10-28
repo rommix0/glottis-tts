@@ -584,7 +584,7 @@ impl engine {
 				}
 			}
 			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined to it)
-			const UNITS: [(&str, &str, &str, bool); 23] = [
+			const UNITS: [(&str, &str, &str, bool); 25] = [
 				("ft", "foot", "feet", false), ("in", "inch", "inches", true), ("yd", "yard", "yards", false),
 				("yds", "yard", "yards", false), ("mi", "mile", "miles", false), ("hr", "hour", "hours", false),
 				("hrs", "hour", "hours", false), ("min", "minute", "minutes", false), ("mins", "minute", "minutes", false),
@@ -593,7 +593,8 @@ impl engine {
 				("lb", "pound", "pounds", false), ("lbs", "pound", "pounds", false), ("oz", "ounce", "ounces", false),
 				("ml", "milliliter", "milliliters", false), ("km", "kilometer", "kilometers", false),
 				("cm", "centimeter", "centimeters", false), ("mm", "millimeter", "millimeters", false),
-				("mph", "mile per hour", "miles per hour", false)];
+				("mph", "mile per hour", "miles per hour", false), ("km/h", "kilometer per hour", "kilometers per hour", false),
+				("km/hr", "kilometer per hour", "kilometers per hour", false)];
 			{
 				let (mut v, mut k) = (v1, n1);
 				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
