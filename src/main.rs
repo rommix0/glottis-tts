@@ -43,10 +43,11 @@ struct Opts {
 	seg_dump: Option<String>,	// file for the playing segment index of every sample
 	pcm16: bool,	// write 16-bit integer samples instead of 32-bit float
 	voice: usize,	// voice profile number
+	phone: Option<u8>,	// token of a single phone to say instead of the text
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0 };
+	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(a) = args.next() {
@@ -58,6 +59,12 @@ fn parse_args() -> Result<Opts, String> {
 			opts.text_only = true;
 		} else if a == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
+		} else if a == "--table" {
+			let path = args.next().ok_or("--table needs a file name")?;
+			_vtbl::TABLE_FILE.set(path).ok();
+		} else if a == "--phone" {
+			let p = args.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+			opts.phone = Some(phone_token(p).ok_or(format!("phone {} can't be said on its own", p))?);
 		} else if a == "--voice" {
 			let n = args.next().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
 			if n >= _vtm::VOICES.len() { return Err(format!("voice must be between 0 and {}", _vtm::VOICES.len() - 1)); }
@@ -71,8 +78,15 @@ fn parse_args() -> Result<Opts, String> {
 			have_text = true;
 		}
 	}
-	if !have_text { return Err("please enter text!".to_string()); }
+	if !have_text && opts.phone.is_none() { return Err("please enter text!".to_string()); }
 	Ok(opts)
+}
+
+// the token for one phone alone, with the most stress a vowel can carry
+fn phone_token(p: u8) -> Option<u8> {
+	if p == 0 { return None; }
+	(0..=255u8).filter(|&t| matches!(_utils::PHNIDToPhoneme(t), (a, 0, _, _) if a == p))
+		.max_by_key(|&t| _utils::PHNIDToPhoneme(t).2)
 }
 
 // a word the dictionary lacks, built from a known stem and suffixes (letters and apostrophes only)
@@ -267,6 +281,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut eng = new_engines();
 	eng.synth.set_voice(_vtm::VOICES[opts.voice]);
 	if let Some(path) = &opts.seg_dump { eng.dump = Some(BufWriter::new(File::create(path)?)); }
+
+	if let Some(tk) = opts.phone {
+		// the phone as a word of its own
+		synth_sentence(&[90, tk, 92], &[String::new()], &opts, &mut eng, &mut writer);
+		finish(&mut eng, &mut writer);
+		writer.finalize()?;
+		return Ok(());
+	}
+
 	let mut text_engine  = _text::engine::new();
 
 	// current sentence: phone tokens and the text of each word
@@ -391,13 +414,23 @@ mod tests {
 	fn render_file(tokens: &[u8], texts: &[&str], pcm16: bool, tag: &str) -> std::path::PathBuf {
 		let path = env::temp_dir().join(format!("tts_synth_test_{}_{}.wav", std::process::id(), tag));
 		let mut writer = hound::WavWriter::create(&path, wav_spec(pcm16)).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0 };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);
 		finish(&mut eng, &mut writer);
 		writer.finalize().unwrap();
 		path
+	}
+
+	#[test]
+	fn every_spoken_phone_has_a_token_of_its_own() {
+		for p in 1..=44 {
+			let (a, b, s, _) = _utils::PHNIDToPhoneme(phone_token(p).unwrap());
+			assert_eq!((a, b), (p, 0));
+			assert!(!_utt::is_vowel(p) || s == 2 || matches!(p, 6 | 7 | 20), "phone {} stress {}", p, s);
+		}
+		assert!(phone_token(0).is_none() && phone_token(48).is_none());
 	}
 
 	#[test]
@@ -426,7 +459,7 @@ mod tests {
 		let wav = env::temp_dir().join(format!("tts_synth_test_{}_sched.wav", std::process::id()));
 		let dump = env::temp_dir().join(format!("tts_synth_test_{}_sched.bin", std::process::id()));
 		let mut writer = hound::WavWriter::create(&wav, wav_spec(false)).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0 };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		eng.dump = Some(BufWriter::new(File::create(&dump).unwrap()));

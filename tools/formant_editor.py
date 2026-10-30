@@ -8,7 +8,12 @@ and layout are kept and the diff shows only the values that changed. Render save
 test text and plays the result; every render is kept under ab/editor/, and Play previous plays the one before
 it for an A/B check.
 
-Keys: Ctrl+S save, Ctrl+Z undo, Ctrl+Y redo, F5 render, F6 play, F7 play previous.
+Live preview re-renders the test text on every edit, without saving or rebuilding: it runs the built synthesizer
+with the editor's values through --table and plays the result, so a drag on the chart is heard as it moves. Loop
+repeats the preview; Phone previews the selected phone on its own instead of the test text (the internal phones,
+which only rules produce, fall back to the test text).
+
+Keys: Ctrl+S save, Ctrl+Z undo, Ctrl+Y redo, F5 render, F6 play, F7 play previous, F8 live preview on/off.
 """
 import cmath
 import math
@@ -17,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -26,6 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(ROOT, 'src', '_vtbl.rs')
 PHONES = os.path.join(ROOT, 'phone_to_id.txt')
 RENDERS = os.path.join(ROOT, 'ab', 'editor')
+SYNTH = os.path.join(ROOT, 'target', 'release', 'tts_synth' + ('.exe' if sys.platform == 'win32' else ''))
 SR = 22050	# synth rate, for the envelope preview
 
 COLS = [
@@ -49,6 +56,7 @@ VOWELS = set(CLASSES[1][1])
 PAR_HZ = {'A2': 'F2', 'A3': 'F3', 'A4': '3.75k', 'A5': '4.5k', 'A6': '5.2k', 'A7': '6.5k', 'A8': '7.5k',
           'A9': '8.5k', 'A10': '9.5k'}
 BW_FLOOR = 60	# the synth raises cascade B1/B2 below this
+LIVE_MS = 150	# live preview renders at most this often during a drag; each render restarts the sound
 K = 1.0		# screen pixels per 96-dpi pixel, set at startup
 
 
@@ -67,9 +75,9 @@ class Table:
         with open(self.path, encoding='utf-8', newline='') as f:
             self.text = f.read()
         self.mtime = os.path.getmtime(self.path)
-        m = re.search(r'formant_tbl\s*:\s*\[u16;\s*(\d+)\]\s*=\s*\[', self.text)
+        m = re.search(r'built_tbl\s*:\s*\[u16;\s*(\d+)\]\s*=\s*\[', self.text)
         if not m:
-            raise ValueError('formant_tbl not found in ' + self.path)
+            raise ValueError('built_tbl not found in ' + self.path)
         size, start = int(m.group(1)), m.end()
         end = self.text.index('];', start)
         self.spans, self.rows, self.labels, self.ready = [], [], [], []
@@ -89,7 +97,7 @@ class Table:
                 self.rows.append(row)
                 row = []
         if row or len(self.spans) != size:
-            raise ValueError(f'formant_tbl has {len(self.spans)} values, expected {size} in rows of {NCOL}')
+            raise ValueError(f'built_tbl has {len(self.spans)} values, expected {size} in rows of {NCOL}')
         self.saved = [r[:] for r in self.rows]
 
     def changed_on_disk(self):
@@ -142,14 +150,21 @@ def envelope_db(fs, bs, freqs):
     return out
 
 
-def play(path):
+# ponytail: only Windows stops the last sound before the next; elsewhere live previews can overlap
+def play(path, loop=False):
     if sys.platform == 'win32':
         import winsound
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | (winsound.SND_LOOP if loop else 0))
     elif sys.platform == 'darwin':
         subprocess.Popen(['afplay', path])
     else:
         subprocess.Popen(['aplay', '-q', path])
+
+
+def stop_sound():
+    if sys.platform == 'win32':
+        import winsound
+        winsound.PlaySound(None, 0)
 
 
 class Editor(tk.Tk):
@@ -172,6 +187,10 @@ class Editor(tk.Tk):
         self.drag = None
         self.renders = []
         self.rendering = False
+        self.live_dir = tempfile.mkdtemp(prefix='formant_live_')
+        self.live_job = None	# pending after() call
+        self.live_busy = self.live_pending = False
+        self.live_n = 0
 
         style = ttk.Style(self)
         if 'vista' in style.theme_names():
@@ -192,7 +211,8 @@ class Editor(tk.Tk):
 
         for key, fn in [('<Control-s>', self.save), ('<Control-z>', self.do_undo), ('<Control-y>', self.do_redo),
                         ('<F5>', self.render), ('<F6>', lambda e=None: self.play_render(-1)),
-                        ('<F7>', lambda e=None: self.play_render(-2))]:
+                        ('<F7>', lambda e=None: self.play_render(-2)),
+                        ('<F8>', lambda e=None: (self.live_var.set(not self.live_var.get()), self.on_live()))]:
             self.bind_all(key, lambda e, fn=fn: (fn(), 'break')[1])
         self.protocol('WM_DELETE_WINDOW', self.quit_editor)
         self.select(self.cur)
@@ -209,7 +229,15 @@ class Editor(tk.Tk):
         ttk.Separator(bar, orient='vertical').pack(side='left', fill='y', padx=12)
         ttk.Label(bar, text='Test text').pack(side='left')
         self.text_var = tk.StringVar(value='The quick brown fox jumps over the lazy dog.')
-        ttk.Entry(bar, textvariable=self.text_var, width=44).pack(side='left', padx=6)
+        text = ttk.Entry(bar, textvariable=self.text_var, width=44)
+        text.pack(side='left', padx=6)
+        text.bind('<Return>', self.schedule_live)
+        self.live_var = tk.BooleanVar(value=True)
+        self.loop_var = tk.BooleanVar(value=False)
+        self.phone_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bar, text='Live  F8', variable=self.live_var, command=self.on_live).pack(side='left')
+        ttk.Checkbutton(bar, text='Loop', variable=self.loop_var, command=self.on_live).pack(side='left', padx=(4, 0))
+        ttk.Checkbutton(bar, text='Phone', variable=self.phone_var, command=self.on_live).pack(side='left', padx=(4, 8))
         self.render_btn = ttk.Button(bar, text='Render  F5', command=self.render)
         self.render_btn.pack(side='left')
         ttk.Button(bar, text='Play  F6', command=lambda: self.play_render(-1)).pack(side='left', padx=(4, 0))
@@ -414,6 +442,8 @@ class Editor(tk.Tk):
         sel = self.tree.selection()
         if sel and not sel[0].startswith('g_'):
             self.select(int(sel[0]))
+            if self.phone_var.get():
+                self.schedule_live()
 
     def on_edit(self, col):
         if self.loading:
@@ -453,6 +483,7 @@ class Editor(tk.Tk):
             else:
                 self.undo.append((now, step))
             self.redo.clear()
+        self.schedule_live()
         if from_widget and all(r == self.cur for r, *_ in step):
             # keep the edited widget as typed, update the rest
             self.sync_others(from_widget)
@@ -708,6 +739,7 @@ class Editor(tk.Tk):
         self.fill_list()
         self.select(self.cur)
         self.status.config(text='Reloaded src/_vtbl.rs')
+        self.schedule_live()
 
     def render(self):
         if self.rendering:
@@ -757,6 +789,68 @@ class Editor(tk.Tk):
         else:
             self.status.config(text='No render to play yet' if k == -1 else 'Only one render so far')
 
+    def on_live(self):
+        stop_sound()
+        self.schedule_live()
+
+    def schedule_live(self, e=None):
+        if self.live_var.get() and not self.live_job:
+            self.live_job = self.after(LIVE_MS, self.live_render)
+
+    def live_render(self):
+        self.live_job = None
+        text = self.text_var.get().strip()
+        alone = self.phone_var.get() and 1 <= self.cur <= 44	# phones the synth can say on their own
+        say = ['--phone', str(self.cur)] if alone else [text]
+        if not (alone or text) or not self.live_var.get():
+            return
+        if self.live_busy:
+            self.live_pending = True	# go again with the latest values once this one is done
+            return
+        self.live_busy, self.live_pending = True, False
+        self.live_n += 1
+        flat = ' '.join(str(v) for r in self.table.rows for v in r)
+        threading.Thread(target=self.live_worker, args=(flat, say, self.live_n), daemon=True).start()
+
+    def live_worker(self, flat, say, n):
+        d, t0 = self.live_dir, time.time()
+        table = os.path.join(d, 'table.txt')
+        with open(table, 'w') as f:
+            f.write(flat)
+        try:
+            if not os.path.exists(SYNTH):
+                subprocess.run(['cargo', 'build', '--release', '--quiet'], cwd=ROOT, capture_output=True)
+            # run in the temp folder so its tts_demo.wav doesn't touch the project's
+            p = subprocess.run([SYNTH, '--16bit', '--table', table] + say, cwd=d, capture_output=True, text=True)
+            ok, log = p.returncode == 0, p.stderr + p.stdout
+        except OSError as e:
+            ok, log = False, str(e)
+        path = None
+        if ok:
+            # a new name each time: the sound playing now may hold the last file open
+            path = os.path.join(d, f'live{n}.wav')
+            os.replace(os.path.join(d, 'tts_demo.wav'), path)
+            try:
+                os.remove(os.path.join(d, f'live{n - 2}.wav'))
+            except OSError:
+                pass
+        self.after(0, self.live_done, ok, log, path, time.time() - t0)
+
+    def live_done(self, ok, log, path, secs):
+        self.live_busy = False
+        if not ok:
+            self.live_var.set(False)
+            self.status.config(text='Live preview failed and is off')
+            self.show_log(log)
+            return
+        if self.live_var.get():
+            play(path, self.loop_var.get())
+            note = f'  ·  {self.phone(self.cur)} is internal, so the test text plays' if (
+                self.phone_var.get() and not 1 <= self.cur <= 44) else ''
+            self.status.config(text=f'Live preview  {secs * 1000:.0f} ms{note}')
+        if self.live_pending:
+            self.live_render()
+
     def show_log(self, log):
         win = tk.Toplevel(self)
         win.title('Build output')
@@ -769,6 +863,8 @@ class Editor(tk.Tk):
             ans = messagebox.askyesnocancel('Unsaved edits', 'Save edits to src/_vtbl.rs before closing?')
             if ans is None or (ans and not self.save()):
                 return
+        stop_sound()
+        shutil.rmtree(self.live_dir, ignore_errors=True)
         self.destroy()
 
 

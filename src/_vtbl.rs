@@ -35,7 +35,20 @@ otherwise the consonants may not sound as good as they should due to interpolati
 
 */
 
-pub static formant_tbl: [u16; 1550] = [
+use std::sync::{LazyLock, OnceLock};
+
+// a table file from --table: the numbers of formant_tbl in order, anything else between them is skipped
+pub static TABLE_FILE: OnceLock<String> = OnceLock::new();
+
+pub static formant_tbl: LazyLock<[u16; 1550]> = LazyLock::new(|| {
+	let Some(path) = TABLE_FILE.get() else { return built_tbl };
+	let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("can't read {path}: {e}"));
+	let vals: Vec<u16> = text.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty())
+		.map(|t| t.parse().unwrap_or_else(|_| panic!("{path}: {t} is out of range"))).collect();
+	vals.try_into().unwrap_or_else(|v: Vec<u16>| panic!("{path} has {} numbers, expected 1550", v.len()))
+});
+
+static built_tbl: [u16; 1550] = [
 
 	// _
 	25, 25,
