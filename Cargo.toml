@@ -9,3 +9,8 @@ libm = "0.2.16"
 [dev-dependencies]
 # WAV output for the tts_demo example
 hound = "3.5.1"
+
+# the command line for trying the library by hand: cargo run --release --example tts_demo -- "text to speak."
+[[example]]
+name = "tts_demo"
+path = "tts_demo.rs"
