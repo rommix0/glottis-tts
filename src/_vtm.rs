@@ -45,7 +45,7 @@ const CASC_MIN_BW: f32 = 60.0;
 // amplitudes in dB are relative to this full scale
 const G_MAX: f32 = 87.0;
 // gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6), every 6 dB halving it
-const DB_GAIN: [f32; 88] = [
+pub const DB_GAIN: [f32; 88] = [
 	4.3158372e-05, 4.8443635e-05, 5.437614e-05, 6.1035156e-05, 6.8509646e-05, 7.689948e-05, 8.6316744e-05, 9.688727e-05,
 	0.00010875228, 0.00012207031, 0.00013701929, 0.00015379896, 0.00017263349, 0.00019377454, 0.00021750457, 0.00024414062,
 	0.00027403858, 0.00030759792, 0.00034526698, 0.00038754908, 0.00043500913, 0.00048828125, 0.00054807717, 0.00061519584,
@@ -392,6 +392,7 @@ impl LfSource {
 }
 
 // vocal tract model - the main event
+// AV, AH, AF, A2-A10 and AB are linear gains (1 is full scale, 87 dB), as _synth.rs keeps them; BR is in dB
 pub struct vtm {
 	pub F0:   f32,
 	pub AV:   f32,
@@ -456,7 +457,7 @@ impl vtm {
 	pub fn new() -> vtm {
 		vtm {
 			F0     : 125.0,				// fundamental frequency (Hz)
-			AV     : 60.0,				// Amplitude of voicing, in dB
+			AV     : DB_GAIN[60],		// Amplitude of voicing (60 dB)
 			RD     : 0.0,				// RD fant tilt param (for glottal pulse model)
 			AH     : 0.0,				// Amplitude of aspiration, in dB
 			AF     : 0.0,				// Amplitude of frication, in dB
@@ -612,16 +613,16 @@ impl vtm {
 		if bb2 < 40.0 { bb2 = 40.0; }
 		if bb3 < 40.0 { bb3 = 40.0; }
 
-		yy -= self.FR2.step(x, self.F2, bb2)  * self.db2lin(self.A2);
-		yy += self.FR3.step(x, self.F3, bb3)  * self.db2lin(self.A3);
-		yy -= self.FR4.step(x, 0.0, 0.0)      * self.db2lin(self.A4);
-		yy += self.FR5.step(x, 0.0, 0.0)      * self.db2lin(self.A5);
-		yy -= self.FR6.step(x, 0.0, 0.0)      * self.db2lin(self.A6);
-		yy += self.FR7.step(x, 0.0, 0.0)      * self.db2lin(self.A7);
-		yy -= self.FR8.step(x, 0.0, 0.0)      * self.db2lin(self.A8);
-		yy += self.FR9.step(x, 0.0, 0.0)      * self.db2lin(self.A9);
-		yy -= self.FR10.step(x, 0.0, 0.0)     * self.db2lin(self.A10);
-		yy += self.db2lin(self.AB) * x;
+		yy -= self.FR2.step(x, self.F2, bb2)  * self.A2.min(1.0);
+		yy += self.FR3.step(x, self.F3, bb3)  * self.A3.min(1.0);
+		yy -= self.FR4.step(x, 0.0, 0.0)      * self.A4.min(1.0);
+		yy += self.FR5.step(x, 0.0, 0.0)      * self.A5.min(1.0);
+		yy -= self.FR6.step(x, 0.0, 0.0)      * self.A6.min(1.0);
+		yy += self.FR7.step(x, 0.0, 0.0)      * self.A7.min(1.0);
+		yy -= self.FR8.step(x, 0.0, 0.0)      * self.A8.min(1.0);
+		yy += self.FR9.step(x, 0.0, 0.0)      * self.A9.min(1.0);
+		yy -= self.FR10.step(x, 0.0, 0.0)     * self.A10.min(1.0);
+		yy += self.AB.min(1.0) * x;
 		yy
 	}
 	fn cascade(&mut self, x: f32) -> f32 {
@@ -695,13 +696,13 @@ impl vtm {
 
 		// route audio sources to a source fed in by cascade filter
 		voice   = voice + (n * self.db2lin(self.BR) * br_mod);
-		let casc_in: f32 = voice * self.db2lin(self.AV) + f * self.db2lin(self.AH);
+		let casc_in: f32 = voice * self.AV.min(1.0) + f * self.AH.min(1.0);
 
 		// route noise source to source fed in by parallel filter
 		// frication is broadband noise, rolled off above FRIC_LP_HZ
 		let a = self.fric_a;
 		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
-		let parr_in: f32 = self.fric_y1 * self.db2lin(self.AF) * af_mod;
+		let parr_in: f32 = self.fric_y1 * self.AF.min(1.0) * af_mod;
 
 		let casc_out: f32 = self.cascade(casc_in);
 		let casc_out: f32 = self.emph(casc_out) * CASC_GAIN;
@@ -757,7 +758,7 @@ mod tests {
 			let mut v = vtm::new();
 			let mut out = Vec::new();
 			for _ in 0..4000 {
-				v.F0 = 120.0; v.AV = 60.0; v.RD = 0.6;
+				v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
 				v.F1 = 600.0; v.F2 = 1500.0; v.F3 = 2500.0;
 				v.B1 = b1; v.B2 = b2; v.B3 = 150.0;
 				out.push(v.step());
@@ -890,7 +891,7 @@ mod tests {
 			v.set_voice(voice);
 			let mut out = Vec::new();
 			for _ in 0..4000 {
-				v.F0 = 120.0; v.AV = 60.0; v.RD = 0.6;
+				v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
 				v.F1 = f1; v.F2 = f2; v.F3 = 2500.0;
 				v.B1 = 80.0; v.B2 = 90.0; v.B3 = 150.0;
 				out.push(v.step());
