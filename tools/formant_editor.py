@@ -49,7 +49,7 @@ CLASSES = [
     ('Sonorants', [24, 25, 26, 27, 28, 32, 33, 41, 42]),
     ('Stops', [9, 11, 17, 23, 31, 36, 47]),
     ('Fricatives', [10, 12, 16, 18, 22, 34, 35, 37, 40, 43, 44]),
-    ('Internal', [45, 46, 48, 49]),
+    ('Internal', [48, 49]),
 ]
 VOWELS = set(CLASSES[1][1])
 # where the parallel branch's fixed resonators sit (A2 and A3 follow F2 and F3)
@@ -75,9 +75,9 @@ class Table:
         with open(self.path, encoding='utf-8', newline='') as f:
             self.text = f.read()
         self.mtime = os.path.getmtime(self.path)
-        m = re.search(r'built_tbl\s*:\s*\[u16;\s*(\d+)\]\s*=\s*\[', self.text)
+        m = re.search(r'formant_tbl\s*:\s*\[u16;\s*(\d+)\]\s*=\s*\[', self.text)
         if not m:
-            raise ValueError('built_tbl not found in ' + self.path)
+            raise ValueError('formant_tbl not found in ' + self.path)
         size, start = int(m.group(1)), m.end()
         end = self.text.index('];', start)
         self.spans, self.rows, self.labels, self.ready = [], [], [], []
@@ -97,7 +97,7 @@ class Table:
                 self.rows.append(row)
                 row = []
         if row or len(self.spans) != size:
-            raise ValueError(f'built_tbl has {len(self.spans)} values, expected {size} in rows of {NCOL}')
+            raise ValueError(f'formant_tbl has {len(self.spans)} values, expected {size} in rows of {NCOL}')
         self.saved = [r[:] for r in self.rows]
 
     def changed_on_disk(self):
