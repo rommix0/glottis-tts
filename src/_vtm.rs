@@ -106,18 +106,16 @@ pub struct Voice {
 	pub shim:  f32,		// shimmer: average change of the level from one pulse to the next, in dB
 }
 
-// voice profiles, picked by number; 0-5 follow head size, 6 and up are silly
-pub const VOICES: [Voice; 10] = [
+// voice profiles, picked by number; 0-4 follow head size, 5 and up are silly
+pub const VOICES: [Voice; 8] = [
 	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 0 table voice
 	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 1 large head
-	Voice { f0: 115.0, range: 105.0, f1: 109.0, f2: 108.0, f3: 108.0, fhi: 107.0, rd: 105.0, br: 0.0, db: -0.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 2 small head
-	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -2.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 3 female
-	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -5.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 4 child
-	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.0, fl:  75.0, jit: 0.6, shim: 0.4 },	// 5 giant
-	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  1.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 6 deep voice, tiny head
-	Voice { f0: 200.0, range: 130.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd: 110.0, br: 0.0, db: -2.0, fl: 100.0, jit: 0.4, shim: 0.3 },	// 7 squeaky giant
-	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 8 pulled apart
-	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 9 shaky
+	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -2.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 2 female
+	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -5.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 3 child
+	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.0, fl:  75.0, jit: 0.6, shim: 0.4 },	// 4 giant
+	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  1.5, fl:  75.0, jit: 0.2, shim: 0.2 },	// 5 deep voice, tiny head
+	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0, fl:  75.0, jit: 0.2, shim: 0.2 },	// 6 pulled apart
+	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 7 shaky
 ];
 
 struct noise { alpha: f32, nxt: u32, xp1: f32 }
