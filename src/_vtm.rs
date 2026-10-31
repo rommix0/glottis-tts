@@ -596,7 +596,7 @@ pub struct vtm {
 }
 impl vtm {
 	pub fn new() -> vtm {
-		vtm {
+		let mut tract = vtm {
 			F0     : 125.0,				// fundamental frequency (Hz)
 			AV     : DB_GAIN[60],		// Amplitude of voicing (60 dB)
 			RD     : 0.0,				// RD fant tilt param (for glottal pulse model)
@@ -659,7 +659,10 @@ impl vtm {
 			shelf_g: libm::powf(10.0, LOW_SHELF_DB / 20.0) - 1.0,
 			lip_d: libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
 			out_g: libm::powf(10.0, OUT_DB / 20.0),
-		}
+		};
+		// voice 0 in full: its jitter and shimmer live in the glottal source, which only set_voice reaches
+		tract.set_voice(VOICES[0]);
+		tract
 	}
 	pub fn set_voice(&mut self, v: Voice) {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)

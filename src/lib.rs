@@ -456,6 +456,18 @@ mod tests {
 	}
 
 	#[test]
+	fn synthesize_speaks_with_voice_0_in_full() {
+		let text = "Hello there, all of you.";
+		let mut plain = Ints(Vec::new());
+		block_on(synthesize(text.to_string(), &mut plain)).unwrap();
+		let mut sp = Speaker::new();
+		sp.synth.set_voice(_vtm::VOICES[0]);
+		let mut voiced = Ints(Vec::new());
+		block_on(sp.synthesize(text, &mut voiced)).unwrap();
+		assert_eq!(plain.0, voiced.0);
+	}
+
+	#[test]
 	fn a_writer_that_waits_gets_the_same_samples() {
 		let (mut fast, mut slow) = (Ints(Vec::new()), Slow(Vec::new()));
 		block_on(synthesize("It is.".to_string(), &mut fast)).unwrap();
