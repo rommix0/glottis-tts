@@ -122,7 +122,7 @@ struct noise { alpha: f32, nxt: u32, xp1: f32 }
 impl noise {
 	fn new() -> noise {
 		// the aspiration source's smoothing was tuned as 0.75 per sample at 32 kHz; keep that corner (~1.5 kHz)
-		noise { alpha: 0.75_f32.powf(32000.0 / m_sr as f32), nxt: 0x2545F491, xp1: 0.0 }
+		noise { alpha: libm::powf(0.75, 32000.0 / m_sr as f32), nxt: 0x2545F491, xp1: 0.0 }
 	}
 	fn xorshift(&mut self) {
 		// 32-bit state: repeats after 2^32 - 1 samples instead of 3 s
@@ -157,9 +157,9 @@ impl resonator {
 		resonator { a: 0.0, b: 0.0, c: 0.0, xp1: 0.0, xp2: 0.0, anti, bf, bw, pfreq: 0.0 }
 	}
 	fn set_coeffs(&mut self, bf: f32, bw: f32) {
-		let r: f32 = (-PI * bw / m_sr as f32).exp();
+		let r: f32 = libm::expf(-PI * bw / m_sr as f32);
 		self.c = -(r * r);
-		self.b = 2.0 * r * (2.0 * PI * bf / m_sr as f32).cos();
+		self.b = 2.0 * r * libm::cosf(2.0 * PI * bf / m_sr as f32);
 		self.a = 1.0 - self.b - self.c;
 
 		// anti-resonator switch for special
@@ -294,12 +294,12 @@ impl LfSource {
 		// a band-limited unit impulse at (n - ago), written PULSE_HALF samples ahead of what plays now
 		let h = PULSE_HALF as f32;
 		let t = (self.n + PULSE_HALF) as f32 - ago;
-		let first = t.floor() as usize + 1 - PULSE_HALF;
+		let first = libm::floorf(t) as usize + 1 - PULSE_HALF;
 		let mut w = [0.0f32; 2 * PULSE_HALF];
 		for (k, wk) in w.iter_mut().enumerate() {
 			let x = (first + k) as f32 - t;
-			let sinc = if x.abs() < 1e-6 { 1.0 } else { (PI * x).sin() / (PI * x) };
-			*wk = sinc * (0.5 + 0.5 * (PI * x / h).cos());
+			let sinc = if x.abs() < 1e-6 { 1.0 } else { libm::sinf(PI * x) / (PI * x) };
+			*wk = sinc * (0.5 + 0.5 * libm::cosf(PI * x / h));
 		}
 		let sum: f32 = w.iter().sum();
 		for (k, wk) in w.iter().enumerate() {
@@ -320,12 +320,12 @@ impl LfSource {
 		// glottal frequency and bandwidth calculations
 		let fg = 1.0 / (2.0 * oq * t0);
 		let alpha_m = 1.0 / (1.0 + rk);
-		let bg = 1.0 / (oq  * t0 * (PI * (1.0 - alpha_m)).tan());
+		let bg = 1.0 / (oq  * t0 * libm::tanf(PI * (1.0 - alpha_m)));
 
 		// calculate coefficients for glottal biquad filter
-		let a1 = -2.0 * (-PI * bg / m_sr as f32).exp() * (2.0 * PI * fg / m_sr as f32).cos();
-		let a2 = (-2.0 * PI * bg / m_sr as f32).exp();
-		let ag = 1.0 / (PI * (1.0 - alpha_m)).sin();
+		let a1 = -2.0 * libm::expf(-PI * bg / m_sr as f32) * libm::cosf(2.0 * PI * fg / m_sr as f32);
+		let a2 = libm::expf(-2.0 * PI * bg / m_sr as f32);
+		let ag = 1.0 / libm::sinf(PI * (1.0 - alpha_m));
 		let b0 = 0.0;
 		let b1 = -ag;
 		let b2 = ag;
@@ -333,13 +333,13 @@ impl LfSource {
 
 		// calculate coefficients for tilt filter
 		let fa = 1.0 / (2.0 * PI * self.ra * t0);
-		self.tilt.set((-2.0 * PI * fa / m_sr as f32).exp());
+		self.tilt.set(libm::expf(-2.0 * PI * fa / m_sr as f32));
 	}
 	fn calc_flutter(&mut self, f0: f32, flutter: f32) -> f32 {
 		// KLGLOTT88 pitch flutter algorithm
 		if flutter <= 0.0 { return 0.0; }
 		let w = 2.0 * PI * (self.counter as f32 / m_sr as f32);
-		let a = (12.7 * w).sin() + (7.1 * w).sin() + (4.7 * w).sin();
+		let a = libm::sinf(12.7 * w) + libm::sinf(7.1 * w) + libm::sinf(4.7 * w);
 		// 10 s holds a whole number of cycles of all three, so the wrap is seamless
 		self.counter = (self.counter + 1) % (10 * m_sr);
 		a * (flutter / 50.0) * (f0 / 100.0)
@@ -358,7 +358,7 @@ impl LfSource {
 			self.pos_in_period %= 1.0;
 			// jitter stretches or shrinks this period, shimmer scales this pulse
 			self.jit_k = 1.0 / (1.0 + PERTURB_SPREAD * self.jitter / 100.0 * self.rand());
-			let amp = 10.0_f32.powf(PERTURB_SPREAD * self.shimmer * self.rand() / 20.0);
+			let amp = libm::powf(10.0, PERTURB_SPREAD * self.shimmer * self.rand() / 20.0);
 			self.add_pulse(ago, amp);
 		}
 		let slot = self.n % PULSE_RING;
@@ -495,7 +495,7 @@ impl vtm {
 	pub fn set_voice(&mut self, v: Voice) {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
 		self.voice = v;
-		self.vgain = 10.0_f32.powf(v.db / 20.0);
+		self.vgain = libm::powf(10.0, v.db / 20.0);
 		self.glottal.jitter = v.jit;
 		self.glottal.shimmer = v.shim;
 		let f = |hz: f32| (hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32);
@@ -518,7 +518,7 @@ impl vtm {
 		let v = self.voice;
 		let top = F_MAX_SR * m_sr as f32;
 		if v.range != 100.0 {
-			self.F0 = REF_HZ * (self.F0 / REF_HZ).powf(v.range / 100.0);
+			self.F0 = REF_HZ * libm::powf(self.F0 / REF_HZ, v.range / 100.0);
 		}
 		self.F0 *= v.f0 / 100.0;
 		self.F1 = (self.F1 * (v.f1 / 100.0)).min(top);
@@ -530,16 +530,16 @@ impl vtm {
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
 		if gain >= G_MAX { return 1.0; }
-		0.5_f32.powf((G_MAX - gain) / 6.0)
+		libm::powf(0.5, (G_MAX - gain) / 6.0)
 	}
 	fn fix_bw(&mut self) {
 		// adjust bandwidths to improve sound quality
 
 		// F0-proximity bandwidth adjust
-		self.B1 += 200.0 * (self.F0 / self.F1 - 0.5).powf(2.0);
+		self.B1 += 200.0 * libm::powf(self.F0 / self.F1 - 0.5, 2.0);
 
 		// glottal leakage adjust (B1, B2)
-		let DB1 = 250.0 * (self.F1 / 500.0).powf(2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0;
+		let DB1 = 250.0 * libm::powf(self.F1 / 500.0, 2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0;
 		let DB2 = DB1 * self.F1 / (2.0 * self.F2);
 		self.B1 += DB1;
 		self.B2 += DB2;
@@ -630,9 +630,9 @@ impl vtm {
 	}
 	fn low_shelf(&mut self, x: f32) -> f32 {
 		// add a low-passed copy back on top, so only the bottom of the spectrum gains level
-		let a = (-2.0 * PI * LOW_SHELF_HZ / m_sr as f32).exp();
+		let a = libm::expf(-2.0 * PI * LOW_SHELF_HZ / m_sr as f32);
 		self.shelf_y1 = (1.0 - a) * x + a * self.shelf_y1;
-		x + (10.0_f32.powf(LOW_SHELF_DB / 20.0) - 1.0) * self.shelf_y1
+		x + (libm::powf(10.0, LOW_SHELF_DB / 20.0) - 1.0) * self.shelf_y1
 	}
 	fn emph(&mut self, x: f32) -> f32 {
 		// brighten the cascade output
@@ -642,7 +642,7 @@ impl vtm {
 	}
 	fn radiate(&mut self, x: f32) -> f32 {
 		// lip radiation with its coefficient moved toward the tuned rate's response, at the same low-frequency gain
-		let d = LIP_D.powf((LIP_TUNED_SR / m_sr as f32).powf(LIP_MATCH));
+		let d = libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH));
 		self.lip(x, d) * (1.0 - LIP_D) / (1.0 - d)
 	}
 	fn lip(&mut self, x: f32, d: f32) -> f32 {
@@ -670,7 +670,7 @@ impl vtm {
 
 		// route noise source to source fed in by parallel filter
 		// frication is broadband noise, rolled off above FRIC_LP_HZ
-		let a = (-2.0 * PI * FRIC_LP_HZ / m_sr as f32).exp();
+		let a = libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32);
 		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
 		let parr_in: f32 = self.fric_y1 * self.db2lin(self.AF) * af_mod;
 
@@ -679,7 +679,7 @@ impl vtm {
 		let casc_out: f32 = self.low_shelf(casc_out);
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
-		let out = self.radiate(casc_out + parr_out) * 10.0_f32.powf(OUT_DB / 20.0) * self.vgain;
+		let out = self.radiate(casc_out + parr_out) * libm::powf(10.0, OUT_DB / 20.0) * self.vgain;
 		self.softclip(out)
 	}
 }

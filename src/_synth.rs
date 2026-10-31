@@ -157,7 +157,7 @@ const tau_f2: f32 = 40.0;
 const tau_f3: f32 = 40.0;
 
 fn reduce_k(d_ms: f32, tau: f32) -> f32 {
-	1.0 - (-d_ms / tau).exp()
+	1.0 - libm::expf(-d_ms / tau)
 }
 
 // velar F3 next to a vowel: slope and offset of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
@@ -178,14 +178,14 @@ fn locus(x: u8) -> Option<(f32, f32)> {
 fn fade_db(db: f32, m: f32) -> f32 {
 	// scale an amplitude (dB, 0 is off) by a fader m in linear gain
 	if db <= 0.0 || m <= 0.0 { return 0.0; }
-	(db + 6.0 * m.log2()).max(0.0)
+	(db + 6.0 * libm::log2f(m)).max(0.0)
 }
 
 fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
 	// interpolate two amplitudes (dB, 0 is off) in linear gain, the same scale the VTM uses
-	let gain = |db: f32| if db <= 0.0 { 0.0 } else { 0.5_f32.powf((87.0 - db) / 6.0) };
+	let gain = |db: f32| if db <= 0.0 { 0.0 } else { libm::powf(0.5, (87.0 - db) / 6.0) };
 	let g = gain(a) * (1.0 - y) + gain(b) * y;
-	if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * g.log2() }
+	if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * libm::log2f(g) }
 }
 
 fn feats(x: u8) -> u16 {
@@ -885,7 +885,7 @@ impl engine {
 		// how much quieter above F2 the next vowel or sonorant is than an open vowel (dB; 0 if none or louder)
 		if self.pft_r1 & 0x1 == 0 && self.pft_r1 & 0x1C00 == 0 { return 0.0; }
 		let [f1, f2, _] = self.next_vowel_formants();
-		(-40.0 * (f1 * f2 / RELEASE_REF).log10()).max(0.0)
+		(-40.0 * libm::log10f(f1 * f2 / RELEASE_REF)).max(0.0)
 	}
 	fn next_vowel_formants(&self) -> [f32; 3] {
 		// the next vowel's F1-F3 at its start, reduced for its length as reduce() will do
@@ -1033,7 +1033,7 @@ impl engine {
 		let (mut g_af, mut g_ah, mut g_av) = (1.0, 1.0, 1.0);
 		let t = (c - self.dip_mid) as f32 / self.dip_half.max(1) as f32;
 		if self.dip_half > 0 && t.abs() < 1.0 {
-			let g = (-self.dip_db / 12.0 * (1.0 + (std::f32::consts::PI * t).cos())).exp2();
+			let g = libm::exp2f(-self.dip_db / 12.0 * (1.0 + libm::cosf(core::f32::consts::PI * t)));
 			(g_af, g_ah, g_av) = (g, g, g);
 		}
 		if self.gap > 0 && c >= 0 {
@@ -1053,7 +1053,7 @@ impl engine {
 			// the voice bar fades over the closure and holds through the burst
 			let bar = if self.stop_bar {
 				let t = (c.min(self.marker_A) as f32 / self.marker_A.max(1) as f32).min(1.0);
-				fade_db(self.AV_reg, (-VOICE_BAR_FADE_DB / 6.0 * t).exp2())
+				fade_db(self.AV_reg, libm::exp2f(-VOICE_BAR_FADE_DB / 6.0 * t))
 			} else { 0.0 };
 			if c < self.marker_A || self.burst_len == 0 {
 				// closure (all of an unreleased stop): the previous phone's sound dies away over 5 ms
@@ -1064,7 +1064,7 @@ impl engine {
 			} else {
 				// burst: a sharp onset, then an exponential decay over its length
 				let t = (c - self.marker_A) as f32 / self.burst_len.max(1) as f32;
-				let g = self.burst_gain * (-self.burst_decay / 6.0 * t).exp2();
+				let g = self.burst_gain * libm::exp2f(-self.burst_decay / 6.0 * t);
 				if self.stop_labial {
 					// a lip release: weak noise through the vocal tract, low and falling
 					self.AF_reg = 0.0;
@@ -1274,7 +1274,7 @@ impl engine {
 				let gain_db = if self.stop_affric { 0.0 } else {
 					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
 				};
-				self.burst_gain = (gain_db / 6.0).exp2();
+				self.burst_gain = libm::exp2f(gain_db / 6.0);
 				self.after_stop_next = t.burst > 0;
 				stop_asp = Some(t.asp);
 			}

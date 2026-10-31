@@ -123,7 +123,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			}
 			if matches!(p, 1 | 2 | 4 | 5 | 8 | 14 | 15 | 21 | 29 | 30 | 39) { apply("tense", TENSE_VOWEL); }
 			let n = word.syls.len();
-			if n >= 2 { apply("polysyllabic", POLYSYLLABIC.powi(n as i32 - 1).max(POLYSYLLABIC_FLOOR)); }
+			if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
 			if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
 				if is_voiced(utt.segs[i + 1].phone) { apply("before-voiced", BEFORE_VOICED_OBS); } else { apply("before-voiceless", BEFORE_VOICELESS_OBS); }
 			}

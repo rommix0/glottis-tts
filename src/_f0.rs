@@ -90,7 +90,7 @@ impl Shape {
 	fn at(self, age: f32) -> f32 {
 		if age < 0.0 { return 0.0; }
 		match self {
-			Shape::Decay { st, ms } => if age < BUMP_SPAN_MS { st * (-age / ms).exp() } else { 0.0 },
+			Shape::Decay { st, ms } => if age < BUMP_SPAN_MS { st * libm::expf(-age / ms) } else { 0.0 },
 			Shape::Fall  { st, ms } => -st * (age / ms).min(1.0),
 			Shape::Rise  { st, ms } => -st * (1.0 - age / ms).max(0.0),
 			Shape::Vee   { st, down, up } => if age < down { -st * age / down } else { -st * (1.0 - (age - down) / up).max(0.0) },
@@ -220,7 +220,7 @@ impl Contour {
 		let word_end = |i: usize| utt.words[utt.segs[i].word].segs.end == i + 1;
 		let same_phrase = |i: usize, j: usize| utt.phrase_of_seg(i) == utt.phrase_of_seg(j);
 		let mut bumps: Vec<Bump> = Vec::new();
-		let draw = |bumps: &mut Vec<Bump>, segs: std::ops::Range<usize>, start: f32, shape: Shape| {
+		let draw = |bumps: &mut Vec<Bump>, segs: core::ops::Range<usize>, start: f32, shape: Shape| {
 			for j in segs { bumps.push(Bump { seg: stream[j], age0: t0[j] - start, dur: utt.segs[j].dur_ms, shape }); }
 		};
 		for i in 0..n {
@@ -282,11 +282,11 @@ impl Contour {
 				} else {
 					let (pa, pb) = (a.seg as f32 + a.frac, b.seg as f32 + b.frac);
 					let x = if pb > pa { (pos - pa) / (pb - pa) } else { 1.0 };
-					a.st + (b.st - a.st) * (1.0 - (PI * x).cos()) / 2.0
+					a.st + (b.st - a.st) * (1.0 - libm::cosf(PI * x)) / 2.0
 				}
 			},
 		};
-		(REF_HZ * 2.0_f32.powf((st + self.bump_at(seg, frac)) / 12.0)).clamp(MIN_HZ, MAX_HZ)
+		(REF_HZ * libm::powf(2.0, (st + self.bump_at(seg, frac)) / 12.0)).clamp(MIN_HZ, MAX_HZ)
 	}
 }
 
