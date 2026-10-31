@@ -35,6 +35,11 @@ pub fn is_sonorant(p: u8) -> bool {
 	is_vowel(p) || matches!(p, 24..=28 | 32 | 33 | 41 | 42)
 }
 
+// the glide a vowel ends on: w after ow uw aw, y after iy ey ay oy
+pub fn offglide(p: u8) -> Option<u8> {
+	match p { 29 | 39 | 5 => Some(41), 21 | 15 | 8 | 30 => Some(42), _ => None }
+}
+
 // legal word onsets, used to split consonants between syllables
 fn is_legal_onset(c: &[u8]) -> bool {
 	const P: u8 = 31; const B: u8 = 9; const T: u8 = 36; const D: u8 = 11; const K: u8 = 23; const G: u8 = 17;
@@ -148,6 +153,11 @@ impl Utterance {
 					let w = u.words.len() - 1;
 					for (p, s) in [(pa, sa), (pb, sb)] {
 						if p == 0 { continue; }
+						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower", "being")
+						let prev = u.segs.last().filter(|x| x.word == w).map(|x| x.phone);
+						if is_vowel(p) && let Some(g) = prev.and_then(offglide) {
+							u.segs.push(Seg { phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new() });
+						}
 						u.segs.push(Seg { phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new() });
 						u.words[w].segs.end = u.segs.len();
 					}
@@ -285,6 +295,17 @@ mod tests {
 	}
 	fn syl_phones(u: &Utterance, i: usize) -> Vec<u8> {
 		u.segs[u.syls[i].segs.clone()].iter().map(|s| s.phone).collect()
+	}
+
+	#[test]
+	fn a_w_glides_between_vowels() {
+		// f 'aa lx ow axr: ow glides through a w into axr, which starts the last syllable
+		let u = Utterance::build(&[CW, 46, 15, 60, 66, 37, PERIOD], &texts(&["follower"]));
+		assert_eq!(u.segs.iter().map(|s| s.phone).collect::<Vec<_>>(), vec![16, 1, 25, 29, 41, 7]);
+		assert_eq!(syl_phones(&u, 2), vec![41, 7]);
+		// not across words
+		let u = Utterance::build(&[CW, 66, CW, 32, PERIOD], &texts(&["owe", "aa"]));
+		assert_eq!(u.segs.len(), 2);
 	}
 
 	#[test]

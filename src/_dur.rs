@@ -9,7 +9,7 @@ each segment's duration is
 so only the stretchable part above the minimum is scaled.
 
 */
-use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent};
+use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent, offglide};
 
 pub struct PhoneDur { pub inherent: f32, pub min: f32 }
 
@@ -33,6 +33,7 @@ const BEFORE_VOICELESS_OBS:   f32 = 0.9;
 const CLUSTER_CONSONANT:      f32 = 0.8;
 const WORD_INITIAL_CONSONANT: f32 = 1.1;
 const TENSE_VOWEL:            f32 = 1.4;		// long (tense) vowels and diphthongs: aa ae ao aw ay er ey iy ow oy uw
+const GLIDE_THROUGH:          f32 = 0.3;		// a w or y a vowel glides through into the next one ("follower")
 
 pub fn phone_dur(p: u8) -> PhoneDur {
 	match p {
@@ -130,6 +131,9 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
 			if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
 			if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
+			if i > 0 && same_word(i - 1) && offglide(utt.segs[i - 1].phone) == Some(p) && same_word(i + 1) && is_vowel(utt.segs[i + 1].phone) {
+				apply("glide-through", GLIDE_THROUGH);
+			}
 		}
 
 		if word.function { apply("function-word", FUNCTION_WORD); }
