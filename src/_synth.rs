@@ -22,8 +22,7 @@ const sixty_ms:  i32 = (m_sr as f32 * 0.060) as i32;
 const fifteen_ms: i32 = (m_sr as f32 * 0.015) as i32;
 const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
 
-// per-sample steps: the master fader comes back over 2 ms, the glottalizer moves over 10 ms, the phrase-final fade
-// takes 50 ms
+// per-sample fader steps: master fader back in 2 ms, glottalizer 10 ms, phrase-final fade 50 ms
 const optime:    f32 = 1.0 / two_ms   as f32;
 const glot_time: f32 = 1.0 / ten_ms   as f32;
 const end_time:  f32 = 1.0 / fifty_ms as f32;
@@ -31,123 +30,101 @@ const end_time:  f32 = 1.0 / fifty_ms as f32;
 // shortest plosive closure before the burst
 const min_closure: i32 = thirty_ms;
 
-// plosive release: burst and aspiration lengths (ms) by place (labial, alveolar, velar)
+// plosive release by place (labial, alveolar, velar); the burst falls BURST_DECAY_DB over its length
 const BURST_MS: [[f32; 3]; 2] = [[5.0, 15.0, 25.0], [5.0, 10.0, 20.0]];		// voiceless, voiced
 const ASP_MS: [f32; 3] = [50.0, 55.0, 50.0];
-// the burst falls this much (dB) over its length
 const BURST_DECAY_DB: f32 = 12.0;
-// affricates: frication length (ms; voiceless, voiced) after the closure, and its fall (dB) over that length
+// affricate frication after the closure (voiceless, voiced), and its fall
 const AFFRIC_MS: [f32; 2] = [55.0, 40.0];
 const AFFRIC_DECAY_DB: f32 = 6.0;
-// plosive bursts (not affricates): overall trim, and the extra cut before an unstressed vowel (dB)
+// plosive burst trims (not affricates): overall, before an unstressed vowel, next to a sibilant
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
-// formants move at a steady speed, but speed up and slow down over this share of each move at either end: one that
-// starts or stops at full speed clicks, most on the big F3 sweeps into and out of an r
+const BURST_SIBILANT_DB: f32 = -6.0;
+// share of each formant move spent easing in and out: one starting or stopping at full speed clicks
 const TRACK_EASE: f32 = 0.1;
-// a move cut off by the next one hands its speed on, used up over this long, instead of stopping dead
+// a move cut off by the next one hands its speed on, fading over this long, instead of stopping dead
 const CARRY_MS: f32 = 10.0;
-// a burst before a vowel or sonorant quieter above F2 than an open vowel is cut by this share of the difference: that
-// level goes with 40 log10(F1 * F2), and RELEASE_REF (Hz^2) is an open central vowel's F1 * F2
+// a burst into a vowel or sonorant duller than an open vowel is cut by this share of 40 log10(F1 * F2 / RELEASE_REF)
 const RELEASE_FOLLOW: f32 = 0.5;
 const RELEASE_REF: f32 = 600.0 * 1500.0;
-// the aspiration takes the larger of the front-vowel cut and this share of the same difference
+// aspiration takes the larger of the front-vowel cut and this share of the same difference
 const ASP_FOLLOW: f32 = 0.5;
-// a lip release is weak noise through the vocal tract: its level (AH, dB) for p and b
+// lip release (AH for p, b): noise in front of the tract, so F2 and F3 stay under these, eased over LIP_RAMP_MS
 const LABIAL_BURST_AH: [f32; 2] = [24.0, 30.0];
-// the noise starts at the lips, in front of the tract, so the tract hardly shapes it:
-// during the burst F2 and F3 are held at most at these (Hz), whatever the vowel
 const LABIAL_BURST_F2: f32 = 1100.0;
 const LABIAL_BURST_F3: f32 = 2300.0;
-// a formant stepped in one sample makes a resonator click, so they ease into those over the end of the closure and
-// back out after the burst, over this long (ms)
 const LIP_RAMP_MS: f32 = 5.0;
-// and the cut next to a sibilant (dB)
-const BURST_SIBILANT_DB: f32 = -6.0;
 // an unreleased stop plays this share of its duration, as closure merging with the next one
 const UNRELEASED_SHARE: f32 = 0.5;
-// sibilant fricatives fade out into a vowel or sonorant over this long (ms), centred on the boundary
+// fricative crossfades with a vowel or sonorant, centred on the boundary: out of the fricative, then into it
 const SIB_RAMP_MS: f32 = 40.0;
-// other fricatives crossfade into a vowel or sonorant over this long (ms), centred on the boundary
 const FRIC_RAMP_MS: f32 = 40.0;
-// out of a vowel or sonorant into a fricative, the crossfade takes this long (ms), sibilant and not
 const SIB_ENTRY_MS: f32 = 60.0;
 const FRIC_ENTRY_MS: f32 = 70.0;
-// fricative noise rises and falls over this long (ms) next to silence or the phrase-final release
+// fricative noise rises and falls over this long next to silence or the phrase-final release
 const FRIC_SILENCE_MS: f32 = 70.0;
-// between two different fricatives the sound dips by this much (dB) over this long (ms), centred on the switch, so
-// the two don't run together into one hiss
+// two different fricatives in a row dip at the switch, so they don't run together into one hiss
 const FRIC_DIP_DB: f32 = 10.0;
 const FRIC_DIP_MS: f32 = 30.0;
-// a stressed vowel starting a word right after another vowel starts with a glottal catch: the voice dips by this much
-// (dB) over this long (ms), centred on the join, so the two words don't run together
+// a stressed word-initial vowel after a vowel starts with a glottal catch: a voice dip centred on the join
 const GLOTTAL_DIP_DB: f32 = 24.0;
 const GLOTTAL_DIP_MS: f32 = 40.0;
-// out of a nasal into a voiceless fricative the velum closes before the tongue lets go: the fricative starts with a
-// silent closure this long (ms), and its noise comes in sharply after it
+// nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before sharp noise
 const NASAL_GAP_MS: f32 = 25.0;
-// a nasal after an unstressed vowel is this much (dB) quieter, so it stays under that weaker vowel ("-ing", "-en")
+// a nasal after an unstressed vowel is quieter, so it stays under that weaker vowel ("-ing", "-en")
 const NASAL_AFTER_UNSTRESSED_DB: f32 = 6.0;
-// a nasal's voicing level and nasal coupling switch within this long (ms) at its closure and release
+// a nasal's voicing and nasal coupling switch within this long at its closure and release
 const NASAL_EDGE_MS: f32 = 15.0;
-// out of a tongue consonant into a back vowel, the vowel reaches its formants this long (ms) after the release
+// tongue consonant into a back vowel: the vowel reaches its formants this long after the release
 const BACK_TRANSITION_MS: f32 = 80.0;
-// a vowel's F3 is this much (Hz) lower at its end before an r
+// a vowel's F3 drops this much at its end before an r
 const RHOTIC_F3: f32 = 200.0;
-// breath noise in the voice (dB), and how much more of it and how much laxer the voice (Rd) as it dies away at a
-// phrase end, reached this long (ms) into the phrase-end release
+// breath noise, and the extra breath and Rd as the voice dies at a phrase end, reached BREATH_RAMP_MS into the release
 const BREATH_DB: f32 = 6.0;
 const BREATH_END_DB: f32 = 12.0;
 const BREATH_END_RD: f32 = 0.3;
 const BREATH_RAMP_MS: f32 = 60.0;
-// a vowel's move into the next phone takes at most this long (ms)
+// longest move out of a vowel into the next phone
 const VOWEL_EXIT_MS: f32 = 50.0;
-// out of a vowel an r reaches its formants within this long (ms)
+// out of a vowel an r reaches its formants within this long
 const R_ONSET_MS: f32 = 50.0;
-// while F2 glides, F1 still opens into the back vowel within this long (ms)
+// while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
-// a back vowel whose own targets move this much (Hz, F1 or F2) starts that glide on time, not after the slow F2
+// a back vowel whose own targets move this much (F1 or F2) starts that glide on time, not after the slow F2
 const GLIDE_HZ: f32 = 100.0;
-// a consonant's F1 is held through it and follows the next vowel: this share of that vowel's F1 above or below
-// F1_FOLLOW_REF (Hz) is added to the table's F1, never below F1_FOLLOW_MIN (Hz)
+// a consonant's F1 follows the next vowel by this share of its F1 off F1_FOLLOW_REF, never under F1_FOLLOW_MIN
 const F1_FOLLOW: f32 = 0.5;
 const F1_FOLLOW_REF: f32 = 500.0;
 const F1_FOLLOW_MIN: f32 = 180.0;
-// an alveolar's F2 locus is pulled up by front vowels but not down by back ones: a vowel F2 below this (Hz) counts as
-// this
+// front vowels pull an alveolar's F2 locus up but back vowels don't pull it down: a lower vowel F2 counts as this
 const ALVEOLAR_F2_FLOOR: f32 = 1500.0;
-// at a fricative's edge next to a vowel or sonorant the voicing switches within this long (ms), centred on the
-// boundary, while the noise keeps the longer crossfade
+// a fricative's voicing switches within this long at a vowel or sonorant, though its noise crossfades longer
 const VOICE_SWITCH_MS: f32 = 10.0;
-// the vowel after a nasal reaches its formants this long (ms) after the release
+// the vowel after a nasal reaches its formants this long after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
-// a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over its last NASAL_ANTIC_MS before one and its first
-// NASAL_CARRY_MS after one
+// a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over NASAL_ANTIC_MS before it and NASAL_CARRY_MS after
 const NASAL_VOWEL_K: f32 = 0.3;
 const NASAL_ANTIC_MS: f32 = 80.0;
 const NASAL_CARRY_MS: f32 = 40.0;
-// aspiration level (AH, dB) by place
+// aspiration (AH by place) and its share before an unstressed vowel or a sonorant (none after a same-word sibilant)
 const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
-// aspiration's share before an unstressed vowel or a sonorant (none after a sibilant in the same word)
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.8;
-// after aspiration, voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it (ms)
+// after aspiration the voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it
 const VOICE_ONSET_MS: f32 = 10.0;
 const ASP_OVERLAP_MS: f32 = 20.0;
-// aspiration through a front, close vowel's tract comes out loud against that quiet vowel: it is cut by this
-// much (dB) per kHz of the next vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
+// aspiration is loud against a close front vowel: cut per kHz of the vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
 const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
 const ASP_FRONT_FROM_HZ: f32 = 700.0;
-// h's breath level (AH dB) before a vowel, cut like aspiration before front vowels
+// h: breath level (AH) before a vowel, cut like aspiration before front vowels, crossfading with the vowel's voicing
 const H_DB: f32 = 12.0;
-// h's breath and the neighbouring vowel's voicing crossfade over this long (ms)
 const H_EDGE_MS: f32 = 20.0;
-// the open glottis damps F1 and F2 during aspiration: bandwidth added (Hz), fading out with the aspiration
+// the open glottis damps F1 and F2 during aspiration: bandwidth added, fading out with it
 const ASP_B1_WIDEN: f32 = 400.0;
 const ASP_B2_WIDEN: f32 = 70.0;
-// voiced stop closure after a voiced sound: the voice bar fades this much (dB) over the closure
+// voice bar in a voiced closure: it fades over the closure, muffled by Rd rising over its first 10 ms
 const VOICE_BAR_FADE_DB: f32 = 6.0;
-// and is muffled: the voice's Rd rises this much over the first 10 ms of the closure
 const VOICE_BAR_RD: f32 = 1.0;
 
 // longest share of a vowel the transition into it may take
@@ -162,10 +139,10 @@ fn reduce_k(d_ms: f32, tau: f32) -> f32 {
 	1.0 - libm::expf(-d_ms / tau)
 }
 
-// velar F3 next to a vowel: slope and offset of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
+// velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 
-// consonant F2 next to a vowel, by place: slope and offset of F2 = offset + slope * the vowel's F2
+// consonant F2 next to a vowel, by place: (slope, offset) of F2 = offset + slope * the vowel's F2
 fn locus(x: u8) -> Option<(f32, f32)> {
 	match x {
 		9 | 31 | 26 | 16 | 40      => Some((0.8, 300.0)),		// labial: b p m f v
@@ -178,8 +155,7 @@ fn locus(x: u8) -> Option<(f32, f32)> {
 }
 
 fn db_gain(db: f32) -> f32 {
-	// an amplitude (dB, 0 is off) as linear gain, the scale the amplitudes are kept in: 87 dB is full scale, and every
-	// 6 dB halves it
+	// an amplitude (dB, 0 is off) as linear gain: 87 dB is full scale, every 6 dB halves it
 	if db <= 0.0 { 0.0 } else { libm::powf(0.5, (87.0 - db) / 6.0) }
 }
 
