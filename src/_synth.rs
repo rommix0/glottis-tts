@@ -2364,10 +2364,11 @@ mod tests {
 
 	#[test]
 	fn vowels_are_not_pressed() {
+		// vowel Rd was set by ear to about 0.6 (2026-10-31): tense enough for clear vowel colour, no more
 		for &v in &[1u8, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 19, 20, 21, 29, 30, 39] {
 			let o = v as usize * 31;
 			let (a, b) = (formant_tbl[o + 2], formant_tbl[o + 3]);
-			assert!(a >= 80 && b >= 75, "vowel {} Rd {} / {}", v, a, b);
+			assert!(a >= 55 && b >= 55, "vowel {} Rd {} / {}", v, a, b);
 		}
 	}
 
