@@ -3,6 +3,7 @@
 // word the letter-to-sound tree says right (the KNOWN hashes). Mirrors compose() in tools/build_lexicon.py.
 use crate::_known::*;
 use crate::_lts;
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
 
 const MIN_STEM: usize = 3;
 

@@ -6,9 +6,10 @@ one sentence of phone tokens from the front end, turned into
 segments with their syllable, word, phrase and sentence context
 
 */
-use std::ops::Range;
+use core::ops::Range;
 
 use crate::_utils::PHNIDToPhoneme;
+use alloc::{string::String, vec, vec::Vec};
 
 // silent pause phone
 pub const PAU: u8 = 56;
@@ -186,7 +187,7 @@ impl Utterance {
 		u
 	}
 	fn break_long_phrases(&mut self) {
-		let old = std::mem::take(&mut self.phrases);
+		let old = core::mem::take(&mut self.phrases);
 		for ph in old {
 			let pieces = self.pieces(ph.words, ph.end);
 			self.phrases.extend(pieces);

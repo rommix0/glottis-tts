@@ -3,6 +3,7 @@
 // tree's classes for the 2 letters after. The word then gets exactly one primary stress.
 // The trees' tables are in _lts_tree.rs, built by tools/build_lexicon.py, whose decode() is this file in Python.
 use crate::_lts_tree::*;
+use alloc::vec::Vec;
 
 const WINDOW: usize = 4;
 const FEATURES: usize = 2 * (2 * WINDOW + 1) + 4;

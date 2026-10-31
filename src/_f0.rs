@@ -28,6 +28,7 @@ the contour is evaluated per sample from the synthesizer's position.
 */
 use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstruent, is_sonorant};
 use core::f32::consts::PI;
+use alloc::vec::Vec;
 
 pub const REF_HZ: f32 = 110.0;
 const MIN_HZ: f32 = 70.0;

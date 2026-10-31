@@ -1,3 +1,5 @@
+use alloc::{vec, vec::Vec};
+
 // ring buffer
 pub struct cbuf {
 	size:   isize,			// buffer size (a power of two; doubles when full)

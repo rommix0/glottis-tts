@@ -4,5 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-hound = "3.5.1"
+hound = { version = "3.5.1", optional = true }
 libm = "0.2.16"
+
+[features]
+# the command line program; the library alone needs neither it nor std
+default = ["cli"]
+cli = ["dep:hound"]
+
+[[bin]]
+name = "tts_synth"
+required-features = ["cli"]

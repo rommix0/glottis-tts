@@ -10,6 +10,7 @@ so only the stretchable part above the minimum is scaled.
 
 */
 use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent, offglide};
+use alloc::vec::Vec;
 
 pub struct PhoneDur { pub inherent: f32, pub min: f32 }
 

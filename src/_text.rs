@@ -4,6 +4,7 @@ use crate::_utils::cbuf;
 // fixed-text rules (homographs, abbreviations, units, emoji) from tools/normalizer_rules.txt
 use crate::_text_rules::{RULES, FIRST};
 use crate::_dread::dictreader;
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
 
 // a Roman numeral from II to XXXIX written the standard way
 fn roman(s: &str) -> Option<u64> {
@@ -315,7 +316,7 @@ impl engine {
 	}
 	fn words(&mut self, n: u64, ordinal: bool, zero_oh: bool) -> String {
 		// what the number reader says for n
-		let saved = std::mem::replace(&mut self.scratch_pad, cbuf::new());
+		let saved = core::mem::replace(&mut self.scratch_pad, cbuf::new());
 		self.process_number(n, zero_oh, ordinal);
 		let mut out = Vec::new();
 		while self.scratch_pad.is_not_empty() { out.push(self.scratch_pad.read()); self.scratch_pad.advance(); }
@@ -449,7 +450,7 @@ impl engine {
 			if q > 0 {
 				let mut k = 1 + q;
 				while space(at(k)) { k += 1; }
-				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { std::str::from_utf8(&a[..1]).unwrap_or(".") };
+				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { core::str::from_utf8(&a[..1]).unwrap_or(".") };
 				self.scratch_pad.write_text(&format!(" {} ", mark));
 				self.digit_prev = false;
 				self.is_plural = false;
@@ -821,7 +822,7 @@ impl engine {
 			// a fixed-text rule as long or longer here ("MPG", "PAT. PEND.") goes first
 			let longer = self.table_best(buf).is_some_and(|(len, _)| len >= n);
 			if n >= 2 && !at(n).is_ascii_lowercase() && !longer {
-				let run = std::str::from_utf8(&a[..n]).unwrap_or("");
+				let run = core::str::from_utf8(&a[..n]).unwrap_or("");
 				if let Some(v) = roman(run) {
 					let before = Self::prev_word(buf);
 					let ruler = before.as_bytes().first().is_some_and(|c| c.is_ascii_uppercase()) && !CARDINAL_AFTER.contains(&before.to_ascii_lowercase().as_str());
