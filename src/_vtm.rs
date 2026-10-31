@@ -407,6 +407,8 @@ struct LfSource {
 	glottal: Biquad,
 	tilt: LpPole,
 	counter: u32,
+	flut_from: f32,				// the flutter sines at the start of this millisecond
+	flut_to:   f32,				// and at its end
 	ra: f32,
 	jitter: f32,				// average period change between pulses, in %
 	shimmer: f32,				// average level change between pulses, in dB
@@ -423,6 +425,8 @@ impl LfSource {
 			glottal: Biquad::new(),
 			tilt: LpPole::new(),
 			counter: 0,
+			flut_from: 0.0,
+			flut_to: 0.0,
 			ra: 0.0,
 			jitter: 0.0,
 			shimmer: 0.0,
@@ -482,11 +486,18 @@ impl LfSource {
 		let fa = 1.0 / (2.0 * PI * self.ra * t0);
 		self.tilt.set(libm::expf(-2.0 * PI * fa / m_sr as f32));
 	}
+	fn flutter_sines(c: u32) -> f32 {
+		let w = 2.0 * PI * (c as f32 / m_sr as f32);
+		libm::sinf(12.7 * w) + libm::sinf(7.1 * w) + libm::sinf(4.7 * w)
+	}
 	fn calc_flutter(&mut self, f0: f32, flutter: f32) -> f32 {
 		// KLGLOTT88 pitch flutter algorithm
 		if flutter <= 0.0 { return 0.0; }
-		let w = 2.0 * PI * (self.counter as f32 / m_sr as f32);
-		let a = libm::sinf(12.7 * w) + libm::sinf(7.1 * w) + libm::sinf(4.7 * w);
+		// the sines barely move in a millisecond: worked out at each end of one, a straight line between
+		let step = m_sr / 1000;
+		let n = self.counter % step;
+		if n == 0 { (self.flut_from, self.flut_to) = (Self::flutter_sines(self.counter), Self::flutter_sines(self.counter + step)); }
+		let a = self.flut_from + (self.flut_to - self.flut_from) * (n as f32 / step as f32);
 		// 10 s holds a whole number of cycles of all three, so the wrap is seamless
 		self.counter = (self.counter + 1) % (10 * m_sr);
 		a * (flutter / 50.0) * (f0 / 100.0)
@@ -1003,6 +1014,10 @@ mod tests {
 		let rms = |v: &[f32]| (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt();
 		let ratio = rms(&hi) / rms(&f[..2 * m_sr as usize]);
 		assert!((ratio - 2.0).abs() < 0.05, "flutter at 240 Hz is {}x that at 120", ratio);
+		// the straight lines between milliseconds stay on the sines, across the 10 s wrap too
+		let exact = |c: u32| LfSource::flutter_sines(c % (10 * m_sr)) * (75.0 / 50.0) * (120.0 / 100.0);
+		let worst = f.iter().enumerate().map(|(c, &x)| (x - exact(c as u32)).abs()).fold(0.0, f32::max);
+		assert!(worst < 0.01, "flutter strays {} Hz from its sines", worst);
 	}
 
 	#[test]
