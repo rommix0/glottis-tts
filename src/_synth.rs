@@ -114,6 +114,9 @@ const ASP_BEFORE_SONORANT: f32 = 0.8;
 // after aspiration the voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it
 const VOICE_ONSET_MS: f32 = 10.0;
 const ASP_OVERLAP_MS: f32 = 20.0;
+// an l or r after an aspirated p, t or k in its word starts voiceless: its voice comes in, and the aspiration fades,
+// over this share of it
+const LIQUID_DEVOICE: f32 = 0.8;
 // aspiration is loud against a close front vowel: cut per kHz of the vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
 const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
 const ASP_FRONT_FROM_HZ: f32 = 700.0;
@@ -212,8 +215,8 @@ fn feats(x: u8) -> u16 {
 		17                     => 0x0142,		// g
 		34|35                  => 0x0220,		// s, sh
 		43|44                  => 0x0222,		// z, zh
-		24|25|45               => 0x0422,		// l, lx
-		32|33|46               => 0x0822,		// r, rx
+		24|25                  => 0x0422,		// l, lx
+		32|33                  => 0x0822,		// r, rx
 		42                     => 0x1002,		// y
 		41                     => 0x1182,		// w
 		8|30                   => 0x2003,		// ay, oy
@@ -285,6 +288,7 @@ pub struct engine {
 	amp_start: i32,		// counter value where that ramp starts
 	voice_len: i32,		// samples the voicing takes to switch at a fricative edge (0: it follows amp_len)
 	voice_start: i32,	// counter value where that switch starts
+	asp_fade: i32,		// samples the aspiration takes to fade out under the voice
 	dip_mid: i32,		// counter value at the middle of a dip (between two fricatives, or a glottal catch)
 	dip_half: i32,		// samples either side of it the dip takes (0: no dip)
 	dip_db: f32,		// and how deep it goes (dB)
@@ -445,6 +449,7 @@ impl engine {
 			amp_start: 0,
 			voice_len: 0,
 			voice_start: 0,
+			asp_fade: 0,
 			dip_mid: 0,
 			dip_half: 0,
 			dip_db: 0.0,
@@ -713,13 +718,6 @@ impl engine {
 			self.B1_B_src = self.B1_reg;
 			self.B2_B_src = self.B2_reg;
 			self.B3_B_src = self.B3_reg;
-		}
-	}
-	fn ptar(&mut self) {
-		if self.phn_c == 24 && self.pft_r1 & 0x42 == 0x40 {
-			self.phn_c = 45;
-		} else if self.phn_c == 32 && self.pft_r1 & 0x42 == 0x40 {
-			self.phn_c = 46;
 		}
 	}
 	fn ftar(&mut self) {
@@ -1094,7 +1092,7 @@ impl engine {
 		}
 		if self.asp_db > 0.0 && c >= 0 {
 			// aspiration fades out under the first voicing pulses
-			let k = 1.0 - c as f32 / samples(ASP_OVERLAP_MS) as f32;
+			let k = 1.0 - c as f32 / self.asp_fade.max(1) as f32;
 			if k > 0.0 { self.AH_reg = self.AH_reg.max(fade(db_gain(self.asp_db), self.master_fade * k)); }
 		}
 	}
@@ -1206,7 +1204,6 @@ impl engine {
 			self.f1_len = 0;
 			let mut stop_asp: Option<i32> = None;
 
-			self.ptar();
 			
 			// the previous phone's formant targets at its end, before fetch replaces them
 			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
@@ -1228,7 +1225,7 @@ impl engine {
 				(self.RD_A_src, self.RD_B_src) = (prev_rd, prev_rd);
 			}
 			// at the end of a phrase an r keeps its tongue in place while the voice dies away
-			if (self.phn_c == 48 || self.phn_c == 49) && matches!(self.phn_l1, 32 | 33 | 46 | 14 | 7) {
+			if (self.phn_c == 48 || self.phn_c == 49) && matches!(self.phn_l1, 32 | 33 | 14 | 7) {
 				[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
 				[self.F1_B_src, self.F2_B_src, self.F3_B_src] = prev_f;
 			}
@@ -1398,6 +1395,15 @@ impl engine {
 				self.asp_start = self.counter;
 				self.seg_start = 0;
 			}
+			self.asp_fade = samples(ASP_OVERLAP_MS);
+			if self.asp_db > 0.0 && matches!(self.phn_c, 24 | 32) && !self.pwi_c {
+				let span = (LIQUID_DEVOICE * self.marker_B as f32) as i32;
+				if span > 0 {
+					self.voice_start = 0;
+					self.voice_len = span;
+					self.asp_fade = span.max(self.asp_fade);
+				}
+			}
 		}
 		self.is_ready()
 	}
@@ -1446,7 +1452,7 @@ impl engine {
 		self.vtm_eng.F3  = self.F3_reg;
 		// aspiration: the open glottis damps F1 and F2, less so as voicing takes over
 		let damp = if self.asp_db <= 0.0 { 0.0 } else if self.counter < 0 { 1.0 } else {
-			(1.0 - self.counter as f32 / samples(ASP_OVERLAP_MS) as f32).max(0.0)
+			(1.0 - self.counter as f32 / self.asp_fade.max(1) as f32).max(0.0)
 		};
 		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
 		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN;
@@ -2360,6 +2366,28 @@ mod tests {
 		};
 		let (b, d) = (f1(9), f1(11));
 		assert!((b - d).abs() < 15.0, "ow F1 at 90 ms: {} after b, {} after d", b, d);
+	}
+
+	#[test]
+	fn a_liquid_after_an_aspirated_stop_starts_voiceless() {
+		// p l ey: in one word the l's voice comes in late; "stop | lay" keeps a voiced l
+		let av = |word_start: bool| {
+			let mut e = engine::new();
+			let mut out = Vec::new();
+			for &(p, d, w) in &[(PAU, 50, true), (31, 90, true), (24, 80, word_start), (15, 150, false), (PAU, 50, true)] {
+				if e.load(p, d, true, 0, w) {
+					while e.is_running() {
+						e.sample(120.0);
+						if e.phn_c == 24 && e.counter >= 0 { out.push(db(e.AV_reg)); }
+					}
+				}
+			}
+			(out[out.len() / 5], out[out.len() - 1])
+		};
+		let (early, late) = av(false);
+		assert!(early < late - 10.0, "l after p in its word: AV {} early, {} late", early, late);
+		let (early, late) = av(true);
+		assert!(early > late - 3.0, "l starting a word: AV {} early, {} late", early, late);
 	}
 
 	#[test]
