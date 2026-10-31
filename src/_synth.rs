@@ -293,6 +293,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 }
 
 pub struct engine {
+	pub tbl: &'static [u16; 1550],	// the formant table, swapped by --table
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,		// samples the amplitudes take to reach this phone's values
@@ -442,6 +443,7 @@ pub struct engine {
 impl engine {
 	pub fn new() -> engine {
 		engine {
+			tbl: &formant_tbl,
 			/////////////////////////////
 			//          VTM            //
 			/////////////////////////////
@@ -667,36 +669,36 @@ impl engine {
 		let row = if matches!(row, 48 | 49) && self.pft_l1 & 0x10 != 0 { self.phn_l1 } else { row };
 		let offset_src: usize = row as usize * 31;
 		//---------------source---------------------
-		self.C_A_src   = formant_tbl[offset_src+0] as u8;		// also target during transition time
-		self.C_B_src   = formant_tbl[offset_src+1] as u8;
-		self.RD_A_src  = formant_tbl[offset_src+2] as f32 / 100.0;
-		self.RD_B_src  = formant_tbl[offset_src+3] as f32 / 100.0;
+		self.C_A_src   = self.tbl[offset_src+0] as u8;		// also target during transition time
+		self.C_B_src   = self.tbl[offset_src+1] as u8;
+		self.RD_A_src  = self.tbl[offset_src+2] as f32 / 100.0;
+		self.RD_B_src  = self.tbl[offset_src+3] as f32 / 100.0;
 		self.NZP_A_src = if self.pft_c & 0x10 != 0 { 1.0 } else { 0.0 };	// nasal coupling: 1 for a nasal consonant
-		self.F1_A_src  = formant_tbl[offset_src+5] as f32;
-		self.F2_A_src  = formant_tbl[offset_src+6] as f32;
-		self.F3_A_src  = formant_tbl[offset_src+7] as f32;
-		self.B1_A_src  = formant_tbl[offset_src+8] as f32;
-		self.B2_A_src  = formant_tbl[offset_src+9] as f32;
-		self.B3_A_src  = formant_tbl[offset_src+10] as f32;
-		self.A2_src    = formant_tbl[offset_src+11] as f32;
-		self.A3_src    = formant_tbl[offset_src+12] as f32;
-		self.A4_src    = formant_tbl[offset_src+13] as f32;
-		self.A5_src    = formant_tbl[offset_src+14] as f32;
-		self.A6_src    = formant_tbl[offset_src+15] as f32;
-		self.A7_src    = formant_tbl[offset_src+16] as f32;
-		self.A8_src    = formant_tbl[offset_src+17] as f32;
-		self.A9_src    = formant_tbl[offset_src+18] as f32;
-		self.A10_src   = formant_tbl[offset_src+19] as f32;
-		self.AB_src    = formant_tbl[offset_src+20] as f32;
-		self.AF_src    = formant_tbl[offset_src+21] as f32;
-		self.AH_src    = formant_tbl[offset_src+22] as f32;
-		self.AV_src    = formant_tbl[offset_src+23] as f32;
-		self.F1_B_src  = formant_tbl[offset_src+25] as f32;
-		self.F2_B_src  = formant_tbl[offset_src+26] as f32;
-		self.F3_B_src  = formant_tbl[offset_src+27] as f32;
-		self.B1_B_src  = formant_tbl[offset_src+28] as f32;
-		self.B2_B_src  = formant_tbl[offset_src+29] as f32;
-		self.B3_B_src  = formant_tbl[offset_src+30] as f32;
+		self.F1_A_src  = self.tbl[offset_src+5] as f32;
+		self.F2_A_src  = self.tbl[offset_src+6] as f32;
+		self.F3_A_src  = self.tbl[offset_src+7] as f32;
+		self.B1_A_src  = self.tbl[offset_src+8] as f32;
+		self.B2_A_src  = self.tbl[offset_src+9] as f32;
+		self.B3_A_src  = self.tbl[offset_src+10] as f32;
+		self.A2_src    = self.tbl[offset_src+11] as f32;
+		self.A3_src    = self.tbl[offset_src+12] as f32;
+		self.A4_src    = self.tbl[offset_src+13] as f32;
+		self.A5_src    = self.tbl[offset_src+14] as f32;
+		self.A6_src    = self.tbl[offset_src+15] as f32;
+		self.A7_src    = self.tbl[offset_src+16] as f32;
+		self.A8_src    = self.tbl[offset_src+17] as f32;
+		self.A9_src    = self.tbl[offset_src+18] as f32;
+		self.A10_src   = self.tbl[offset_src+19] as f32;
+		self.AB_src    = self.tbl[offset_src+20] as f32;
+		self.AF_src    = self.tbl[offset_src+21] as f32;
+		self.AH_src    = self.tbl[offset_src+22] as f32;
+		self.AV_src    = self.tbl[offset_src+23] as f32;
+		self.F1_B_src  = self.tbl[offset_src+25] as f32;
+		self.F2_B_src  = self.tbl[offset_src+26] as f32;
+		self.F3_B_src  = self.tbl[offset_src+27] as f32;
+		self.B1_B_src  = self.tbl[offset_src+28] as f32;
+		self.B2_B_src  = self.tbl[offset_src+29] as f32;
+		self.B3_B_src  = self.tbl[offset_src+30] as f32;
 
 		if self.F1_B_src == 0.0 { self.F1_B_src = self.F1_A_src; }
 		if self.F2_B_src == 0.0 { self.F2_B_src = self.F2_A_src; }
@@ -870,7 +872,7 @@ impl engine {
 		if self.pft_c & 0x1 == 0 || self.phn_c == 6 || self.phn_c == 20 { return; }
 		let d_ms = self.pdr_c as f32 * 1000.0 / m_sr as f32;
 		let n = 6 * 31;
-		let (n1, n2, n3) = (formant_tbl[n + 5] as f32, formant_tbl[n + 6] as f32, formant_tbl[n + 7] as f32);
+		let (n1, n2, n3) = (self.tbl[n + 5] as f32, self.tbl[n + 6] as f32, self.tbl[n + 7] as f32);
 		let (k1, k2, k3) = (reduce_k(d_ms, tau_f1), reduce_k(d_ms, tau_f2), reduce_k(d_ms, tau_f3));
 		self.F1_A_src = n1 + (self.F1_A_src - n1) * k1;
 		self.F2_A_src = n2 + (self.F2_A_src - n2) * k2;
@@ -888,11 +890,11 @@ impl engine {
 	fn next_vowel_formants(&self) -> [f32; 3] {
 		// the next vowel's F1-F3 at its start, reduced for its length as reduce() will do
 		let o = self.phn_r1 as usize * 31;
-		let t = [formant_tbl[o + 5] as f32, formant_tbl[o + 6] as f32, formant_tbl[o + 7] as f32];
+		let t = [self.tbl[o + 5] as f32, self.tbl[o + 6] as f32, self.tbl[o + 7] as f32];
 		if self.phn_r1 == 6 || self.phn_r1 == 20 { return t; }
 		let d_ms = self.pdr_r1 as f32 * 1000.0 / m_sr as f32;
 		let n = 6 * 31;
-		let nv = [formant_tbl[n + 5] as f32, formant_tbl[n + 6] as f32, formant_tbl[n + 7] as f32];
+		let nv = [self.tbl[n + 5] as f32, self.tbl[n + 6] as f32, self.tbl[n + 7] as f32];
 		let k = [reduce_k(d_ms, tau_f1), reduce_k(d_ms, tau_f2), reduce_k(d_ms, tau_f3)];
 		[0, 1, 2].map(|i| nv[i] + (t[i] - nv[i]) * k[i])
 	}

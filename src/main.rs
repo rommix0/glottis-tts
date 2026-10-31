@@ -44,10 +44,11 @@ struct Opts {
 	pcm16: bool,	// write 16-bit integer samples instead of 32-bit float
 	voice: usize,	// voice profile number
 	phone: Option<u8>,	// token of a single phone to say instead of the text
+	table: Option<String>,	// formant table file to use instead of the built-in one
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None };
+	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None, table: None };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(a) = args.next() {
@@ -60,8 +61,7 @@ fn parse_args() -> Result<Opts, String> {
 		} else if a == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
 		} else if a == "--table" {
-			let path = args.next().ok_or("--table needs a file name")?;
-			_vtbl::TABLE_FILE.set(path).ok();
+			opts.table = Some(args.next().ok_or("--table needs a file name")?);
 		} else if a == "--phone" {
 			let p = args.next().and_then(|v| v.parse().ok()).unwrap_or(0);
 			opts.phone = Some(phone_token(p).ok_or(format!("phone {} can't be said on its own", p))?);
@@ -150,6 +150,15 @@ fn play(eng: &mut Engines, writer: &mut Wav, phone: u8, dur_ms: f32, stressed: b
 			if let Some(d) = eng.dump.as_mut() { d.write_all(&(s as u32).to_le_bytes()).unwrap(); }
 		}
 	}
+}
+
+fn read_table(path: &str) -> Result<&'static [u16; 1550], String> {
+	// the numbers of the formant table in order, anything else between them is skipped
+	let text = std::fs::read_to_string(path).map_err(|e| format!("can't read {path}: {e}"))?;
+	let vals = text.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty())
+		.map(|t| t.parse().map_err(|_| format!("{path}: {t} is out of range"))).collect::<Result<Vec<u16>, _>>()?;
+	let tbl: [u16; 1550] = vals.try_into().map_err(|v: Vec<u16>| format!("{path} has {} numbers, expected 1550", v.len()))?;
+	Ok(Box::leak(Box::new(tbl)))
 }
 
 fn new_engines() -> Engines {
@@ -280,6 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let mut eng = new_engines();
 	eng.synth.set_voice(_vtm::VOICES[opts.voice]);
+	if let Some(path) = &opts.table { eng.synth.tbl = read_table(path)?; }
 	if let Some(path) = &opts.seg_dump { eng.dump = Some(BufWriter::new(File::create(path)?)); }
 
 	if let Some(tk) = opts.phone {
@@ -414,7 +424,7 @@ mod tests {
 	fn render_file(tokens: &[u8], texts: &[&str], pcm16: bool, tag: &str) -> std::path::PathBuf {
 		let path = env::temp_dir().join(format!("tts_synth_test_{}_{}.wav", std::process::id(), tag));
 		let mut writer = hound::WavWriter::create(&path, wav_spec(pcm16)).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None, table: None };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		synth_sentence(tokens, &texts, &opts, &mut eng, &mut writer);
@@ -459,7 +469,7 @@ mod tests {
 		let wav = env::temp_dir().join(format!("tts_synth_test_{}_sched.wav", std::process::id()));
 		let dump = env::temp_dir().join(format!("tts_synth_test_{}_sched.bin", std::process::id()));
 		let mut writer = hound::WavWriter::create(&wav, wav_spec(false)).unwrap();
-		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None };
+		let opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None, table: None };
 		let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
 		let mut eng = new_engines();
 		eng.dump = Some(BufWriter::new(File::create(&dump).unwrap()));
