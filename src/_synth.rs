@@ -183,10 +183,24 @@ fn fade_db(db: f32, m: f32) -> f32 {
 	(db + 6.0 * libm::log2f(m)).max(0.0)
 }
 
-fn lerp_db_gain(a: f32, b: f32, y: f32) -> f32 {
+// an amplitude's linear gain, worked out again only when its dB changes: the amplitudes' ends move only at phone
+// edges, and powf every sample was most of the synthesizer's time
+#[derive(Clone, Copy, Default)]
+struct DbGain { db: f32, gain: f32 }
+
+impl DbGain {
+	fn of(&mut self, db: f32) -> f32 {
+		if db != self.db {
+			self.db = db;
+			self.gain = if db <= 0.0 { 0.0 } else { libm::powf(0.5, (87.0 - db) / 6.0) };
+		}
+		self.gain
+	}
+}
+
+fn lerp_db_gain(cache: &mut [DbGain; 2], a: f32, b: f32, y: f32) -> f32 {
 	// interpolate two amplitudes (dB, 0 is off) in linear gain, the same scale the VTM uses
-	let gain = |db: f32| if db <= 0.0 { 0.0 } else { libm::powf(0.5, (87.0 - db) / 6.0) };
-	let g = gain(a) * (1.0 - y) + gain(b) * y;
+	let g = cache[0].of(a) * (1.0 - y) + cache[1].of(b) * y;
 	if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * libm::log2f(g) }
 }
 
@@ -336,6 +350,7 @@ pub struct engine {
 	after_stop: bool,	// this phone follows a released plosive
 	f1_len: i32,		// samples F1 takes into this phone when it moves faster than the other formants (0: same)
 	f1_speed: f32,		// how much faster F1 moves than the shared interpolator
+	amp_gain: [[DbGain; 2]; 13],	// linear gains of the source and target of A2-A10, AB, AF, AH and AV
 	carry: [f32; 7],	// RD, F1-F3, B1-B3 change per sample when the last move started (a cut-off move's speed)
 	carry_n: i32,		// samples since then
 	last: [f32; 7],		// those registers one sample ago
@@ -500,6 +515,7 @@ impl engine {
 			after_stop: false,
 			f1_len: 0,
 			f1_speed: 1.0,
+			amp_gain: [[DbGain::default(); 2]; 13],
 			carry: [0.0; 7],
 			carry_n: 0,
 			last: [0.0; 7],
@@ -1050,18 +1066,18 @@ impl engine {
 		}
 
 		// update the interpolator for the parallel amps
-		self.A2_reg  = lerp_db_gain(self.A2_reg_src, self.A2_reg_trg, y);
-		self.A3_reg  = lerp_db_gain(self.A3_reg_src, self.A3_reg_trg, y);
-		self.A4_reg  = lerp_db_gain(self.A4_reg_src, self.A4_reg_trg, y);
-		self.A5_reg  = lerp_db_gain(self.A5_reg_src, self.A5_reg_trg, y);
-		self.A6_reg  = lerp_db_gain(self.A6_reg_src, self.A6_reg_trg, y);
-		self.A7_reg  = lerp_db_gain(self.A7_reg_src, self.A7_reg_trg, y);
-		self.A8_reg  = lerp_db_gain(self.A8_reg_src, self.A8_reg_trg, y);
-		self.A9_reg  = lerp_db_gain(self.A9_reg_src, self.A9_reg_trg, y);
-		self.A10_reg = lerp_db_gain(self.A10_reg_src, self.A10_reg_trg, y);
+		self.A2_reg  = lerp_db_gain(&mut self.amp_gain[0], self.A2_reg_src, self.A2_reg_trg, y);
+		self.A3_reg  = lerp_db_gain(&mut self.amp_gain[1], self.A3_reg_src, self.A3_reg_trg, y);
+		self.A4_reg  = lerp_db_gain(&mut self.amp_gain[2], self.A4_reg_src, self.A4_reg_trg, y);
+		self.A5_reg  = lerp_db_gain(&mut self.amp_gain[3], self.A5_reg_src, self.A5_reg_trg, y);
+		self.A6_reg  = lerp_db_gain(&mut self.amp_gain[4], self.A6_reg_src, self.A6_reg_trg, y);
+		self.A7_reg  = lerp_db_gain(&mut self.amp_gain[5], self.A7_reg_src, self.A7_reg_trg, y);
+		self.A8_reg  = lerp_db_gain(&mut self.amp_gain[6], self.A8_reg_src, self.A8_reg_trg, y);
+		self.A9_reg  = lerp_db_gain(&mut self.amp_gain[7], self.A9_reg_src, self.A9_reg_trg, y);
+		self.A10_reg = lerp_db_gain(&mut self.amp_gain[8], self.A10_reg_src, self.A10_reg_trg, y);
 
 		// update the interpolator for main amps
-		self.AB_reg = lerp_db_gain(self.AB_reg_src, self.AB_reg_trg, y);
+		self.AB_reg = lerp_db_gain(&mut self.amp_gain[9], self.AB_reg_src, self.AB_reg_trg, y);
 		let (mut g_af, mut g_ah, mut g_av) = (1.0, 1.0, 1.0);
 		let t = (c - self.dip_mid) as f32 / self.dip_half.max(1) as f32;
 		if self.dip_half > 0 && t.abs() < 1.0 {
@@ -1077,10 +1093,10 @@ impl engine {
 			let rise = ((c - self.asp_start) as f32 / two_ms as f32).min(1.0);
 			(g_af, g_ah, g_av) = (0.0, rise, 0.0);
 		}
-		self.AF_reg = fade_db(lerp_db_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
-		self.AH_reg = fade_db(lerp_db_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
+		self.AF_reg = fade_db(lerp_db_gain(&mut self.amp_gain[10], self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
+		self.AH_reg = fade_db(lerp_db_gain(&mut self.amp_gain[11], self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
 		let yv = if self.voice_len > 0 { self.lin2smooth(((c - self.voice_start) as f32 / self.voice_len as f32).clamp(0.0, 1.0)) } else { y };
-		self.AV_reg = fade_db(lerp_db_gain(self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
+		self.AV_reg = fade_db(lerp_db_gain(&mut self.amp_gain[12], self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
 		if self.stop_on && c >= 0 {
 			// the voice bar fades over the closure and holds through the burst
 			let bar = if self.stop_bar {
@@ -1593,6 +1609,7 @@ mod tests {
 	#[test]
 	fn amp_ramp_is_linear_in_gain() {
 		// halfway from silence to 60 dB is half the gain (54 dB), not 30 dB
+		let lerp_db_gain = |a, b, y| lerp_db_gain(&mut [DbGain::default(); 2], a, b, y);
 		assert!((lerp_db_gain(0.0, 60.0, 0.5) - 54.0).abs() < 0.01);
 		assert_eq!(lerp_db_gain(0.0, 60.0, 0.0), 0.0);
 		assert!((lerp_db_gain(0.0, 60.0, 1.0) - 60.0).abs() < 0.01);
