@@ -106,10 +106,10 @@ const MIN_PIECE_SYL:  usize = 5;
 // the break goes before one of these words best ...
 const BREAK_BEFORE: [&str; 23] = ["and", "but", "or", "nor", "so", "yet", "because", "while", "although", "though", "unless",
 	"whereas", "until", "if", "when", "whether", "since", "that", "which", "who", "whom", "whose", "where"];
-// ... then before a preposition, then before any function word after a content word
-const PREPOSITIONS: [&str; 32] = ["in", "on", "at", "by", "near", "over", "under", "after", "before", "with", "without", "from",
+// ... else before a preposition ("to" is too often an infinitive's or a compound's, "text to speech")
+const PREPOSITIONS: [&str; 31] = ["in", "on", "at", "by", "near", "over", "under", "after", "before", "with", "without", "from",
 	"into", "onto", "through", "during", "across", "about", "against", "along", "among", "around", "behind", "below",
-	"beside", "between", "beyond", "toward", "towards", "upon", "within", "to"];
+	"beside", "between", "beyond", "toward", "towards", "upon", "within"];
 
 const WH_WORDS: [&str; 9] = ["who", "what", "when", "where", "why", "how", "which", "whose", "whom"];
 
@@ -198,7 +198,8 @@ impl Utterance {
 	}
 	fn pieces(&self, words: Range<usize>, end: Boundary) -> Vec<Phrase> {
 		// a phrase with too many syllables to say in one go breaks after a content word, before its best next word:
-		// a conjunction or relative word, else a preposition, else a function word; the nearer the middle the better
+		// a conjunction or relative word, else a preposition, the nearer the middle the better; never before another
+		// function word, which would split a verb from its object ("using | the") or a noun from "of"
 		let syls = |r: Range<usize>| -> usize { r.map(|w| self.words[w].syls.len()).sum() };
 		let total = syls(words.clone());
 		if total <= MAX_PHRASE_SYL { return vec![Phrase { words, end }]; }
@@ -208,7 +209,7 @@ impl Utterance {
 			if left < MIN_PIECE_SYL || total - left < MIN_PIECE_SYL || self.words[j - 1].function { continue; }
 			let text = self.words[j].text.to_lowercase();
 			let score = if BREAK_BEFORE.contains(&text.as_str()) { 3.0 } else if PREPOSITIONS.contains(&text.as_str()) { 2.0 }
-				else if self.words[j].function { 1.0 } else { continue };
+				else { continue };
 			let value = score - 2.0 * (left as f32 / total as f32 - 0.5).abs();
 			if best.is_none_or(|(v, _)| value > v) { best = Some((value, j)); }
 		}
@@ -425,6 +426,14 @@ mod tests {
 		assert_eq!(u.phrases[1].end, Boundary::Period);
 		assert_eq!(u.words[6].phrase, 1);
 		assert!(u.is_last_syl_of_phrase(5));
+	}
+
+	#[test]
+	fn a_long_phrase_keeps_a_verb_with_its_object_and_to_and_of_with_their_words() {
+		// "... using | the final version | of the text | to speech ...": no break before an article, "of" or "to"
+		let (c, f) = ((false, "w"), |t| (true, t));
+		let u = sentence(&[c, c, c, c, c, f("the"), c, c, c, f("of"), f("the"), c, f("to"), c, c, c, c]);
+		assert_eq!(u.phrases.len(), 1);
 	}
 
 	#[test]
