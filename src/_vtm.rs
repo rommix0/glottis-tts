@@ -44,6 +44,20 @@ const FRIC_LP_HZ: f32 = 4500.0;
 const CASC_MIN_BW: f32 = 60.0;
 // amplitudes in dB are relative to this full scale
 const G_MAX: f32 = 87.0;
+// gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6), every 6 dB halving it
+const DB_GAIN: [f32; 88] = [
+	4.3158372e-05, 4.8443635e-05, 5.437614e-05, 6.1035156e-05, 6.8509646e-05, 7.689948e-05, 8.6316744e-05, 9.688727e-05,
+	0.00010875228, 0.00012207031, 0.00013701929, 0.00015379896, 0.00017263349, 0.00019377454, 0.00021750457, 0.00024414062,
+	0.00027403858, 0.00030759792, 0.00034526698, 0.00038754908, 0.00043500913, 0.00048828125, 0.00054807717, 0.00061519584,
+	0.00069053395, 0.00077509816, 0.00087001827, 0.0009765625, 0.0010961543, 0.0012303917, 0.0013810679, 0.0015501963,
+	0.0017400365, 0.001953125, 0.0021923087, 0.0024607833, 0.0027621358, 0.0031003926, 0.003480073, 0.00390625,
+	0.0043846173, 0.0049215667, 0.0055242716, 0.0062007853, 0.006960146, 0.0078125, 0.008769235, 0.009843133,
+	0.011048543, 0.012401571, 0.013920292, 0.015625, 0.01753847, 0.019686267, 0.022097087, 0.024803141,
+	0.027840585, 0.03125, 0.03507694, 0.039372534, 0.044194173, 0.049606282, 0.05568117, 0.0625,
+	0.07015388, 0.07874507, 0.088388346, 0.099212565, 0.11136234, 0.125, 0.14030775, 0.15749013,
+	0.17677669, 0.19842513, 0.22272468, 0.25, 0.2806155, 0.31498027, 0.35355338, 0.39685026,
+	0.44544935, 0.5, 0.561231, 0.62996054, 0.70710677, 0.7937005, 0.8908987, 1.0,
+];
 // formants closer than MIN_D (Hz) get their bandwidths widened, by up to 1 + MUL_B times when they meet
 const MIN_D: f32 = 350.0;
 const MUL_B: f32 = 2.5;
@@ -543,7 +557,9 @@ impl vtm {
 	fn db2lin(&mut self, gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
 		if gain >= G_MAX { return 1.0; }
-		libm::powf(0.5, (G_MAX - gain) / 6.0)
+		// between whole dB, a straight line: within 0.01 dB of the curve
+		let i = gain as usize;
+		DB_GAIN[i] + (DB_GAIN[i + 1] - DB_GAIN[i]) * (gain - i as f32)
 	}
 	fn fix_bw(&mut self) {
 		// adjust bandwidths to improve sound quality
@@ -903,5 +919,16 @@ mod tests {
 		let n = noise::new();
 		let fc = -n.alpha.ln() * m_sr as f32 / (2.0 * PI);
 		assert!((fc - 1465.0).abs() < 30.0, "aspiration noise corner {} Hz", fc);
+	}
+
+	#[test]
+	fn db_gain_table_follows_the_curve() {
+		let curve = |db: f32| 0.5f64.powf((G_MAX as f64 - db as f64) / 6.0);
+		for (i, &g) in DB_GAIN.iter().enumerate() {
+			assert!(((g as f64) / curve(i as f32) - 1.0).abs() < 1e-6, "{} dB: {} in the table", i, g);
+		}
+		let mut v = vtm::new();
+		let worst = (1..8700).map(|k| k as f32 / 100.0).map(|db| (20.0 * (v.db2lin(db) as f64 / curve(db)).log10()).abs()).fold(0.0, f64::max);
+		assert!(worst < 0.02, "the interpolated gain is off by {} dB", worst);
 	}
 }
