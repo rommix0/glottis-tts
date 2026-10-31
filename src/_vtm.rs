@@ -154,7 +154,9 @@ struct resonator {
 }
 impl resonator {
 	fn new(bf: f32, bw: f32, anti: bool) -> resonator {
-		resonator { a: 0.0, b: 0.0, c: 0.0, xp1: 0.0, xp2: 0.0, anti, bf, bw, pfreq: 0.0 }
+		let mut r = resonator { a: 0.0, b: 0.0, c: 0.0, xp1: 0.0, xp2: 0.0, anti, bf, bw, pfreq: 0.0 };
+		r.set_coeffs(bf, bw);
+		r
 	}
 	fn set_coeffs(&mut self, bf: f32, bw: f32) {
 		let r: f32 = libm::expf(-PI * bw / m_sr as f32);
@@ -186,7 +188,8 @@ impl resonator {
 		let mut bww: f32 = bw;
 		if bff == 0.0 { bff = self.bf; }
 		if bww == 0.0 { bww = self.bw; }
-		if bff > 0.0 || bww > 0.0 { self.set_coeffs(bff, bww); }
+		// a fixed resonator (stepped with 0, 0) keeps the coefficients it was made with
+		if bf > 0.0 || bw > 0.0 { self.set_coeffs(bff, bww); }
 		let ot: f32 = self.a * x + self.b * self.xp1 + self.c * self.xp2;
 		self.xp2 = self.xp1;
 		self.xp1 = if self.anti { x } else { ot };
@@ -429,6 +432,11 @@ pub struct vtm {
 	fric_y1:  f32,		// frication noise lowpass state
 	voice:    Voice,	// voice profile
 	vgain:    f32,		// the voice profile's output level, linear
+	fric_a:   f32,		// frication lowpass coefficient
+	shelf_a:  f32,		// low shelf lowpass coefficient
+	shelf_g:  f32,		// low shelf: the lowpassed copy's gain
+	lip_d:    f32,		// lip radiation coefficient at this rate
+	out_g:    f32,		// output trim, linear
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -490,6 +498,11 @@ impl vtm {
 			fric_y1: 0.0,
 			voice: VOICES[0],
 			vgain: 1.0,
+			fric_a: libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
+			shelf_a: libm::expf(-2.0 * PI * LOW_SHELF_HZ / m_sr as f32),
+			shelf_g: libm::powf(10.0, LOW_SHELF_DB / 20.0) - 1.0,
+			lip_d: libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
+			out_g: libm::powf(10.0, OUT_DB / 20.0),
 		}
 	}
 	pub fn set_voice(&mut self, v: Voice) {
@@ -630,9 +643,9 @@ impl vtm {
 	}
 	fn low_shelf(&mut self, x: f32) -> f32 {
 		// add a low-passed copy back on top, so only the bottom of the spectrum gains level
-		let a = libm::expf(-2.0 * PI * LOW_SHELF_HZ / m_sr as f32);
+		let a = self.shelf_a;
 		self.shelf_y1 = (1.0 - a) * x + a * self.shelf_y1;
-		x + (libm::powf(10.0, LOW_SHELF_DB / 20.0) - 1.0) * self.shelf_y1
+		x + self.shelf_g * self.shelf_y1
 	}
 	fn emph(&mut self, x: f32) -> f32 {
 		// brighten the cascade output
@@ -642,7 +655,7 @@ impl vtm {
 	}
 	fn radiate(&mut self, x: f32) -> f32 {
 		// lip radiation with its coefficient moved toward the tuned rate's response, at the same low-frequency gain
-		let d = libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH));
+		let d = self.lip_d;
 		self.lip(x, d) * (1.0 - LIP_D) / (1.0 - d)
 	}
 	fn lip(&mut self, x: f32, d: f32) -> f32 {
@@ -670,7 +683,7 @@ impl vtm {
 
 		// route noise source to source fed in by parallel filter
 		// frication is broadband noise, rolled off above FRIC_LP_HZ
-		let a = libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32);
+		let a = self.fric_a;
 		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
 		let parr_in: f32 = self.fric_y1 * self.db2lin(self.AF) * af_mod;
 
@@ -679,7 +692,7 @@ impl vtm {
 		let casc_out: f32 = self.low_shelf(casc_out);
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
-		let out = self.radiate(casc_out + parr_out) * libm::powf(10.0, OUT_DB / 20.0) * self.vgain;
+		let out = self.radiate(casc_out + parr_out) * self.out_g * self.vgain;
 		self.softclip(out)
 	}
 }
