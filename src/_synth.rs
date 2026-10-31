@@ -45,6 +45,8 @@ const BURST_UNSTRESSED_DB: f32 = -6.0;
 // formants move at a steady speed, but speed up and slow down over this share of each move at either end: one that
 // starts or stops at full speed clicks, most on the big F3 sweeps into and out of an r
 const TRACK_EASE: f32 = 0.1;
+// a move cut off by the next one hands its speed on, used up over this long, instead of stopping dead
+const CARRY_MS: f32 = 10.0;
 // a burst before a vowel or sonorant quieter above F2 than an open vowel is cut by this share of the difference: that
 // level goes with 40 log10(F1 * F2), and RELEASE_REF (Hz^2) is an open central vowel's F1 * F2
 const RELEASE_FOLLOW: f32 = 0.5;
@@ -334,6 +336,9 @@ pub struct engine {
 	after_stop: bool,	// this phone follows a released plosive
 	f1_len: i32,		// samples F1 takes into this phone when it moves faster than the other formants (0: same)
 	f1_speed: f32,		// how much faster F1 moves than the shared interpolator
+	carry: [f32; 7],	// RD, F1-F3, B1-B3 change per sample when the last move started (a cut-off move's speed)
+	carry_n: i32,		// samples since then
+	last: [f32; 7],		// those registers one sample ago
 	after_stop_next: bool,
 	asp_db: f32,		// aspiration level carried over from a voiceless stop (0: none)
 	asp_start: i32,
@@ -495,6 +500,9 @@ impl engine {
 			after_stop: false,
 			f1_len: 0,
 			f1_speed: 1.0,
+			carry: [0.0; 7],
+			carry_n: 0,
+			last: [0.0; 7],
 			after_stop_next: false,
 			asp_db: 0.0,
 			asp_start: 0,
@@ -985,10 +993,26 @@ impl engine {
 	fn lin2smooth(&mut self, x: f32) -> f32 {
 		x * x * (3.0 - 2.0 * x)
 	}
+	fn regs(&self) -> [f32; 7] {
+		[self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg]
+	}
+	fn start_move(&mut self) {
+		// keep the registers' speed going into the new move
+		let now = self.regs();
+		for k in 0..7 { self.carry[k] = now[k] - self.last[k]; }
+		self.carry_n = 0;
+		self.interp = 0.0;
+	}
 	fn update_registers(&mut self) {
 		if self.interp < 1.0 {
 			self.interp = (self.interp + self.slope).min(1.0);
 		}
+		// the carried speed fades to nothing over CARRY_MS: n (1 - n/N)^2 starts at that speed and ends at rest
+		let len = samples(CARRY_MS);
+		self.carry_n = (self.carry_n + 1).min(len);
+		let n = self.carry_n as f32 / len as f32;
+		let c = self.carry_n as f32 * (1.0 - n) * (1.0 - n);
+		self.last = self.regs();
 		// formants move in straight lines with rounded ends (the amps, done elsewhere, ease in and out)
 		let track = |x: f32| {
 			let (e, v) = (TRACK_EASE, 1.0 / (1.0 - TRACK_EASE));
@@ -1004,6 +1028,14 @@ impl engine {
 		self.B1_reg  = self.B1_reg_src  * (1.0 - y) + self.B1_reg_trg  * y;
 		self.B2_reg  = self.B2_reg_src  * (1.0 - y) + self.B2_reg_trg  * y;
 		self.B3_reg  = self.B3_reg_src  * (1.0 - y) + self.B3_reg_trg  * y;
+
+		self.RD_reg += self.carry[0] * c;
+		self.F1_reg += self.carry[1] * c;
+		self.F2_reg += self.carry[2] * c;
+		self.F3_reg += self.carry[3] * c;
+		self.B1_reg += self.carry[4] * c;
+		self.B2_reg += self.carry[5] * c;
+		self.B3_reg += self.carry[6] * c;
 	}
 	fn update_amp_registers(&mut self, c: i32, l: i32) {
 		let y = if l > 0 { self.lin2smooth(((c - self.amp_start) as f32 / l as f32).clamp(0.0, 1.0)) } else { 0.0 };
@@ -1087,7 +1119,7 @@ impl engine {
 		let mut dist = self.marker_B - self.ab_at;
 		if dist < thirty_ms { dist = thirty_ms; }
 		self.slope = 1.0 / dist as f32;
-		self.interp = 0.0;
+		self.start_move();
 		self.f1_speed = 1.0;
 		// source (A)
 		self.RD_reg_src  = self.RD_reg;
@@ -1119,7 +1151,7 @@ impl engine {
 		}
 		if dist < thirty_ms { dist = thirty_ms; }
 		self.slope = 1.0 / dist as f32;
-		self.interp = 0.0;
+		self.start_move();
 		self.f1_speed = if self.f1_len > 0 { (dist as f32 / (self.f1_len + self.marker_BA).max(1) as f32).max(1.0) } else { 1.0 };
 
 		// set negative count so locus transition can be completed
@@ -2551,5 +2583,20 @@ mod tests {
 			let (mid, end) = (own[own.len() / 2].3, own[own.len() - 1].3);
 			assert!((mid - end).abs() <= 0.1 * (start - end).abs(), "phone {}: F2 {} -> {} at its middle, {} at its end", c, start, mid, end);
 		}
+	}
+
+	#[test]
+	fn formants_do_not_stop_dead() {
+		// "follower": the move into its short w was cut off at full speed, a click when that landed on a voicing pulse
+		let mut e = engine::new();
+		let mut f: Vec<[f32; 3]> = Vec::new();
+		for (seg, &(p, d)) in [(PAU, 50), (16, 102), (1, 139), (25, 104), (29, 106), (41, 53), (7, 114), (48, 80), (PAU, 50)].iter().enumerate() {
+			if e.load(p, d, p == 1, seg, seg == 1) {
+				while e.is_running() { e.sample(120.0); f.push([e.F1_reg, e.F2_reg, e.F3_reg]); }
+			}
+		}
+		let jump = |w: &[[f32; 3]], k: usize| (w[2][k] - 2.0 * w[1][k] + w[0][k]).abs();
+		let worst = f.windows(3).map(|w| jump(w, 0).max(jump(w, 1)).max(jump(w, 2))).fold(0.0, f32::max);
+		assert!(worst < 0.1, "a formant changed speed by {} Hz per sample in one sample", worst);
 	}
 }
