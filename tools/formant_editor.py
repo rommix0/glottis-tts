@@ -32,7 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(ROOT, 'src', '_vtbl.rs')
 PHONES = os.path.join(ROOT, 'phone_to_id.txt')
 RENDERS = os.path.join(ROOT, 'ab', 'editor')
-SYNTH = os.path.join(ROOT, 'target', 'release', 'tts_synth' + ('.exe' if sys.platform == 'win32' else ''))
+SYNTH = os.path.join(ROOT, 'target', 'release', 'examples', 'tts_demo' + ('.exe' if sys.platform == 'win32' else ''))
 SR = 22050	# synth rate, for the envelope preview
 
 COLS = [
@@ -756,7 +756,7 @@ class Editor(tk.Tk):
         threading.Thread(target=self.render_worker, args=(text, label), daemon=True).start()
 
     def render_worker(self, text, label):
-        cmd = ['cargo', 'run', '--release', '--quiet', '--', '--16bit', text]
+        cmd = ['cargo', 'run', '--release', '--quiet', '--example', 'tts_demo', '--', '--16bit', text]
         try:
             p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
             ok, log = p.returncode == 0, p.stderr + p.stdout
@@ -819,7 +819,7 @@ class Editor(tk.Tk):
             f.write(flat)
         try:
             if not os.path.exists(SYNTH):
-                subprocess.run(['cargo', 'build', '--release', '--quiet'], cwd=ROOT, capture_output=True)
+                subprocess.run(['cargo', 'build', '--release', '--quiet', '--example', 'tts_demo'], cwd=ROOT, capture_output=True)
             # run in the temp folder so its tts_demo.wav doesn't touch the project's
             p = subprocess.run([SYNTH, '--16bit', '--table', table] + say, cwd=d, capture_output=True, text=True)
             ok, log = p.returncode == 0, p.stderr + p.stdout
