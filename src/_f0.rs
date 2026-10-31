@@ -27,6 +27,7 @@ the contour is evaluated per sample from the synthesizer's position.
 
 */
 use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstruent, is_sonorant};
+use core::cell::Cell;
 use core::f32::consts::PI;
 use alloc::vec::Vec;
 
@@ -102,10 +103,21 @@ impl Shape {
 pub struct Contour {
 	targets: Vec<Target>,
 	bumps:   Vec<Bump>,
+	target_at: Cell<usize>,		// where the last hz_at found itself in targets
+	bump_at:   Cell<usize>,		// and in bumps
+}
+
+// the first item of v that before() says is not before the place sought, as partition_point gives; samples come in
+// order, so the answer for the last one usually still holds and is checked before searching
+fn find<T>(v: &[T], last: &Cell<usize>, before: impl Fn(&T) -> bool) -> usize {
+	let k = last.get().min(v.len());
+	let k = if (k == 0 || before(&v[k - 1])) && (k == v.len() || !before(&v[k])) { k } else { v.partition_point(before) };
+	last.set(k);
+	k
 }
 
 impl Contour {
-	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new() } }
+	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new(), target_at: Cell::new(0), bump_at: Cell::new(0) } }
 
 	pub fn targets_of(&self, seg: usize) -> Vec<Target> {
 		self.targets.iter().filter(|t| t.seg == seg).copied().collect()
@@ -264,14 +276,14 @@ impl Contour {
 
 	// the short offsets at a position, in semitones
 	fn bump_at(&self, seg: usize, frac: f32) -> f32 {
-		let k = self.bumps.partition_point(|b| b.seg < seg);
+		let k = find(&self.bumps, &self.bump_at, |b| b.seg < seg);
 		self.bumps[k..].iter().take_while(|b| b.seg == seg).map(|b| b.shape.at(b.age0 + frac * b.dur)).sum()
 	}
 
 	pub fn hz_at(&self, seg: usize, frac: f32) -> f32 {
 		let pos = seg as f32 + frac;
 		// order by segment first, so the end of one segment comes before the start of the next
-		let j = self.targets.partition_point(|t| (t.seg, t.frac) <= (seg, frac));
+		let j = find(&self.targets, &self.target_at, |t| (t.seg, t.frac) <= (seg, frac));
 		let st = match j {
 			_ if self.targets.is_empty() => 0.0,
 			_ if j == self.targets.len() => self.targets[j - 1].st,
@@ -287,7 +299,7 @@ impl Contour {
 				}
 			},
 		};
-		(REF_HZ * libm::powf(2.0, (st + self.bump_at(seg, frac)) / 12.0)).clamp(MIN_HZ, MAX_HZ)
+		(REF_HZ * libm::exp2f((st + self.bump_at(seg, frac)) / 12.0)).clamp(MIN_HZ, MAX_HZ)
 	}
 }
 
