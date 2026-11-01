@@ -9,16 +9,19 @@ the segment), in semitones from REF_HZ:
 	  starting a little lower
 	+ an accent peak on the stressed vowel of every content word, stepping
 	  down within the phrase and restarting at each phrase; a content word
-	  right after an accented one goes without, unless it ends the phrase
+	  right after an accented one goes without, unless it ends the phrase;
+	  the last accent peaks early in its vowel
 	+ a trough between accents that are far apart: a sag when they are
 	  fairly close, down to the baseline when further apart
 	+ phrase ends: a fall for statements, a rise for yes/no questions,
 	  a small rise at commas and a smaller one at minor breaks
+	+ exclamations: every accent and the final fall widened
 
 and short offsets on top of the targets:
 
-	+ microprosody: a sonorant or vowel after an obstruent starts raised,
-	  more and for longer after a voiceless one, and decays
+	+ microprosody: a sonorant or vowel after an obstruent starts raised
+	  after a voiceless one and lowered after a voiced one, and decays;
+	  high vowels rise a little over their middle
 	+ glottal dips: a fall into a word-final t before a consonant, and a
 	  low start to a stressed vowel that begins a content word, reached
 	  just after the vowel's start when a sonorant comes before it
@@ -47,15 +50,17 @@ const ACCENT_FRAC:          f32 = 0.55;
 const TROUGH_GAP_MS:        f32 = 250.0;
 const FINAL_FALL_ST:        f32 = -4.0;
 const EXCLAIM_BOOST_ST:     f32 = 2.0;
+const EXCLAIM_RANGE:        f32 = 1.4;		// an exclamation's accents and final fall, widened
 const QUESTION_RISE_ST:     f32 = 8.0;
 const LOW_ACCENT_ST:        f32 = -1.0;
 const LOW_ACCENT_FRAC:      f32 = 0.3;
+const NUCLEAR_FRAC:         f32 = 0.2;		// the last accent peaks early, so the final fall runs through its vowel
 const CONTINUATION_RISE_ST: f32 = 3.0;
 const MINOR_RISE_ST:        f32 = 1.5;		// at a minor break inside a long phrase
 const VOICELESS_BUMP_ST:    f32 = 0.6;		// microprosody after a voiceless obstruent, decaying over ..._MS
 const VOICELESS_BUMP_MS:    f32 = 50.0;
-const VOICED_BUMP_ST:       f32 = 0.3;		// ... and after a voiced one
-const VOICED_BUMP_MS:       f32 = 20.0;
+const VOICED_BUMP_ST:       f32 = -0.6;		// ... and lowered after a voiced one
+const VOICED_BUMP_MS:       f32 = 30.0;
 const BUMP_SPAN_MS:         f32 = 200.0;	// a bump is drawn over this long at most
 const T_DIP_ST:             f32 = 1.5;		// fall into a pre-glottalized word-final t, over T_DIP_MS before it
 const T_DIP_MS:             f32 = 40.0;
@@ -64,6 +69,7 @@ const ONSET_DIP_MS:         f32 = 60.0;
 const ONSET_LEAD_MS:        f32 = 40.0;		// after a voiced sound the vowel's slot opens on that sound's tail: fall over this first
 const TROUGH_FULL_MS:       f32 = 500.0;	// accents this far apart dip to the baseline between them, closer ones sag less
 const MERGE_MS:             f32 = 20.0;
+const HIGH_VOWEL_ST:        f32 = 0.7;		// high vowels rise this much over their middle
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tk { Start, Accent, Low, Trough, End }
@@ -86,6 +92,7 @@ enum Shape {
 	Fall  { st: f32, ms: f32 },		// 0 at age 0, falling to -st at ms, then held
 	Rise  { st: f32, ms: f32 },		// -st at age 0, back to 0 at ms
 	Vee   { st: f32, down: f32, up: f32 },	// 0 at age 0, -st at down, back to 0 up later
+	Hump  { st: f32, ms: f32 },		// 0 at age 0, st halfway through ms, 0 again at ms
 }
 
 impl Shape {
@@ -96,6 +103,7 @@ impl Shape {
 			Shape::Fall  { st, ms } => -st * (age / ms).min(1.0),
 			Shape::Rise  { st, ms } => -st * (1.0 - age / ms).max(0.0),
 			Shape::Vee   { st, down, up } => if age < down { -st * age / down } else { -st * (1.0 - (age - down) / up).max(0.0) },
+			Shape::Hump  { st, ms } => if age < ms { st * libm::sinf(PI * age / ms) } else { 0.0 },
 		}
 	}
 }
@@ -175,12 +183,17 @@ impl Contour {
 				if n_acc > 0 { h = (h * DOWNSTEP).max(ACCENT_FLOOR_ST); }
 				n_acc += 1;
 				let is_last = Some(n) == last_accent_seg && k == last_phrase;
-				let (frac, kind) = if is_last && utt.kind == Kind::YesNo { (LOW_ACCENT_FRAC, Tk::Low) } else { (ACCENT_FRAC, Tk::Accent) };
+				let (frac, kind) = match (is_last, utt.kind) {
+					(true, Kind::YesNo) => (LOW_ACCENT_FRAC, Tk::Low),
+					(true, _) => (NUCLEAR_FRAC, Tk::Accent),
+					_ => (ACCENT_FRAC, Tk::Accent),
+				};
 				let tp = time(n, frac);
 				let height = match kind {
 					Tk::Low => LOW_ACCENT_ST,
-					_ if is_last && utt.kind == Kind::Exclamation => h + EXCLAIM_BOOST_ST,
-					_ => h,
+					_ if utt.kind != Kind::Exclamation => h,
+					_ if is_last => (h + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE,
+					_ => h * EXCLAIM_RANGE,
 				};
 				if let Some((pi, pt, ph)) = prev_peak {
 					if tp - pt > TROUGH_GAP_MS {
@@ -205,6 +218,8 @@ impl Contour {
 				MINOR_RISE_ST
 			} else if utt.kind == Kind::YesNo {
 				QUESTION_RISE_ST
+			} else if utt.kind == Kind::Exclamation {
+				FINAL_FALL_ST * EXCLAIM_RANGE
 			} else {
 				FINAL_FALL_ST
 			};
@@ -268,6 +283,11 @@ impl Contour {
 				};
 				let end = (i..n).find(|&j| t0[j] - t0[i] >= span || !same_phrase(i, j)).unwrap_or(n);
 				draw(&mut bumps, i..end, t0[i], shape);
+			}
+
+			// ih iy uh uw: intrinsically a little higher
+			if matches!(p, 19 | 21 | 38 | 39) {
+				draw(&mut bumps, i..i + 1, t0[i], Shape::Hump { st: HIGH_VOWEL_ST, ms: s.dur_ms });
 			}
 		}
 		bumps.sort_by_key(|b| b.seg);
@@ -400,6 +420,33 @@ mod tests {
 	}
 
 	#[test]
+	fn the_last_accent_peaks_early() {
+		let (_, c) = utt(&[BAA, IT, DEE], &[(2, PERIOD)], "w");
+		let fracs: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.frac).collect();
+		assert_eq!(fracs, [ACCENT_FRAC, NUCLEAR_FRAC]);
+	}
+
+	#[test]
+	fn an_exclamation_widens_accents_and_the_fall() {
+		let (_, cs) = utt(&[BAA, IT, DEE], &[(2, PERIOD)], "w");
+		let (_, ce) = utt(&[BAA, IT, DEE], &[(2, BANG)], "w");
+		let rise = |c: &Contour, kind: Tk| c.targets.iter().find(|t| t.kind == kind).map(|t| t.st - t.base).unwrap();
+		assert!(rise(&ce, Tk::Accent) > rise(&cs, Tk::Accent) + 1.0);
+		assert!(rise(&ce, Tk::End) < rise(&cs, Tk::End) - 1.0);
+		assert!((rise(&ce, Tk::Accent) - EXCLAIM_RANGE * rise(&cs, Tk::Accent)).abs() < 0.01);
+		assert!((rise(&ce, Tk::End) - EXCLAIM_RANGE * rise(&cs, Tk::End)).abs() < 0.01);
+	}
+
+	#[test]
+	fn a_voiced_obstruent_lowers_the_next_onset_and_high_vowels_rise() {
+		// b 'aa, then d 'iy: aa starts low after b; iy, also after a voiced d, is still up at its middle
+		let (u, c) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
+		let nucleus = |w: usize| u.syls[u.words[w].syls.start].nucleus.unwrap();
+		assert!(c.bump_at(nucleus(0), 0.0) < -0.5);
+		assert!(c.bump_at(nucleus(1), 0.5) > 0.5);
+	}
+
+	#[test]
 	fn deaccents_a_content_word_after_an_accented_one() {
 		// b 'aa d 'iy g 'ow ih t m 'aa .: d 'iy follows an accent and is not last, so only it loses its accent
 		let (u, c) = utt(&[BAA, DEE, GO, IT, MA], &[(4, PERIOD)], "w");
@@ -446,7 +493,7 @@ mod tests {
 	fn exclamation_boosts_last_accent() {
 		let (_, c) = utt(&[BAA, DEE], &[(1, BANG)], "w");
 		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
-		assert!((h[1] - (4.8 + EXCLAIM_BOOST_ST)).abs() < 0.01);
+		assert!((h[1] - (4.8 + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE).abs() < 0.01);
 	}
 
 	#[test]
@@ -543,7 +590,9 @@ mod tests {
 		let (u, c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
 		let d = u.segs[2].dur_ms;
 		assert_eq!(c.bump_at(2, 0.0), 0.0);
-		assert!((c.bump_at(2, ONSET_LEAD_MS / d) + ONSET_DIP_ST).abs() < 0.01);
+		// ih is a high vowel, so its own rise rides on top
+		let high = Shape::Hump { st: HIGH_VOWEL_ST, ms: d }.at(ONSET_LEAD_MS);
+		assert!((c.bump_at(2, ONSET_LEAD_MS / d) - high + ONSET_DIP_ST).abs() < 0.01);
 		assert!(d > ONSET_LEAD_MS + ONSET_DIP_MS && c.bump_at(2, 1.0) == 0.0);
 		// "it" after a pause starts low
 		let (_, c) = offsets(&[CW, IH1, T, PERIOD]);
