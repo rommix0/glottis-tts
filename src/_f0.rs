@@ -346,7 +346,11 @@ mod tests {
 			texts.push(if i == 0 { first_text.to_string() } else { "w".to_string() });
 			for &(after, p) in ends { if after == i { toks.push(p); } }
 		}
-		let mut u = Utterance::build(&toks, &texts);
+		contour(Utterance::build(&toks, &texts))
+	}
+
+	// u timed at rate 1 and its pitch contour
+	fn contour(mut u: Utterance) -> (Utterance, Contour) {
 		crate::_dur::assign(&mut u, 1.0);
 		let stream: Vec<usize> = (0..u.segs.len()).collect();
 		let mut c = Contour::new();
@@ -462,10 +466,7 @@ mod tests {
 	fn minor_break_ends_with_a_small_rise() {
 		let mut u = Utterance::build(&[CW, 39, 15, CW, 42, 26, COMMA, CW, 48, 27, PERIOD], &["w".to_string(), "w".to_string(), "w".to_string()]);
 		u.phrases[0].end = Boundary::Minor;
-		crate::_dur::assign(&mut u, 1.0);
-		let stream: Vec<usize> = (0..u.segs.len()).collect();
-		let mut c = Contour::new();
-		c.add_utterance(&u, &stream);
+		let (u, c) = contour(u);
 		let end = u.words[1].segs.end - 1;
 		let t = c.targets.iter().find(|t| t.kind == Tk::End && t.seg == end).unwrap();
 		assert!((t.st - (t.base + MINOR_RISE_ST)).abs() < 0.01, "{} over {}", t.st, t.base);
@@ -549,12 +550,7 @@ mod tests {
 
 	fn offsets(toks: &[u8]) -> (Utterance, Contour) {
 		let words = toks.iter().filter(|&&t| t == CW || t == FW).count();
-		let mut u = Utterance::build(toks, &vec!["w".to_string(); words]);
-		crate::_dur::assign(&mut u, 1.0);
-		let stream: Vec<usize> = (0..u.segs.len()).collect();
-		let mut c = Contour::new();
-		c.add_utterance(&u, &stream);
-		(u, c)
+		contour(Utterance::build(toks, &vec!["w".to_string(); words]))
 	}
 
 	#[test]

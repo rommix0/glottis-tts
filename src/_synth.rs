@@ -1498,6 +1498,28 @@ mod tests {
 	// a register's gain back in dB, for the checks written in dB
 	fn db(g: f32) -> f32 { if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * g.log2() } }
 
+	// render phones (id, ms, stressed) as segments 0, 1, ..., handing each the engine and the sample it made
+	fn drive(phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
+		let mut e = engine::new();
+		for (seg, &(p, d, st)) in phones.iter().enumerate() {
+			if e.load(p, d, st, seg, true) {
+				while e.is_running() { let y = e.sample(120.0); each(&e, y); }
+			}
+		}
+	}
+
+	// the engine as phone `at` loads, after rendering the phones (id, ms, stressed) before it
+	fn loaded(phones: &[(u8, i32, bool)], at: u8) -> engine {
+		let mut e = engine::new();
+		for &(p, d, st) in phones {
+			if e.load(p, d, st, 0, true) {
+				if e.phn_c == at { break; }
+				while e.is_running() { e.sample(120.0); }
+			}
+		}
+		e
+	}
+
 	// render phones (id, ms) the way main.rs drives the engine
 	fn render(phones: &[(u8, i32)]) -> Vec<f32> {
 		let mut e = engine::new();
@@ -1519,13 +1541,7 @@ mod tests {
 
 	// formant targets (F1-F3 at A) of phone p lasting d ms, between two AA's
 	fn targets_for(p: u8, d: i32) -> [f32; 3] {
-		let mut e = engine::new();
-		for &(q, dd) in &[(1, 150), (p, d), (1, 150)] {
-			if e.load(q, dd, true, 0, true) {
-				if e.phn_c == p { break; }
-				while e.is_running() { e.sample(120.0); }
-			}
-		}
+		let e = loaded(&[(1, 150, true), (p, d, true), (1, 150, true)], p);
 		[e.F1_A_src, e.F2_A_src, e.F3_A_src]
 	}
 
@@ -1596,13 +1612,7 @@ mod tests {
 	#[test]
 	fn ramp_scales() {
 		// a short vowel still reaches its target before its own segment ends
-		let mut e = engine::new();
-		for &(p, d) in &[(1, 150), (6, 60), (1, 150)] {
-			if e.load(p, d, false, 0, true) {
-				if e.phn_c == 6 { break; }
-				while e.is_running() { e.sample(120.0); }
-			}
-		}
+		let e = loaded(&[(1, 150, false), (6, 60, false), (1, 150, false)], 6);
 		assert_eq!(e.phn_c, 6);
 		assert!(e.marker_A < e.marker_B, "ramp {} ends after the vowel {}", e.marker_A, e.marker_B);
 	}
@@ -1763,24 +1773,19 @@ mod tests {
 		// a formant that starts or stops moving at full speed in one sample clicks, most on the big F3 sweeps into and
 		// out of an r, so its speed changes by only a little from one sample to the next
 		for seq in [[(4u8, 132), (33, 122)], [(1, 150), (32, 90)], [(14, 140), (36, 100)]] {
-			let mut e = engine::new();
 			let (mut last, mut speed, mut worst) = (None::<[f32; 3]>, [0.0f32; 3], 0.0f32);
-			for &(p, d) in [(PAU, 50)].iter().chain(seq.iter()).chain([(1, 150), (48, 100), (0, 50)].iter()) {
-				if e.load(p, d, true, 0, true) {
-					while e.is_running() {
-						e.sample(120.0);
-						let f = [e.F1_reg, e.F2_reg, e.F3_reg];
-						if let Some(l) = last {
-							for k in 0..3 {
-								let s = f[k] - l[k];
-								worst = worst.max((s - speed[k]).abs());
-								speed[k] = s;
-							}
-						}
-						last = Some(f);
+			let phones: Vec<_> = [(PAU, 50)].iter().chain(seq.iter()).chain([(1, 150), (48, 100), (0, 50)].iter()).map(|&(p, d)| (p, d, true)).collect();
+			drive(&phones, |e, _| {
+				let f = [e.F1_reg, e.F2_reg, e.F3_reg];
+				if let Some(l) = last {
+					for k in 0..3 {
+						let s = f[k] - l[k];
+						worst = worst.max((s - speed[k]).abs());
+						speed[k] = s;
 					}
 				}
-			}
+				last = Some(f);
+			});
 			assert!(worst < 0.1, "{:?}: a formant's speed changes {} Hz per sample in one sample", seq, worst);
 		}
 	}
@@ -1790,18 +1795,12 @@ mod tests {
 		// a formant stepped in one sample makes a resonator click, so the lip release's low F2 and F3 come and go
 		// smoothly, even where they are far from the stop's own (a b after ay and before r)
 		for &(prev, stop, next) in &[(8u8, 9u8, 32u8), (21, 9, 21), (8, 31, 32), (26, 9, 24)] {
-			let mut e = engine::new();
 			let (mut f2, mut f3, mut worst) = (None::<f32>, 0.0f32, 0.0f32);
-			for &(p, d) in &[(PAU, 50), (prev, 120), (stop, 90), (next, 150), (48, 100), (0, 50)] {
-				if e.load(p, d, true, 0, true) {
-					while e.is_running() {
-						e.sample(120.0);
-						let (a, b) = (e.vtm_eng.F2, e.vtm_eng.F3);
-						if let Some(last) = f2 { worst = worst.max((a - last).abs()).max((b - f3).abs()); }
-						(f2, f3) = (Some(a), b);
-					}
-				}
-			}
+			drive(&[(PAU, 50, true), (prev, 120, true), (stop, 90, true), (next, 150, true), (48, 100, true), (0, 50, true)], |e, _| {
+				let (a, b) = (e.vtm_eng.F2, e.vtm_eng.F3);
+				if let Some(last) = f2 { worst = worst.max((a - last).abs()).max((b - f3).abs()); }
+				(f2, f3) = (Some(a), b);
+			});
 			assert!(worst < 50.0, "{}-{}-{}: F2/F3 jump {} Hz in one sample", prev, stop, next, worst);
 		}
 	}
@@ -1809,16 +1808,10 @@ mod tests {
 	#[test]
 	fn voice_bar_is_muffled() {
 		// the voice's Rd rises by VOICE_BAR_RD in a voiced closure and is back to the stop's own at the burst
-		let mut e = engine::new();
 		let mut rd = Vec::new();
-		for &(p, d) in &[(PAU, 50), (1, 150), (11, 80), (1, 150), (48, 100), (0, 50)] {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					if e.phn_c == 11 && e.counter >= 0 { rd.push((e.counter, e.marker_A, e.vtm_eng.RD - e.RD_reg)); }
-				}
-			}
-		}
+		drive(&[(PAU, 50, true), (1, 150, true), (11, 80, true), (1, 150, true), (48, 100, true), (0, 50, true)], |e, _| {
+			if e.phn_c == 11 && e.counter >= 0 { rd.push((e.counter, e.marker_A, e.vtm_eng.RD - e.RD_reg)); }
+		});
 		let at = |c: i32| rd.iter().find(|x| x.0 == c).unwrap();
 		assert!((at(ms(15.0)).2 - VOICE_BAR_RD).abs() < 1e-4, "Rd +{} 15 ms into the closure", at(ms(15.0)).2);
 		let burst = at(ms(15.0)).1;
@@ -1977,16 +1970,10 @@ mod tests {
 	#[test]
 	fn nasal_murmur_keeps_its_upper_formants() {
 		// AA-M-AA: the murmur's F2 region is not buried under a doubled low resonance
-		let mut e = engine::new();
 		let mut m: Vec<f32> = Vec::new();
-		for &(p, d) in &[(PAU, 50), (1, 150), (26, 120), (1, 150), (48, 100), (0, 50)] {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					let y = e.sample(120.0);
-					if e.phn_c == 26 && e.counter >= ms(40.0) && e.counter < ms(100.0) { m.push(y); }
-				}
-			}
-		}
+		drive(&[(PAU, 50, true), (1, 150, true), (26, 120, true), (1, 150, true), (48, 100, true), (0, 50, true)], |e, y| {
+			if e.phn_c == 26 && e.counter >= ms(40.0) && e.counter < ms(100.0) { m.push(y); }
+		});
 		let low = band_db(&m, 250.0);
 		let f2 = band_db(&m, 1100.0);
 		assert!(f2 - low > -35.0, "murmur F2 region {} dB under its low peak", low - f2);
@@ -1995,18 +1982,12 @@ mod tests {
 	#[test]
 	fn nasal_edges_are_fast() {
 		// AA-M-AA: the nasal coupling and the voicing level switch within NASAL_EDGE_MS of each boundary
-		let mut e = engine::new();
 		let mut tr: Vec<(u8, i32, f32, f32)> = Vec::new();		// (phone, counter, coupling, AV)
 		let mut f1: Vec<(u8, i32, f32, f32)> = Vec::new();		// (phone, counter, F1, the phone's F1 target)
-		for &(p, d) in &[(PAU, 50), (1, 150), (26, 120), (1, 150), (48, 100), (0, 50)] {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					tr.push((e.phn_c, e.counter, e.vtm_eng.NC, db(e.AV_reg)));
-					f1.push((e.phn_c, e.counter, e.F1_reg, e.F1_A_src));
-				}
-			}
-		}
+		drive(&[(PAU, 50, true), (1, 150, true), (26, 120, true), (1, 150, true), (48, 100, true), (0, 50, true)], |e, _| {
+			tr.push((e.phn_c, e.counter, e.vtm_eng.NC, db(e.AV_reg)));
+			f1.push((e.phn_c, e.counter, e.F1_reg, e.F1_A_src));
+		});
 		let at = |p: u8, c: i32| *tr.iter().find(|x| x.0 == p && x.1 == c).unwrap();
 		let edge = ms(NASAL_EDGE_MS);
 		assert!(at(26, edge).2 > 0.99, "coupling {} at {} ms into the nasal", at(26, edge).2, NASAL_EDGE_MS);
@@ -2024,13 +2005,7 @@ mod tests {
 
 	// (F2 at A, F2 at B, F1 at A) of phone c between vowels v1 and v2, all long
 	fn cons_targets(v1: u8, c: u8, v2: u8) -> (f32, f32, f32) {
-		let mut e = engine::new();
-		for &(q, d) in &[(PAU, 50), (v1, 1000), (c, 90), (v2, 1000)] {
-			if e.load(q, d, true, 0, true) {
-				if e.phn_c == c { break; }
-				while e.is_running() { e.sample(120.0); }
-			}
-		}
+		let e = loaded(&[(PAU, 50, true), (v1, 1000, true), (c, 90, true), (v2, 1000, true)], c);
 		(e.F2_A_src, e.F2_B_src, e.F1_A_src)
 	}
 
@@ -2066,32 +2041,20 @@ mod tests {
 	fn consonant_reaches_its_right_side() {
 		// the vowel after a consonant starts from the consonant's right-side F2
 		for &c in &[9u8, 11, 17, 43, 40, 12, 31, 26] {
-			let mut e = engine::new();
 			let (mut last, mut target) = (0.0f32, 0.0f32);
-			for &(q, d) in &[(PAU, 50), (6, 120), (c, 90), (21, 200), (48, 100), (0, 50)] {
-				if e.load(q, d, true, 0, true) {
-					while e.is_running() {
-						e.sample(120.0);
-						if e.phn_c == c { last = e.F2_reg; target = e.F2_B_src; }
-					}
-				}
-			}
+			drive(&[(PAU, 50, true), (6, 120, true), (c, 90, true), (21, 200, true), (48, 100, true), (0, 50, true)], |e, _| {
+				if e.phn_c == c { last = e.F2_reg; target = e.F2_B_src; }
+			});
 			assert!((last - target).abs() < 30.0, "phone {} ends at F2 {} not {}", c, last, target);
 		}
 	}
 
 	// the burst samples (and AF/AH during them) of stop c, sentence-initially before vowel v
 	fn burst_of(c: u8, v: u8) -> (Vec<f32>, Vec<(f32, f32)>) {
-		let mut e = engine::new();
 		let (mut x, mut amps) = (Vec::new(), Vec::new());
-		for &(p, d) in &[(PAU, 50), (c, 100), (v, 200), (48, 100), (0, 50)] {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					let y = e.sample(120.0);
-					if e.phn_c == c && e.counter >= e.marker_A { x.push(y); amps.push((db(e.AF_reg), db(e.AH_reg))); }
-				}
-			}
-		}
+		drive(&[(PAU, 50, true), (c, 100, true), (v, 200, true), (48, 100, true), (0, 50, true)], |e, y| {
+			if e.phn_c == c && e.counter >= e.marker_A { x.push(y); amps.push((db(e.AF_reg), db(e.AH_reg))); }
+		});
 		(x, amps)
 	}
 
@@ -2124,16 +2087,10 @@ mod tests {
 		for &c in &[17u8, 23] {
 			let mut f3 = Vec::new();
 			for &v in &[21u8, 1] {
-				let mut e2 = engine::new();
-				for &(q, d) in &[(PAU, 50), (6, 1000), (c, 90), (v, 1000)] {
-					if e2.load(q, d, true, 0, true) {
-						if e2.phn_c == c { break; }
-						while e2.is_running() { e2.sample(120.0); }
-					}
-				}
-				f3.push(e2.F3_B_src);
+				let got = loaded(&[(PAU, 50, true), (6, 1000, true), (c, 90, true), (v, 1000, true)], c).F3_B_src;
+				f3.push(got);
 				let want = VELAR_F3.1 + VELAR_F3.0 * f2(v);
-				assert!((e2.F3_B_src - want).abs() < 0.03 * want, "{} before {}: F3 {} not {}", c, v, e2.F3_B_src, want);
+				assert!((got - want).abs() < 0.03 * want, "{} before {}: F3 {} not {}", c, v, got, want);
 			}
 			assert!(f3[0] > f3[1] + 400.0, "{}: F3 {} before iy, {} before aa", c, f3[0], f3[1]);
 		}
@@ -2143,13 +2100,8 @@ mod tests {
 	fn labial_burst_leaves_no_transient() {
 		// the vowel after a lip release peaks no higher than after a tongue release
 		let peak = |c: u8| {
-			let mut e = engine::new();
 			let mut m = 0.0f32;
-			for &(p, d) in &[(PAU, 50), (c, 90), (8, 250), (48, 100), (0, 50)] {
-				if e.load(p, d, true, 0, true) {
-					while e.is_running() { m = m.max(e.sample(120.0).abs()); }
-				}
-			}
+			drive(&[(PAU, 50, true), (c, 90, true), (8, 250, true), (48, 100, true), (0, 50, true)], |_, y| m = m.max(y.abs()));
 			m
 		};
 		let (b, d) = (peak(9), peak(11));
@@ -2159,18 +2111,12 @@ mod tests {
 	#[test]
 	fn aspiration_damps_f1() {
 		// the open glottis damps F1 (and a little F2) during aspiration; the vowel's own part is back to normal
-		let mut e = engine::new();
 		let (mut asp, mut voiced) = (Vec::new(), Vec::new());
-		for &(p, d) in &[(PAU, 50), (23, 100), (1, 200), (48, 100), (0, 50)] {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					let wide = (e.vtm_eng.B1 - e.B1_reg, e.vtm_eng.B2 - e.B2_reg);
-					if e.phn_c == 1 && e.counter < 0 { asp.push(wide); }
-					if e.phn_c == 1 && e.counter > ms(ASP_OVERLAP_MS + 5.0) { voiced.push(wide); }
-				}
-			}
-		}
+		drive(&[(PAU, 50, true), (23, 100, true), (1, 200, true), (48, 100, true), (0, 50, true)], |e, _| {
+			let wide = (e.vtm_eng.B1 - e.B1_reg, e.vtm_eng.B2 - e.B2_reg);
+			if e.phn_c == 1 && e.counter < 0 { asp.push(wide); }
+			if e.phn_c == 1 && e.counter > ms(ASP_OVERLAP_MS + 5.0) { voiced.push(wide); }
+		});
 		assert!(!asp.is_empty());
 		assert!(asp.iter().all(|w| w.0 >= ASP_B1_WIDEN - 30.0 && w.1 >= ASP_B2_WIDEN - 20.0), "aspiration not damped: {:?}", asp[0]);
 		assert!(voiced.iter().all(|w| w.0 < ASP_B1_WIDEN / 2.0), "voiced vowel still damped: {:?}", voiced[0]);
@@ -2178,16 +2124,9 @@ mod tests {
 
 	// per sample (phone, counter, AF gain, AH dB) through phones
 	fn noise_track(phones: &[(u8, i32)]) -> Vec<(u8, i32, f32, f32)> {
-		let mut e = engine::new();
+		let phones: Vec<_> = phones.iter().chain([(48u8, 100), (0, 50)].iter()).map(|&(p, d)| (p, d, true)).collect();
 		let mut out = Vec::new();
-		for &(p, d) in phones.iter().chain([(48u8, 100), (0, 50)].iter()) {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					out.push((e.phn_c, e.counter, e.AF_reg, db(e.AH_reg)));
-				}
-			}
-		}
+		drive(&phones, |e, _| out.push((e.phn_c, e.counter, e.AF_reg, db(e.AH_reg))));
 		out
 	}
 
@@ -2224,16 +2163,10 @@ mod tests {
 		// out of d, F2 still moves 50 ms into a back vowel but has arrived in a front one (aa: ao and the other back
 		// vowels now glide toward their B targets)
 		let f2_at = |v: u8, at: f32| {
-			let mut e = engine::new();
 			let mut f = (0.0, 0.0);
-			for &(p, d) in &[(PAU, 50), (6, 100), (11, 80), (v, 250), (48, 100), (0, 50)] {
-				if e.load(p, d, true, 0, true) {
-					while e.is_running() {
-						e.sample(120.0);
-						if e.phn_c == v && e.counter == ms(at) { f = (e.F2_reg, e.F2_A_src); }
-					}
-				}
-			}
+			drive(&[(PAU, 50, true), (6, 100, true), (11, 80, true), (v, 250, true), (48, 100, true), (0, 50, true)], |e, _| {
+				if e.phn_c == v && e.counter == ms(at) { f = (e.F2_reg, e.F2_A_src); }
+			});
 			f
 		};
 		let (back, back_t) = f2_at(1, 50.0);
@@ -2247,16 +2180,7 @@ mod tests {
 	#[test]
 	fn aspiration_is_softer_before_front_vowels() {
 		// the aspiration a stop leaves for the next vowel drops with how front that vowel is
-		let asp_before = |v: u8| {
-			let mut e = engine::new();
-			for &(q, d) in &[(PAU, 50), (6, 100), (36, 101), (v, 1000)] {
-				if e.load(q, d, true, 0, true) {
-					if e.phn_c == 36 { break; }
-					while e.is_running() { e.sample(120.0); }
-				}
-			}
-			e.asp_db_next
-		};
+		let asp_before = |v: u8| loaded(&[(PAU, 50, true), (6, 100, true), (36, 101, true), (v, 1000, true)], 36).asp_db_next;
 		let gap = |v: u8| formant_tbl[v as usize * 31 + 6] as f32 - formant_tbl[v as usize * 31 + 5] as f32;
 		let want = ASP_FRONT_DB_PER_KHZ * (gap(21) - ASP_FRONT_FROM_HZ) / 1000.0;
 		assert!(want > 3.0);
@@ -2271,13 +2195,7 @@ mod tests {
 
 	// (F1 at A, F2 at A, F2 at B) of stressed vowel v between consonants c1 and c2
 	fn vowel_targets(c1: u8, v: u8, c2: u8) -> (f32, f32, f32) {
-		let mut e = engine::new();
-		for &(q, d, st) in &[(PAU, 50, false), (6, 100, false), (c1, 80, false), (v, 200, true), (c2, 80, false), (6, 100, false)] {
-			if e.load(q, d, st, 0, true) {
-				if e.phn_c == v { break; }
-				while e.is_running() { e.sample(120.0); }
-			}
-		}
+		let e = loaded(&[(PAU, 50, false), (6, 100, false), (c1, 80, false), (v, 200, true), (c2, 80, false), (6, 100, false)], v);
 		(e.F1_A_src, e.F2_A_src, e.F2_B_src)
 	}
 
@@ -2303,16 +2221,10 @@ mod tests {
 	#[test]
 	fn f1_opens_into_a_back_vowel_before_f2_arrives() {
 		// out of d, ao's F1 is at its target while F2 is still gliding
-		let mut e = engine::new();
 		let mut at = None;
-		for &(p, d) in &[(PAU, 50), (6, 100), (11, 80), (4, 250), (48, 100), (0, 50)] {
-			if e.load(p, d, true, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					if e.phn_c == 4 && e.counter == ms(BACK_F1_MS + 5.0) { at = Some((e.F1_reg, e.F1_A_src, e.F2_reg, e.F2_A_src)); }
-				}
-			}
-		}
+		drive(&[(PAU, 50, true), (6, 100, true), (11, 80, true), (4, 250, true), (48, 100, true), (0, 50, true)], |e, _| {
+			if e.phn_c == 4 && e.counter == ms(BACK_F1_MS + 5.0) { at = Some((e.F1_reg, e.F1_A_src, e.F2_reg, e.F2_A_src)); }
+		});
 		let (f1, f1_t, f2, f2_t) = at.unwrap();
 		assert!((f1 - f1_t).abs() < 0.03 * f1_t, "F1 {} not at {}", f1, f1_t);
 		assert!(f2 - f2_t > 50.0, "F2 {} already at {}", f2, f2_t);
@@ -2352,16 +2264,10 @@ mod tests {
 	fn gliding_back_vowel_starts_its_glide_on_time() {
 		// ow's own glide out of d keeps the timing it has out of b
 		let f1 = |c: u8| {
-			let mut e = engine::new();
 			let mut f = 0.0;
-			for &(p, d) in &[(PAU, 50), (6, 100), (c, 80), (29, 250), (48, 100), (0, 50)] {
-				if e.load(p, d, true, 0, true) {
-					while e.is_running() {
-						e.sample(120.0);
-						if e.phn_c == 29 && e.counter == ms(90.0) { f = e.F1_reg; }
-					}
-				}
-			}
+			drive(&[(PAU, 50, true), (6, 100, true), (c, 80, true), (29, 250, true), (48, 100, true), (0, 50, true)], |e, _| {
+				if e.phn_c == 29 && e.counter == ms(90.0) { f = e.F1_reg; }
+			});
 			f
 		};
 		let (b, d) = (f1(9), f1(11));
@@ -2404,13 +2310,7 @@ mod tests {
 	fn r_colors_only_the_end_of_a_vowel() {
 		// before r a vowel starts as before t and its F3 is RHOTIC_F3 lower only at its end, stressed or not
 		let f3 = |v: u8, c2: u8, st: bool| {
-			let mut e = engine::new();
-			for &(q, d, s) in &[(PAU, 50, false), (6, 100, false), (23, 80, false), (v, 200, st), (c2, 80, false), (6, 100, false)] {
-				if e.load(q, d, s, 0, true) {
-					if e.phn_c == v { break; }
-					while e.is_running() { e.sample(120.0); }
-				}
-			}
+			let e = loaded(&[(PAU, 50, false), (6, 100, false), (23, 80, false), (v, 200, st), (c2, 80, false), (6, 100, false)], v);
 			(e.F3_A_src, e.F3_B_src)
 		};
 		for &v in &[1u8, 13, 21, 4] {
@@ -2425,16 +2325,8 @@ mod tests {
 
 	// per sample (phone, F3, AV, the phone's own F3 A target) while rendering (phone, ms, stressed)
 	fn trace_f3(phones: &[(u8, i32, bool)]) -> Vec<(u8, f32, f32, f32)> {
-		let mut e = engine::new();
 		let mut out = Vec::new();
-		for &(p, d, st) in phones {
-			if e.load(p, d, st, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					out.push((e.phn_c, e.F3_reg, db(e.AV_reg), e.F3_A_src));
-				}
-			}
-		}
+		drive(phones, |e, _| out.push((e.phn_c, e.F3_reg, db(e.AV_reg), e.F3_A_src)));
 		out
 	}
 
@@ -2497,16 +2389,8 @@ mod tests {
 
 	// per sample (phone, counter, F1, F2, the F2 being moved toward) while rendering (phone, ms, stressed)
 	fn trace_moves(phones: &[(u8, i32, bool)]) -> Vec<(u8, i32, f32, f32, f32)> {
-		let mut e = engine::new();
 		let mut out = Vec::new();
-		for &(p, d, st) in phones {
-			if e.load(p, d, st, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					out.push((e.phn_c, e.counter, e.F1_reg, e.F2_reg, e.F2_reg_trg));
-				}
-			}
-		}
+		drive(phones, |e, _| out.push((e.phn_c, e.counter, e.F1_reg, e.F2_reg, e.F2_reg_trg)));
 		out
 	}
 
@@ -2540,16 +2424,8 @@ mod tests {
 
 	// per sample (phone, breath noise level, Rd) as the tract gets them, rendering (phone, ms, stressed)
 	fn trace_breath(phones: &[(u8, i32, bool)]) -> Vec<(u8, f32, f32)> {
-		let mut e = engine::new();
 		let mut out = Vec::new();
-		for &(p, d, st) in phones {
-			if e.load(p, d, st, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					out.push((e.phn_c, e.vtm_eng.BR, e.vtm_eng.RD));
-				}
-			}
-		}
+		drive(phones, |e, _| out.push((e.phn_c, e.vtm_eng.BR, e.vtm_eng.RD)));
 		out
 	}
 
@@ -2575,16 +2451,8 @@ mod tests {
 	#[test]
 	fn the_release_keeps_the_voice_rd() {
 		// the phrase-end release is the vowel's voice dying away, not a tenser one
-		let mut e = engine::new();
 		let mut out = Vec::new();
-		for &(p, d, st) in &[(PAU, 50, false), (23, 90, false), (1, 200, true), (48, 80, false), (0, 50, false)] {
-			if e.load(p, d, st, 0, true) {
-				while e.is_running() {
-					e.sample(120.0);
-					out.push((e.phn_c, e.RD_reg));
-				}
-			}
-		}
+		drive(&[(PAU, 50, false), (23, 90, false), (1, 200, true), (48, 80, false), (0, 50, false)], |e, _| out.push((e.phn_c, e.RD_reg)));
 		let end = out.iter().filter(|x| x.0 == 1).last().unwrap().1;
 		assert!(out.iter().filter(|x| x.0 == 48).all(|x| (x.1 - end).abs() < 0.02), "Rd falls from {} in the release", end);
 	}

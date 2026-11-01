@@ -895,20 +895,22 @@ mod tests {
 		assert!((20.0 * peak.log10()).abs() < 0.3, "Nyquist gain {} dB", 20.0 * peak.log10());
 	}
 
+	// 4000 samples of a steady vowel with these F1, F2, B1, B2 in voice
+	fn steady(voice: Voice, f1: f32, f2: f32, b1: f32, b2: f32) -> Vec<f32> {
+		let mut v = vtm::new();
+		v.set_voice(voice);
+		(0..4000).map(|_| {
+			v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
+			v.F1 = f1; v.F2 = f2; v.F3 = 2500.0;
+			v.B1 = b1; v.B2 = b2; v.B3 = 150.0;
+			v.step()
+		}).collect()
+	}
+
 	#[test]
 	fn cascade_bandwidths_have_a_floor() {
 		// a B1 or B2 asked below the floor renders exactly as the floor itself
-		let render = |b1: f32, b2: f32| {
-			let mut v = vtm::new();
-			let mut out = Vec::new();
-			for _ in 0..4000 {
-				v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
-				v.F1 = 600.0; v.F2 = 1500.0; v.F3 = 2500.0;
-				v.B1 = b1; v.B2 = b2; v.B3 = 150.0;
-				out.push(v.step());
-			}
-			out
-		};
+		let render = |b1: f32, b2: f32| steady(VOICES[0], 600.0, 1500.0, b1, b2);
 		let floor = render(CASC_MIN_BW, CASC_MIN_BW);
 		assert_eq!(render(20.0, 20.0), floor);
 		assert_ne!(render(CASC_MIN_BW + 200.0, CASC_MIN_BW), floor);
@@ -1034,18 +1036,7 @@ mod tests {
 	#[test]
 	fn voices_scale_the_formants_they_are_given() {
 		// a voice at 150% renders the table's formants as the table voice renders them 1.5 times higher
-		let render = |voice: Voice, f1: f32, f2: f32| {
-			let mut v = vtm::new();
-			v.set_voice(voice);
-			let mut out = Vec::new();
-			for _ in 0..4000 {
-				v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
-				v.F1 = f1; v.F2 = f2; v.F3 = 2500.0;
-				v.B1 = 80.0; v.B2 = 90.0; v.B3 = 150.0;
-				out.push(v.step());
-			}
-			out
-		};
+		let render = |voice: Voice, f1: f32, f2: f32| steady(voice, f1, f2, 80.0, 90.0);
 		let big = Voice { f1: 150.0, f2: 150.0, ..VOICES[0] };
 		assert_eq!(render(big, 400.0, 1000.0), render(VOICES[0], 600.0, 1500.0));
 		assert_ne!(render(big, 400.0, 1000.0), render(VOICES[0], 400.0, 1000.0));

@@ -546,6 +546,11 @@ mod tests {
 	// the normalizer's output with spaces collapsed
 	fn says(t: &str) -> String { normalize(t).split_whitespace().collect::<Vec<_>>().join(" ") }
 
+	// each text says its want somewhere
+	fn says_all(cases: &[(&str, &str)]) {
+		for &(t, want) in cases { assert!(says(t).contains(want), "{} -> {}", t, says(t)); }
+	}
+
 	#[test]
 	fn long_input_does_not_crash() {
 		let long = "Dr. Smith paid $45.50 for 3 km of road. ".repeat(250);
@@ -556,63 +561,49 @@ mod tests {
 
 	#[test]
 	fn units_follow_the_number() {
-		assert!(says("It is 100 km away.").contains("one hundred kilometers"), "{}", says("It is 100 km away."));
-		assert!(says("It is 1 km away.").contains("one kilometer away"), "{}", says("It is 1 km away."));
+		says_all(&[("It is 100 km away.", "one hundred kilometers"), ("It is 1 km away.", "one kilometer away")]);
 	}
 
 	#[test]
 	fn times_and_ranges() {
-		assert!(says("10:30 am").contains("ten thirty A m"), "{}", says("10:30 am"));
-		assert!(says("at 3pm").contains("three p m"), "{}", says("at 3pm"));
-		assert!(says("at 5 a.m. today").contains("five A m today"), "{}", says("at 5 a.m. today"));
-		assert!(says("pages 3-5").contains("three through five"), "{}", says("pages 3-5"));
+		says_all(&[("10:30 am", "ten thirty A m"), ("at 3pm", "three p m"), ("at 5 a.m. today", "five A m today"), ("pages 3-5", "three through five")]);
 	}
 
 	#[test]
 	fn years_and_decades() {
-		for (t, want) in [("In 1999 we", "nineteen ninety nine"), ("In 1905 we", "nineteen oh five"),
+		says_all(&[("In 1999 we", "nineteen ninety nine"), ("In 1905 we", "nineteen oh five"),
 			("In 1900 we", "nineteen hundred"), ("In 2026 we", "twenty twenty six"), ("In 2005 we", "two thousand five"),
 			("the 1990s", "nineteen nineties"), ("the '90s", "the nineties"), ("the 2000s", "two thousands"),
 			("the 1900s", "nineteen hundreds"), ("it cost $1999", "one thousand nine hundred ninety nine dollars"),
-			("1,999 people", "one thousand nine hundred ninety nine people")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("1,999 people", "one thousand nine hundred ninety nine people")]);
 	}
 
 	#[test]
 	fn dates_fractions_and_money() {
-		for (t, want) in [("on 10/23/2026.", "october twenty third , twenty twenty six"), ("on 1/5/99.", "january fifth , ninety nine"),
+		says_all(&[("on 10/23/2026.", "october twenty third , twenty twenty six"), ("on 1/5/99.", "january fifth , ninety nine"),
 			("add 1/2 cup", "one half cup"), ("add 3/4 cup", "three quarters cup"), ("a 5/8 inch", "five eighths inch"),
 			("add 1/3 cup", "one third cup"), ("It was $1.5 million.", "one point five million dollars"),
-			("and $20 billion.", "twenty billion dollars"), ("on Jan. 5 we", "january fifth we"), ("on March 3 we", "march third we")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("and $20 billion.", "twenty billion dollars"), ("on Jan. 5 we", "january fifth we"), ("on March 3 we", "march third we")]);
 	}
 
 	#[test]
 	fn abbreviations_keep_the_sentence_end() {
-		for (t, want) in [("He lives on Elm St.", "elm street ."), ("St. Louis is far.", "saint louis is far"),
-			("They met at the IEEE.", "i e e e ."), ("He got a Grade A.", "grade A ."), ("Visit www.example.com now.", "w w w dot example dot com")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+		says_all(&[("He lives on Elm St.", "elm street ."), ("St. Louis is far.", "saint louis is far"),
+			("They met at the IEEE.", "i e e e ."), ("He got a Grade A.", "grade A ."), ("Visit www.example.com now.", "w w w dot example dot com")]);
 	}
 
 	#[test]
 	fn capitals_numerals_and_quotes() {
-		for (t, want) in [("NASA and the", "nasa and the"), ("HELLO WORLD", "hello world"), ("a PAT. PEND. sign", "patent pending"), ("Chapter IV begins", "chapter four begins"),
+		says_all(&[("NASA and the", "nasa and the"), ("HELLO WORLD", "hello world"), ("a PAT. PEND. sign", "patent pending"), ("Chapter IV begins", "chapter four begins"),
 			("World War II ended", "world war two ended"), ("Henry VIII was", "henry the eighth was"), ("'Twas the night", "'twas the night"),
-			("'Hello,' she said", "hello , ' she said"), ("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"), ("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("'Hello,' she said", "hello , ' she said"), ("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"), ("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")]);
 	}
 
 	#[test]
 	fn times_web_addresses_and_versions() {
-		for (t, want) in [("at 10:05 today", "ten oh five today"), ("at 3:07 pm", "three oh seven p m"), ("Wow :0 there", "wow shocked face there"),
+		says_all(&[("at 10:05 today", "ten oh five today"), ("at 3:07 pm", "three oh seven p m"), ("Wow :0 there", "wow shocked face there"),
 			("Visit https://example.com/page now.", "visit example dot com slash page now"), ("See http://a.org.", "see a dot org ."),
-			("on 2026-10-23.", "october twenty third , twenty twenty six"), ("Version 2.0.1 is out.", "version two point oh point one is out")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("on 2026-10-23.", "october twenty third , twenty twenty six"), ("Version 2.0.1 is out.", "version two point oh point one is out")]);
 	}
 
 	#[test]
@@ -620,62 +611,51 @@ mod tests {
 		for t in ["background", "bookmark", "acme", "a kgb agent", "kganakga"] {
 			assert_eq!(says(t), t);
 		}
-		assert!(says("5 kg").contains("five kilograms"), "{}", says("5 kg"));
-		assert!(says("5kg of rice").contains("five kilograms of rice"), "{}", says("5kg of rice"));
+		says_all(&[("5 kg", "five kilograms"), ("5kg of rice", "five kilograms of rice")]);
 	}
 
 	#[test]
 	fn units_after_numbers() {
-		for (t, want) in [("5ft tall", "five feet tall"), ("1 ft", "one foot"), ("6ft2in", "six feet two inches"), ("2hrs later", "two hours later"),
+		says_all(&[("5ft tall", "five feet tall"), ("1 ft", "one foot"), ("6ft2in", "six feet two inches"), ("2hrs later", "two hours later"),
 			("30mins", "thirty minutes"), ("50mg dose", "fifty milligrams dose"), ("5kgs", "five kilograms"), ("2.5kg", "two point five kilograms"),
 			("12oz can", "twelve ounces can"), ("1 mph", "one mile per hour"), ("1,000 ft", "one thousand feet"), ("10ms delay", "ten milliseconds delay"),
 			("100km/h", "one hundred kilometers per hour"), ("1 km/h", "one kilometer per hour"), ("100 km/hr", "one hundred kilometers per hour"),
-			("6 in a row", "six in a row"), ("5 minutes", "five minutes"), ("3 secrets", "three secrets")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("6 in a row", "six in a row"), ("5 minutes", "five minutes"), ("3 secrets", "three secrets")]);
 	}
 
 	#[test]
 	fn pounds_euros_yen_and_heights() {
-		for (t, want) in [("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
+		says_all(&[("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
 			("\u{20ac}1.50 each", "one euro and fifty cents each"), ("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"), ("only \u{20ac}0.99 each", "only ninety nine cents each"),
 			("a \u{a3}2 million deal", "two million pounds deal"), ("He's 6'2\" tall.", "six foot two tall"), ("She is 5'10\" tall.", "five foot ten tall"),
 			("It costs 12.50 dollars.", "twelve dollars and fifty cents ."), ("only 1.01 euros", "one euro and one cent"), ("0.25 dollars", "twenty five cents"),
-			("3.00 dollars", "three dollars"), ("It rose 1.50 percent.", "one point five oh percent")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("3.00 dollars", "three dollars"), ("It rose 1.50 percent.", "one point five oh percent")]);
 	}
 
 	#[test]
 	fn a_closing_quote_keeps_its_punctuation() {
-		for (t, want) in [("She said \"Hello.\" and left.", "she said hello , and left ."), ("He asked \"Why?\" and left.", "why ? and left ."),
-			("She left. \"Bye,\" he said.", "she left . bye ,")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+		says_all(&[("She said \"Hello.\" and left.", "she said hello , and left ."), ("He asked \"Why?\" and left.", "why ? and left ."),
+			("She left. \"Bye,\" he said.", "she left . bye ,")]);
 		assert_eq!(says("He said \"Bye.\""), "he said bye .");
 	}
 
 	#[test]
 	fn years_by_context() {
-		for (t, want) in [("There were 2015 votes.", "two thousand fifteen votes"), ("In 2015 votes were cast", "twenty fifteen votes"),
+		says_all(&[("There were 2015 votes.", "two thousand fifteen votes"), ("In 2015 votes were cast", "twenty fifteen votes"),
 			("He was born in 1066.", "ten sixty six"), ("the 2020 election", "twenty twenty election"), ("1066 people came", "one thousand sixty six people"),
-			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"), ("1999 was good", "nineteen ninety nine was")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"), ("1999 was good", "nineteen ninety nine was")]);
 	}
 
 	#[test]
 	fn homographs_follow_their_context() {
 		// the capitalized spelling selects the dictionary's other reading
-		for (t, want) in [("I will record a record.", "i will RECORD a record ."), ("I object to that object.", "i object to that OBJECT"),
+		says_all(&[("I will record a record.", "i will RECORD a record ."), ("I object to that object.", "i object to that OBJECT"),
 			("We present a present.", "we present a PRESENT"), ("Please close it, it is close.", "please close it , it is CLOSE"),
 			("The subject is hard.", "the SUBJECT is hard"), ("Prices will increase after the increase.", "will increase after thee INCREASE"),
 			("They export grain.", "they EXPORT grain"), ("a separate room", "a SEPARATE room"), ("to separate them", "to separate them"),
 			("an estimate", "an ESTIMATE"), ("to estimate it", "to estimate it"), ("The project is late.", "the PROJECT is late"),
 			("They project growth.", "they project growth"), ("It affects us.", "it AFFECTS us"), ("He records it.", "he RECORDS it"),
-			("Objects fell.", "OBJECTS fell"), ("the objective", "thee objective")] {
-			assert!(says(t).contains(want), "{} -> {}", t, says(t));
-		}
+			("Objects fell.", "OBJECTS fell"), ("the objective", "thee objective")]);
 	}
 
 	#[test]
@@ -686,6 +666,6 @@ mod tests {
 			assert_eq!(says(t), want, "{}", t);
 		}
 		// a mark after a space is still read out
-		assert!(says("Is it ? yes").contains("question mark"), "{}", says("Is it ? yes"));
+		says_all(&[("Is it ? yes", "question mark")]);
 	}
 }
