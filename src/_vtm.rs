@@ -5,7 +5,7 @@
 #########################################
 
   author: anthony c. bartman (@rommix0)
-  date:   4/6/2026 - 10/24/2026
+  date:   4/6/2026 - 11/01/2026
 
 */
 
@@ -13,6 +13,7 @@
 use core::f32::consts::PI;
 use crate::_f0::REF_HZ;
 
+// master sample rate
 pub const m_sr: u32 = 22050;
 
 // soft clip default
@@ -42,8 +43,10 @@ const FRIC_LP_HZ: f32 = 4500.0;
 
 // narrowest F1/F2 bandwidth (Hz) the cascade uses
 const CASC_MIN_BW: f32 = 60.0;
+
 // amplitudes in dB are relative to this full scale
 const G_MAX: f32 = 87.0;
+
 // gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6), every 6 dB halving it
 pub const DB_GAIN: [f32; 88] = [
 	4.3158372e-05, 4.8443635e-05, 5.437614e-05, 6.1035156e-05, 6.8509646e-05, 7.689948e-05, 8.6316744e-05, 9.688727e-05,
@@ -58,6 +61,7 @@ pub const DB_GAIN: [f32; 88] = [
 	0.17677669, 0.19842513, 0.22272468, 0.25, 0.2806155, 0.31498027, 0.35355338, 0.39685026,
 	0.44544935, 0.5, 0.561231, 0.62996054, 0.70710677, 0.7937005, 0.8908987, 1.0,
 ];
+
 // formants closer than MIN_D (Hz) get their bandwidths widened, by up to 1 + MUL_B times when they meet
 const MIN_D: f32 = 350.0;
 const MUL_B: f32 = 2.5;
@@ -73,6 +77,7 @@ const FRIC_MOD: f32 = 1.0;
 // makeup gain for the parallel branch (frication)
 const PARR_GAIN: f32 = 2.5;
 
+// init constants and nasal murmur
 const RA_REF:   f32 = 3.8;
 const F1_INIT:  f32 = 500.0;
 const B1_INIT:  f32 = 60.0;
@@ -97,7 +102,6 @@ const B10_INIT: f32 = 4750.0;
 const FN_INIT: f32 = 250.0;
 const BN_INIT: f32 = 100.0;
 const BN_MURMUR: f32 = 200.0;
-// the nasal pole's frequency (Hz) in a nasal consonant's murmur
 const FN_MURMUR: f32 = 320.0;
 
 // highest frequency a scaled formant may reach, as a share of the sample rate
@@ -644,7 +648,7 @@ impl vtm {
 			FR8      : resonator::new(F8_INIT,  B8_INIT,  false),
 			FR9      : resonator::new(F9_INIT,  B9_INIT,  false),
 			FR10     : resonator::new(F10_INIT, B10_INIT, false),
-			
+
 			// past sample for lip radiation filter
 			xp1: 0.0,
 
@@ -654,11 +658,11 @@ impl vtm {
 			fric_y1: 0.0,
 			voice: VOICES[0],
 			vgain: 1.0,
-			fric_a: libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
+			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
 			shelf_a: libm::expf(-2.0 * PI * LOW_SHELF_HZ / m_sr as f32),
 			shelf_g: libm::powf(10.0, LOW_SHELF_DB / 20.0) - 1.0,
-			lip_d: libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
-			out_g: libm::powf(10.0, OUT_DB / 20.0),
+			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
+			out_g:   libm::powf(10.0, OUT_DB / 20.0),
 		};
 		// voice 0 in full: its jitter and shimmer live in the glottal source, which only set_voice reaches
 		tract.set_voice(VOICES[0]);
@@ -685,8 +689,8 @@ impl vtm {
 		self.FR10 = resonator::new(f(F10_INIT), B10_INIT, false);
 	}
 	fn apply_voice(&mut self) {
-		// scale this sample's pitch, formants and source by the voice profile; like fix_bw, this relies on _synth
-		// setting them again every sample
+		// scale this sample's pitch, formants and source by the voice profile
+		// like fix_bw, this relies on _synth setting them again every sample
 		let v = self.voice;
 		let top = F_MAX_SR * m_sr as f32;
 		if v.range != 100.0 {

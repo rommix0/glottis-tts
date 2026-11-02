@@ -14,27 +14,13 @@ use alloc::{string::String, vec, vec::Vec};
 // silent pause phone
 pub const PAU: u8 = 56;
 
-// phone classes (phone ids as in phone_to_id.txt)
-pub fn is_vowel(p: u8) -> bool {
-	matches!(p, 1..=8 | 13..=15 | 19..=21 | 29 | 30 | 38 | 39 | 48 | 49)
-}
-pub fn is_stop(p: u8) -> bool {
-	matches!(p, 9 | 11 | 17 | 23 | 31 | 36 | 47)
-}
-pub fn is_fricative(p: u8) -> bool {
-	// affricates count as fricatives here
-	matches!(p, 10 | 12 | 16 | 18 | 22 | 34 | 35 | 37 | 40 | 43 | 44)
-}
-pub fn is_voiced(p: u8) -> bool {
-	is_vowel(p) || matches!(p, 9 | 11 | 12 | 17 | 22 | 24..=28 | 32 | 33 | 40..=44 | 47)
-}
-pub fn is_obstruent(p: u8) -> bool {
-	is_stop(p) || is_fricative(p)
-}
-pub fn is_sonorant(p: u8) -> bool {
-	// vowels, nasals, liquids and glides
-	is_vowel(p) || matches!(p, 24..=28 | 32 | 33 | 41 | 42)
-}
+// phone classes
+pub fn is_vowel(p: u8)     -> bool { matches!(p, 1..=8 | 13..=15 | 19..=21 | 29 | 30 | 38 | 39 | 48 | 49) }
+pub fn is_stop(p: u8)      -> bool { matches!(p, 9 | 11 | 17 | 23 | 31 | 36 | 47) }
+pub fn is_fricative(p: u8) -> bool { matches!(p, 10 | 12 | 16 | 18 | 22 | 34 | 35 | 37 | 40 | 43 | 44) }
+pub fn is_voiced(p: u8)    -> bool { is_vowel(p) || matches!(p, 9 | 11 | 12 | 17 | 22 | 24..=28 | 32 | 33 | 40..=44 | 47) }
+pub fn is_obstruent(p: u8) -> bool { is_stop(p) || is_fricative(p) }
+pub fn is_sonorant(p: u8)  -> bool { is_vowel(p) || matches!(p, 24..=28 | 32 | 33 | 41 | 42) }
 
 // the glide a vowel ends on: w after ow uw aw, y after iy ey ay oy
 pub fn offglide(p: u8) -> Option<u8> {
@@ -43,9 +29,9 @@ pub fn offglide(p: u8) -> Option<u8> {
 
 // legal word onsets, used to split consonants between syllables
 fn is_legal_onset(c: &[u8]) -> bool {
-	const P: u8 = 31; const B: u8 = 9; const T: u8 = 36; const D: u8 = 11; const K: u8 = 23; const G: u8 = 17;
+	const P: u8 = 31; const B: u8 = 9;  const T: u8 = 36;  const D: u8 = 11; const K: u8 = 23;  const G: u8 = 17;
 	const F: u8 = 16; const V: u8 = 40; const TH: u8 = 37; const S: u8 = 34; const SH: u8 = 35; const HH: u8 = 18;
-	const M: u8 = 26; const N: u8 = 27; const L: u8 = 24; const R: u8 = 32; const W: u8 = 41; const Y: u8 = 42;
+	const M: u8 = 26; const N: u8 = 27; const L: u8 = 24;  const R: u8 = 32; const W: u8 = 41;  const Y: u8 = 42;
 	match c {
 		[] => true,
 		[x] => !is_vowel(*x) && !matches!(*x, 25 | 28 | 33),		// not lx, ng, rx
@@ -110,7 +96,6 @@ const BREAK_BEFORE: [&str; 23] = ["and", "but", "or", "nor", "so", "yet", "becau
 const PREPOSITIONS: [&str; 31] = ["in", "on", "at", "by", "near", "over", "under", "after", "before", "with", "without", "from",
 	"into", "onto", "through", "during", "across", "about", "against", "along", "among", "around", "behind", "below",
 	"beside", "between", "beyond", "toward", "towards", "upon", "within"];
-
 const WH_WORDS: [&str; 9] = ["who", "what", "when", "where", "why", "how", "which", "whose", "whom"];
 
 impl Utterance {
@@ -127,14 +112,19 @@ impl Utterance {
 					u.drop_empty_word();
 					let text = texts.get(text_i).cloned().unwrap_or_default();
 					text_i += 1;
-					let n = u.segs.len();
+					let n  = u.segs.len();
 					let ns = u.syls.len();
 					u.words.push(Word { segs: n..n, syls: ns..ns, function: pa == 55, text, phrase: u.phrases.len() });
 				},
 				51..=54 => {
 					u.close_word();
 					u.drop_empty_word();
-					let end = match pa { 51 => Boundary::Comma, 52 => Boundary::Period, 53 => Boundary::Question, _ => Boundary::Exclaim };
+					let end = match pa {
+						51 => Boundary::Comma,
+						52 => Boundary::Period,
+						53 => Boundary::Question,
+						_  => Boundary::Exclaim
+					};
 					if u.words.len() > phrase_start {
 						u.phrases.push(Phrase { words: phrase_start..u.words.len(), end });
 						phrase_start = u.words.len();

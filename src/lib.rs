@@ -27,21 +27,19 @@ use _utils::cbuf;
 use _dread::dictreader;
 use _utt::{Utterance, Boundary, PAU};
 
-// samples per second (mono)
+// samples per second
 pub const SAMPLE_RATE: u32 = _vtm::m_sr;
 
-// where the application takes the speech, one signed 16-bit sample at a time; it may wait (to keep pace with an audio
-// device, say), and its error ends the synthesis
+// where the application takes the speech, one signed 16-bit sample at a time; it may wait
+// (to keep pace with an audio device), and its error ends the synthesis
 pub trait WriteSample {
 	type Error: core::error::Error;
-
 	fn write_sample(&mut self, sample: i16) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
 // so the application can lend its writer and keep it afterwards
 impl<W: WriteSample> WriteSample for &mut W {
 	type Error = W::Error;
-
 	fn write_sample(&mut self, sample: i16) -> impl Future<Output = Result<(), Self::Error>> {
 		(**self).write_sample(sample)
 	}
@@ -64,16 +62,12 @@ pub trait Out {
 }
 
 // a float sample as a signed 16-bit one
-pub fn to_i16(x: f32) -> i16 {
-	libm::roundf(x.clamp(-1.0, 1.0) * 32767.0) as i16
-}
+pub fn to_i16(x: f32) -> i16 { libm::roundf(x.clamp(-1.0, 1.0) * 32767.0) as i16 }
 
 // a WriteSample as an Out
 struct Pcm<W>(W);
-
 impl<W: WriteSample> Out for Pcm<W> {
 	type Error = W::Error;
-
 	async fn sample(&mut self, x: f32, _seg: usize) -> Result<(), W::Error> {
 		self.0.write_sample(to_i16(x)).await
 	}
@@ -249,10 +243,9 @@ impl Speaker {
 
 	// synthesize text, sentence by sentence; finish plays out the end
 	pub async fn speak<O: Out>(&mut self, text: &str, out: &mut O) -> Result<(), O::Error> {
-		let mut buf  = cbuf::new();				// text stream buffer
-		let mut wbuf = cbuf::new();				// word buffer
-
-		let mut dict_reader = dictreader::new();
+		let mut buf  = cbuf::new();					// text stream buffer
+		let mut wbuf = cbuf::new();					// word buffer
+		let mut dict_reader = dictreader::new();	// dictionary reader
 
 		// read in text stream into input ring buffer
 		buf.write(0x20);
@@ -260,15 +253,16 @@ impl Speaker {
 		buf.write(0x20);
 		buf.write(0x00);
 
+		// initialize the text normalizer engine
 		let mut text_engine  = _text::engine::new();
 
 		// current sentence: phone tokens and the text of each word
 		let mut tokens: Vec<u8>      = Vec::new();
 		let mut texts:  Vec<String>  = Vec::new();
 
-		let mut pout: u8;
-		let mut cc: u8;
-		let mut cin: u8;
+		let mut pout: u8;		// phoneme out
+		let mut cc: u8;			// normalized text character
+		let mut cin: u8;		// read in character for dictionary searcher
 
 		// proceed with the text normalizer/LTS pipeline
 		while buf.is_not_empty() {
@@ -320,6 +314,7 @@ impl Speaker {
 						for &b in word_text.as_bytes().iter().chain(core::iter::once(&0u8)) {
 							let code = _lts::letter_code(b);
 							if code != 0 { run.push(code); continue; }
+
 							// a run of letters ends: say it, then the punctuation that ended it
 							if !run.is_empty() {
 								let classes = _lts::word(&run);

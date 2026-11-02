@@ -47,9 +47,7 @@ impl cbuf {
 	}
 	fn dequeue(&mut self) -> u8 {
 		let mut output: u8 = 0x20;
-		if self.is_not_empty() {
-			output = self.buffer[self.tail as usize];
-		}
+		if self.is_not_empty() { output = self.buffer[self.tail as usize]; }
 		//println!("dequeue: t: {}, h: {}", self.tail, self.head);
 		output
 	}
@@ -83,8 +81,8 @@ impl cbuf {
 pub fn PHNIDToPhoneme(x: u8) -> (u8, u8, u8, u8) {
 	let mut stress_a: u8 = 0;
 	let mut stress_b: u8 = 0;
-	let phone_a:  u8;
 	let mut phone_b:  u8 = 0;
+	let phone_a: u8;
 	match x {
 		0 => {
 			// "aa
@@ -529,4 +527,3 @@ pub fn PHNIDToPhoneme(x: u8) -> (u8, u8, u8, u8) {
 	}
 	(phone_a, phone_b, stress_a, stress_b)
 }
-

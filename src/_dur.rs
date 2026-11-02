@@ -89,7 +89,11 @@ pub fn phone_dur(p: u8) -> PhoneDur {
 }
 
 pub fn pause_after(end: Boundary, rate: f32) -> f32 {
-	let ms = match end { Boundary::Comma => COMMA_PAUSE_MS, Boundary::Minor => MINOR_PAUSE_MS, _ => SENTENCE_PAUSE_MS };
+	let ms = match end {
+		Boundary::Comma => COMMA_PAUSE_MS,
+		Boundary::Minor => MINOR_PAUSE_MS,
+		_ => SENTENCE_PAUSE_MS
+	};
 	ms / rate
 }
 

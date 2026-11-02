@@ -47,8 +47,8 @@ fn features(codes: &[u8], x: usize, hist: [u8; 2], ahead: Option<&[u8]>) -> [u8;
 	f
 }
 
-// phone classes for a word given as letter codes: silent letters dropped, a class repeated on the next letter
-// played once
+// phone classes for a word given as letter codes: silent letters dropped,
+// a class repeated on the next letter played once
 pub fn word(codes: &[u8]) -> Vec<u8> {
 	let n = codes.len();
 	let mut ahead = Vec::with_capacity(n);

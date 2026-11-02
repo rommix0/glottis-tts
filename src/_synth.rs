@@ -2,130 +2,165 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-10/23/2026          |
+| DATE:   8/11/2026-11/01/2026          |
 ---------------------------------------*/
-
 
 use crate::_vtm::{vtm, Voice, DB_GAIN};
 use crate::_vtm::m_sr;
 use crate::_vtbl::formant_tbl;
 use crate::_utt::PAU;
 
-const two_ms:    i32 = (m_sr as f32 * 0.002) as i32;
-const five_ms:   i32 = (m_sr as f32 * 0.005) as i32;
-const ten_ms:    i32 = (m_sr as f32 * 0.010) as i32;
-const twenty_ms: i32 = (m_sr as f32 * 0.020) as i32;
-const thirty_ms: i32 = (m_sr as f32 * 0.030) as i32;
-const forty_ms:  i32 = (m_sr as f32 * 0.040) as i32;
-const fifty_ms:  i32 = (m_sr as f32 * 0.050) as i32;
-const sixty_ms:  i32 = (m_sr as f32 * 0.060) as i32;
+// pre-calculated millisecond constants for slopes
+const two_ms:     i32 = (m_sr as f32 * 0.002) as i32;
+const five_ms:    i32 = (m_sr as f32 * 0.005) as i32;
+const ten_ms:     i32 = (m_sr as f32 * 0.010) as i32;
+const twenty_ms:  i32 = (m_sr as f32 * 0.020) as i32;
+const thirty_ms:  i32 = (m_sr as f32 * 0.030) as i32;
+const forty_ms:   i32 = (m_sr as f32 * 0.040) as i32;
+const fifty_ms:   i32 = (m_sr as f32 * 0.050) as i32;
+const sixty_ms:   i32 = (m_sr as f32 * 0.060) as i32;
 const fifteen_ms: i32 = (m_sr as f32 * 0.015) as i32;
-const eighty_ms: i32 = (m_sr as f32 * 0.080) as i32;
+const eighty_ms:  i32 = (m_sr as f32 * 0.080) as i32;
 
-// per-sample fader steps: master fader back in 2 ms, glottalizer 10 ms, phrase-final fade 50 ms
-const optime:    f32 = 1.0 / two_ms   as f32;
-const glot_time: f32 = 1.0 / ten_ms   as f32;
-const end_time:  f32 = 1.0 / fifty_ms as f32;
+// per-sample fader steps
+const optime:    f32 = 1.0 / two_ms   as f32;		// master fader
+const glot_time: f32 = 1.0 / ten_ms   as f32;		// glottalizer
+const end_time:  f32 = 1.0 / fifty_ms as f32;		// phrase-final
 
 // shortest plosive closure before the burst
 const min_closure: i32 = thirty_ms;
 
-// plosive release by place (labial, alveolar, velar); the burst falls BURST_DECAY_DB over its length
+// plosive release by place (labial, alveolar, velar)
+// the burst falls BURST_DECAY_DB over its length
 const BURST_MS: [[f32; 3]; 2] = [[5.0, 15.0, 25.0], [5.0, 10.0, 20.0]];		// voiceless, voiced
 const ASP_MS: [f32; 3] = [50.0, 55.0, 50.0];
 const BURST_DECAY_DB: f32 = 12.0;
+
 // affricate frication after the closure (voiceless, voiced), and its fall
 const AFFRIC_MS: [f32; 2] = [55.0, 40.0];
 const AFFRIC_DECAY_DB: f32 = 6.0;
+
 // plosive burst trims (not affricates): overall, before an unstressed vowel, next to a sibilant
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
 const BURST_SIBILANT_DB: f32 = -6.0;
+
 // share of each formant move spent easing in and out: one starting or stopping at full speed clicks
 const TRACK_EASE: f32 = 0.1;
+
 // a move cut off by the next one hands its speed on, fading over this long, instead of stopping dead
 const CARRY_MS: f32 = 10.0;
+
 // a burst into a vowel or sonorant duller than an open vowel is cut by this share of 40 log10(F1 * F2 / RELEASE_REF)
 const RELEASE_FOLLOW: f32 = 0.5;
 const RELEASE_REF: f32 = 600.0 * 1500.0;
+
 // aspiration takes the larger of the front-vowel cut and this share of the same difference
 const ASP_FOLLOW: f32 = 0.5;
+
 // lip release (AH for p, b): noise in front of the tract, so F2 and F3 stay under these, eased over LIP_RAMP_MS
 const LABIAL_BURST_AH: [f32; 2] = [24.0, 30.0];
 const LABIAL_BURST_F2: f32 = 1100.0;
 const LABIAL_BURST_F3: f32 = 2300.0;
 const LIP_RAMP_MS: f32 = 5.0;
+
 // an unreleased stop plays this share of its duration, as closure merging with the next one
 const UNRELEASED_SHARE: f32 = 0.5;
+
 // fricative crossfades with a vowel or sonorant, centred on the boundary: out of the fricative, then into it
 const SIB_RAMP_MS: f32 = 40.0;
 const FRIC_RAMP_MS: f32 = 40.0;
 const SIB_ENTRY_MS: f32 = 60.0;
 const FRIC_ENTRY_MS: f32 = 70.0;
+
 // fricative noise rises and falls over this long next to silence or the phrase-final release
 const FRIC_SILENCE_MS: f32 = 70.0;
+
 // two different fricatives in a row dip at the switch, so they don't run together into one hiss
 const FRIC_DIP_DB: f32 = 10.0;
 const FRIC_DIP_MS: f32 = 30.0;
+
 // a stressed word-initial vowel after a vowel starts with a glottal catch: a voice dip centred on the join
 const GLOTTAL_DIP_DB: f32 = 24.0;
 const GLOTTAL_DIP_MS: f32 = 40.0;
+
 // nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before sharp noise
 const NASAL_GAP_MS: f32 = 25.0;
+
 // a nasal after an unstressed vowel is quieter, so it stays under that weaker vowel ("-ing", "-en")
 const NASAL_AFTER_UNSTRESSED_DB: f32 = 6.0;
+
 // a nasal's voicing and nasal coupling switch within this long at its closure and release
 const NASAL_EDGE_MS: f32 = 15.0;
+
 // tongue consonant into a back vowel: the vowel reaches its formants this long after the release
 const BACK_TRANSITION_MS: f32 = 80.0;
+
 // a vowel's F3 drops this much at its end before an r
 const RHOTIC_F3: f32 = 200.0;
+
 // breath noise, and the extra breath and Rd as the voice dies at a phrase end, reached BREATH_RAMP_MS into the release
 const BREATH_DB: f32 = 6.0;
 const BREATH_END_DB: f32 = 12.0;
 const BREATH_END_RD: f32 = 0.3;
 const BREATH_RAMP_MS: f32 = 60.0;
+
 // longest move out of a vowel into the next phone
 const VOWEL_EXIT_MS: f32 = 50.0;
+
 // out of a vowel an r reaches its formants within this long
 const R_ONSET_MS: f32 = 50.0;
+
 // while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
+
 // a back vowel whose own targets move this much (F1 or F2) starts that glide on time, not after the slow F2
 const GLIDE_HZ: f32 = 100.0;
+
 // a consonant's F1 follows the next vowel by this share of its F1 off F1_FOLLOW_REF, never under F1_FOLLOW_MIN
 const F1_FOLLOW: f32 = 0.5;
 const F1_FOLLOW_REF: f32 = 500.0;
 const F1_FOLLOW_MIN: f32 = 180.0;
+
 // front vowels pull an alveolar's F2 locus up but back vowels don't pull it down: a lower vowel F2 counts as this
 const ALVEOLAR_F2_FLOOR: f32 = 1500.0;
+
 // a fricative's voicing switches within this long at a vowel or sonorant, though its noise crossfades longer
 const VOICE_SWITCH_MS: f32 = 10.0;
+
 // the vowel after a nasal reaches its formants this long after the release
 const NASAL_RELEASE_MS: f32 = 30.0;
+
 // a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over NASAL_ANTIC_MS before it and NASAL_CARRY_MS after
 const NASAL_VOWEL_K: f32 = 0.3;
 const NASAL_ANTIC_MS: f32 = 80.0;
 const NASAL_CARRY_MS: f32 = 40.0;
+
 // aspiration (AH by place) and its share before an unstressed vowel or a sonorant (none after a same-word sibilant)
 const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.8;
+
 // after aspiration the voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it
 const VOICE_ONSET_MS: f32 = 10.0;
 const ASP_OVERLAP_MS: f32 = 20.0;
-// an l or r after an aspirated p, t or k in its word starts voiceless: its voice comes in, and the aspiration fades,
-// over this share of it
+
+// an l or r after an aspirated p, t or k in its word starts voiceless:
+// its voice comes in, and the aspiration fades, over this share of it
 const LIQUID_DEVOICE: f32 = 0.8;
+
 // aspiration is loud against a close front vowel: cut per kHz of the vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
 const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
 const ASP_FRONT_FROM_HZ: f32 = 700.0;
+
 // h: breath level (AH) before a vowel, cut like aspiration before front vowels, crossfading with the vowel's voicing
 const H_DB: f32 = 12.0;
 const H_EDGE_MS: f32 = 20.0;
+
 // the open glottis damps F1 and F2 during aspiration: bandwidth added, fading out with it
 const ASP_B1_WIDEN: f32 = 400.0;
 const ASP_B2_WIDEN: f32 = 70.0;
+
 // voice bar in a voiced closure: it fades over the closure, muffled by Rd rising over its first 10 ms
 const VOICE_BAR_FADE_DB: f32 = 6.0;
 const VOICE_BAR_RD: f32 = 1.0;
@@ -134,13 +169,8 @@ const VOICE_BAR_RD: f32 = 1.0;
 const ramp_share: f32 = 0.6;
 
 // vowel reduction: how far a vowel of d ms gets from neutral toward its target (0..1)
-const tau_f1: f32 = 40.0;
-const tau_f2: f32 = 40.0;
-const tau_f3: f32 = 40.0;
-
-fn reduce_k(d_ms: f32, tau: f32) -> f32 {
-	1.0 - libm::expf(-d_ms / tau)
-}
+const tau_vwl: f32 = 40.0;
+fn reduce_k(d_ms: f32, tau: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau) }
 
 // velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
@@ -148,12 +178,12 @@ const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 // consonant F2 next to a vowel, by place: (slope, offset) of F2 = offset + slope * the vowel's F2
 fn locus(x: u8) -> Option<(f32, f32)> {
 	match x {
-		9 | 31 | 26 | 16 | 40      => Some((0.8, 300.0)),		// labial: b p m f v
-		37 | 12                    => Some((0.5, 900.0)),		// dental: th dh
-		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0)),	// alveolar: d t n s z dx
-		35 | 44 | 10 | 22          => Some((0.3, 1500.0)),		// postalveolar: sh zh ch jh
-		17 | 23 | 28               => Some((0.5, 1100.0)),		// velar: g k ng
-		_                          => None,
+		9 | 31 | 26 | 16 | 40       => Some((0.8, 300.0)),		// labial: b p m f v
+		37 | 12                     => Some((0.5, 900.0)),		// dental: th dh
+		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0)),		// alveolar: d t n s z dx
+		35 | 44 | 10 | 22           => Some((0.3, 1500.0)),		// postalveolar: sh zh ch jh
+		17 | 23 | 28                => Some((0.5, 1100.0)),		// velar: g k ng
+		_                           => None,
 	}
 }
 
@@ -173,6 +203,7 @@ fn fade(g: f32, m: f32) -> f32 {
 }
 
 fn lerp_gain(a: f32, b: f32, y: f32) -> f32 {
+	// linear interpolator for gain
 	audible(a * (1.0 - y) + b * y)
 }
 
@@ -228,22 +259,14 @@ fn feats(x: u8) -> u16 {
 	}
 }
 
-fn samples(ms: f32) -> i32 {
-	(ms * m_sr as f32 / 1000.0) as i32
-}
+fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
-fn stop_place(x: u8) -> usize {
-	match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 }
-}
+fn stop_place(x: u8) -> usize { match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 } }
 
 // a plosive's parts in samples: the closure and burst (an affricate's frication) play in its own segment,
 // the aspiration in the start of the next phone
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Stop {
-	closure: i32,
-	burst:   i32,
-	asp:     i32,
-}
+struct Stop { closure: i32, burst: i32, asp: i32, }
 
 fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, word_start: bool) -> Stop {
 	let pf = feats(phone);
@@ -572,7 +595,7 @@ impl engine {
 			/////////////////////////////
 			slope:        0.0,
 			interp:       0.0,
-			master_fade:  1.0,							// master fader for phrase-final trigger
+			master_fade:  1.0,					// master fader for phrase-final trigger
 			/////////////////////////////
 			//         SOURCE          //
 			/////////////////////////////
@@ -608,9 +631,7 @@ impl engine {
 			B3_B_src:  0.0,
 		}
 	}
-	pub fn set_voice(&mut self, v: Voice) {
-		self.vtm_eng.set_voice(v);
-	}
+	pub fn set_voice(&mut self, v: Voice) { self.vtm_eng.set_voice(v); }
 	fn advance(&mut self, x: u8, d: i32, s: bool, seg: usize, w: bool) {
 		// x is phone_id
 		// d is duration
@@ -665,7 +686,7 @@ impl engine {
 		let row = if matches!(row, 48 | 49) && self.pft_l1 & 0x10 != 0 { self.phn_l1 } else { row };
 		let offset_src: usize = row as usize * 31;
 		//---------------source---------------------
-		self.C_A_src   = self.tbl[offset_src+0] as u8;		// also target during transition time
+		self.C_A_src   = self.tbl[offset_src+0] as u8;						// also target during transition time
 		self.C_B_src   = self.tbl[offset_src+1] as u8;
 		self.RD_A_src  = self.tbl[offset_src+2] as f32 / 100.0;
 		self.RD_B_src  = self.tbl[offset_src+3] as f32 / 100.0;
@@ -823,7 +844,7 @@ impl engine {
 				self.F3_A_src += 175.0;
 				self.F3_B_src += 175.0;
 			}
-			// NASAL BANDWIDTH ADJUSTMENT (CHEN 1997)
+			// NASAL BANDWIDTH ADJUSTMENT
 			if self.pft_c & 0x10 != 0 {
 				self.B1_A_src += 107.0;
 				self.B1_B_src += 107.0;
@@ -833,7 +854,8 @@ impl engine {
 		// deal with fricative amp params below
 		if self.pft_c & 0x8000 == 0 {
 			if self.pft_c & 0x41 == 0 && self.pdr_c < eighty_ms && self.pft_l1 & 0x40 == 0 {
-				// short fricatives don't reach AF target (less than 80 ms), lower AF; after a stop the noise starts at full level
+				// short fricatives don't reach AF target (less than 80 ms), lower AF
+				// after a stop the noise starts at full level
 				self.AF_src -= 3.0;
 			}
 			if self.pft_l1 & 0x1 == 1 && self.pft_c & 0x41 == 0 && self.pft_r1 & 0x1 == 1 {
@@ -862,7 +884,7 @@ impl engine {
 		let d_ms = self.pdr_c as f32 * 1000.0 / m_sr as f32;
 		let n = 6 * 31;
 		let (n1, n2, n3) = (self.tbl[n + 5] as f32, self.tbl[n + 6] as f32, self.tbl[n + 7] as f32);
-		let (k1, k2, k3) = (reduce_k(d_ms, tau_f1), reduce_k(d_ms, tau_f2), reduce_k(d_ms, tau_f3));
+		let (k1, k2, k3) = (reduce_k(d_ms, tau_vwl), reduce_k(d_ms, tau_vwl), reduce_k(d_ms, tau_vwl));
 		self.F1_A_src = n1 + (self.F1_A_src - n1) * k1;
 		self.F2_A_src = n2 + (self.F2_A_src - n2) * k2;
 		self.F3_A_src = n3 + (self.F3_A_src - n3) * k3;
@@ -884,7 +906,7 @@ impl engine {
 		let d_ms = self.pdr_r1 as f32 * 1000.0 / m_sr as f32;
 		let n = 6 * 31;
 		let nv = [self.tbl[n + 5] as f32, self.tbl[n + 6] as f32, self.tbl[n + 7] as f32];
-		let k = [reduce_k(d_ms, tau_f1), reduce_k(d_ms, tau_f2), reduce_k(d_ms, tau_f3)];
+		let k = [reduce_k(d_ms, tau_vwl), reduce_k(d_ms, tau_vwl), reduce_k(d_ms, tau_vwl)];
 		[0, 1, 2].map(|i| nv[i] + (t[i] - nv[i]) * k[i])
 	}
 	fn loci(&mut self, prev_f2: f32) {
@@ -985,15 +1007,15 @@ impl engine {
 		self.interp = 0.0;
 	}
 	fn update_registers(&mut self) {
-		if self.interp < 1.0 {
-			self.interp = (self.interp + self.slope).min(1.0);
-		}
+		if self.interp < 1.0 { self.interp = (self.interp + self.slope).min(1.0); }
+
 		// the carried speed fades to nothing over CARRY_MS: n (1 - n/N)^2 starts at that speed and ends at rest
 		let len = samples(CARRY_MS);
 		self.carry_n = (self.carry_n + 1).min(len);
 		let n = self.carry_n as f32 / len as f32;
 		let c = self.carry_n as f32 * (1.0 - n) * (1.0 - n);
 		self.last = self.regs();
+
 		// formants move in straight lines with rounded ends (the amps, done elsewhere, ease in and out)
 		let track = |x: f32| {
 			let (e, v) = (TRACK_EASE, 1.0 / (1.0 - TRACK_EASE));
@@ -1060,8 +1082,10 @@ impl engine {
 		}
 		self.AF_reg = fade(lerp_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
 		self.AH_reg = fade(lerp_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
+
 		let yv = if self.voice_len > 0 { self.lin2smooth(((c - self.voice_start) as f32 / self.voice_len as f32).clamp(0.0, 1.0)) } else { y };
 		self.AV_reg = fade(lerp_gain(self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
+
 		if self.stop_on && c >= 0 {
 			// the voice bar fades over the closure and holds through the burst
 			let bar = if self.stop_bar {
@@ -1204,11 +1228,11 @@ impl engine {
 			self.f1_len = 0;
 			let mut stop_asp: Option<i32> = None;
 
-			
 			// the previous phone's formant targets at its end, before fetch replaces them
 			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
 			let prev_rd = self.RD_B_src;
 
+			// do a fetch
 			self.fetch();
 
 			// do formant target re-adjustments before doing anything else
@@ -1224,6 +1248,7 @@ impl engine {
 			if self.phn_c == 48 || self.phn_c == 49 {
 				(self.RD_A_src, self.RD_B_src) = (prev_rd, prev_rd);
 			}
+
 			// at the end of a phrase an r keeps its tongue in place while the voice dies away
 			if (self.phn_c == 48 || self.phn_c == 49) && matches!(self.phn_l1, 32 | 33 | 14 | 7) {
 				[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
@@ -1445,25 +1470,20 @@ impl engine {
 		self.update_registers()
 	}
 	pub fn sample(&mut self, f0: f32) -> f32 {
+		// apply a step for this engine first
 		self.step();
-		self.vtm_eng.F0  = f0;
-		self.vtm_eng.F1  = self.F1_reg;
-		self.vtm_eng.F2  = self.F2_reg;
-		self.vtm_eng.F3  = self.F3_reg;
+
 		// aspiration: the open glottis damps F1 and F2, less so as voicing takes over
 		let damp = if self.asp_db <= 0.0 { 0.0 } else if self.counter < 0 { 1.0 } else {
 			(1.0 - self.counter as f32 / self.asp_fade.max(1) as f32).max(0.0)
 		};
-		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
-		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN;
-		self.vtm_eng.B3  = self.B3_reg;
+
 		// a lip release: low and falling whatever the vowel
 		let ramp = samples(LIP_RAMP_MS);
 		let lips = self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A - ramp;
 		let dir = if lips { 1.0 } else { -1.0 };
 		self.lip_hold = (self.lip_hold + dir / ramp as f32).clamp(0.0, 1.0);
-		self.vtm_eng.F2 = self.F2_reg + self.lip_hold * (self.F2_reg.min(LABIAL_BURST_F2) - self.F2_reg);
-		self.vtm_eng.F3 = self.F3_reg + self.lip_hold * (self.F3_reg.min(LABIAL_BURST_F3) - self.F3_reg);
+
 		// as the voice dies away at a phrase end it gets breathier and laxer
 		let breath = if matches!(self.phn_c, 48 | 49) {
 			((self.counter - self.seg_start) as f32 / samples(BREATH_RAMP_MS) as f32).clamp(0.0, 1.0)
@@ -1471,6 +1491,17 @@ impl engine {
 		let bar = if self.stop_on && self.stop_bar && self.counter >= 0 && self.counter < self.marker_A {
 			(self.counter as f32 / ten_ms as f32).min(1.0)
 		} else { 0.0 };
+
+		// update the VTM parameters, and apply a step to the VTM
+		self.vtm_eng.F0  = f0;
+		self.vtm_eng.F1  = self.F1_reg;
+		self.vtm_eng.F2  = self.F2_reg;
+		self.vtm_eng.F3  = self.F3_reg;
+		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
+		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN;
+		self.vtm_eng.B3  = self.B3_reg;
+		self.vtm_eng.F2  = self.F2_reg + self.lip_hold * (self.F2_reg.min(LABIAL_BURST_F2) - self.F2_reg);
+		self.vtm_eng.F3  = self.F3_reg + self.lip_hold * (self.F3_reg.min(LABIAL_BURST_F3) - self.F3_reg);
 		self.vtm_eng.RD  = self.RD_reg + BREATH_END_RD * breath + VOICE_BAR_RD * bar;
 		self.vtm_eng.BR  = BREATH_DB + BREATH_END_DB * breath;
 		self.vtm_eng.NC  = self.NZP_reg;

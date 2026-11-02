@@ -1,8 +1,5 @@
-/*
+// EXCEPTIONS DICTIONARY and LETTERS JUMP TABLE
 
-EXCEPTIONS DICTIONARY and LETTERS JUMP TABLE
-
-*/
 pub fn getLetterOffset(x: u8) -> usize {
 	match x {
 		97  => 117,

@@ -577,7 +577,7 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// unused (was a devoiced l): kept so the phone numbers after it stay put
+	// devoiced L (unused)
 	0, 0,
 	0, 0,
 	0,
@@ -589,7 +589,7 @@ pub static formant_tbl: [u16; 1550] = [
 	0, 0, 0,
 	0, 0, 0,
 
-	// unused (was a devoiced r): kept so the phone numbers after it stay put
+	// devoiced R (unused)
 	0, 0,
 	0, 0,
 	0,
