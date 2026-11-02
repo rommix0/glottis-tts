@@ -1,1 +1,1 @@
-cargo run --release --example tts_demo -- "text to speak."
+cargo run --release --example tts_demo -- "this is an example sentence."
