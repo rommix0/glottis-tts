@@ -160,7 +160,7 @@ mod tests {
 
 	fn build(tokens: &[u8]) -> Utterance {
 		let n = tokens.iter().filter(|&&t| t == 90 || t == 95).count();
-		Utterance::build(tokens, &vec![String::from("w"); n])
+		Utterance::build(tokens, &vec!["w"; n])
 	}
 	fn stretch(u: &Utterance, i: usize) -> f32 {
 		let pd = phone_dur(u.segs[i].phone);

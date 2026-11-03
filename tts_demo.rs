@@ -130,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	block_on(async {
 		if let Some(tk) = opts.phone {
 			// the phone as a word of its own
-			sp.sentence(&[90, tk, 92], &[String::new()], &mut out).await?;
+			sp.sentence(&[90, tk, 92], &[""], &mut out).await?;
 		} else {
 			sp.speak(&opts.text, &mut out).await?;
 		}

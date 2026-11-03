@@ -48,7 +48,7 @@ fn is_legal_onset(c: &[u8]) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Boundary { Comma, Period, Question, Exclaim, Minor, None }
+pub enum Boundary { Comma, Period, Question, Exclaim, Minor, Unmarked }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind { Statement, Exclamation, YesNo, Wh }
@@ -99,7 +99,7 @@ const PREPOSITIONS: [&str; 31] = ["in", "on", "at", "by", "near", "over", "under
 const WH_WORDS: [&str; 9] = ["who", "what", "when", "where", "why", "how", "which", "whose", "whom"];
 
 impl Utterance {
-	pub fn build(tokens: &[u8], texts: &[String]) -> Utterance {
+	pub fn build(tokens: &[u8], texts: &[impl AsRef<str>]) -> Utterance {
 		// texts[i] is the text of the i-th word (one per 90/95 token)
 		let mut u = Utterance { segs: Vec::new(), syls: Vec::new(), words: Vec::new(), phrases: Vec::new(), kind: Kind::Statement };
 		let mut phrase_start: usize = 0;
@@ -110,7 +110,7 @@ impl Utterance {
 				50 | 55 => {
 					u.close_word();
 					u.drop_empty_word();
-					let text = texts.get(text_i).cloned().unwrap_or_default();
+					let text = String::from(texts.get(text_i).map_or("", AsRef::as_ref));
 					text_i += 1;
 					let n  = u.segs.len();
 					let ns = u.syls.len();
@@ -158,7 +158,7 @@ impl Utterance {
 		u.close_word();
 		u.drop_empty_word();
 		if u.words.len() > phrase_start {
-			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::None });
+			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::Unmarked });
 		}
 		// a sentence does not end on a comma: one at the end of the input ends it
 		if let Some(last) = u.phrases.last_mut() {
@@ -213,7 +213,7 @@ impl Utterance {
 		// or ending its word before a vowel in the same phrase ("got it"); a word's first stop, a stop before a
 		// stressed vowel and a t before a word-final syllabic n ("button") keep their closure
 		const T: u8 = 36; const D: u8 = 11; const DX: u8 = 47; const N: u8 = 27; const RX: u8 = 33;
-		let vowel = |p: u8| is_vowel(p) && !matches!(p, 48 | 49);
+		fn vowel(p: u8) -> bool { is_vowel(p) && !matches!(p, 48 | 49) }
 		for i in 1..self.segs.len().saturating_sub(1) {
 			let (prev, cur, next) = (&self.segs[i - 1], &self.segs[i], &self.segs[i + 1]);
 			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(vowel(prev.phone) || prev.phone == RX) { continue; }
@@ -282,9 +282,6 @@ mod tests {
 	const QMARK: u8 = 93;
 	const BANG: u8 = 94;
 
-	fn texts(words: &[&str]) -> Vec<String> {
-		words.iter().map(|w| w.to_string()).collect()
-	}
 	fn syl_phones(u: &Utterance, i: usize) -> Vec<u8> {
 		u.segs[u.syls[i].segs.clone()].iter().map(|s| s.phone).collect()
 	}
@@ -292,18 +289,18 @@ mod tests {
 	#[test]
 	fn a_w_glides_between_vowels() {
 		// f 'aa lx ow axr: ow glides through a w into axr, which starts the last syllable
-		let u = Utterance::build(&[CW, 46, 15, 60, 66, 37, PERIOD], &texts(&["follower"]));
+		let u = Utterance::build(&[CW, 46, 15, 60, 66, 37, PERIOD], &["follower"]);
 		assert_eq!(u.segs.iter().map(|s| s.phone).collect::<Vec<_>>(), vec![16, 1, 25, 29, 41, 7]);
 		assert_eq!(syl_phones(&u, 2), vec![41, 7]);
 		// not across words
-		let u = Utterance::build(&[CW, 66, CW, 32, PERIOD], &texts(&["owe", "aa"]));
+		let u = Utterance::build(&[CW, 66, CW, 32, PERIOD], &["owe", "aa"]);
 		assert_eq!(u.segs.len(), 2);
 	}
 
 	#[test]
 	fn syllabify_single_consonant_goes_right() {
 		// 'ae p ax l
-		let u = Utterance::build(&[CW, 16, 68, 36, 59, PERIOD], &texts(&["apple"]));
+		let u = Utterance::build(&[CW, 16, 68, 36, 59, PERIOD], &["apple"]);
 		assert_eq!(u.syls.len(), 2);
 		assert_eq!(syl_phones(&u, 0), vec![2]);
 		assert_eq!(syl_phones(&u, 1), vec![31, 6, 24]);
@@ -312,7 +309,7 @@ mod tests {
 	#[test]
 	fn syllabify_legal_cluster() {
 		// 'eh k s t r ax
-		let u = Utterance::build(&[CW, 21, 56, 72, 76, 70, 36, PERIOD], &texts(&["extra"]));
+		let u = Utterance::build(&[CW, 21, 56, 72, 76, 70, 36, PERIOD], &["extra"]);
 		assert_eq!(syl_phones(&u, 0), vec![13, 23]);
 		assert_eq!(syl_phones(&u, 1), vec![34, 36, 32, 6]);
 	}
@@ -320,7 +317,7 @@ mod tests {
 	#[test]
 	fn syllabify_illegal_cluster_split() {
 		// ix n s t r 'ah k t
-		let u = Utterance::build(&[CW, 53, 64, 72, 76, 70, 17, 56, 76, PERIOD], &texts(&["instruct"]));
+		let u = Utterance::build(&[CW, 53, 64, 72, 76, 70, 17, 56, 76, PERIOD], &["instruct"]);
 		assert_eq!(syl_phones(&u, 0), vec![20, 27]);
 		assert_eq!(syl_phones(&u, 1), vec![34, 36, 32, 3, 23, 36]);
 		assert_eq!(u.syls[1].stress, 1);
@@ -330,7 +327,7 @@ mod tests {
 	#[test]
 	fn word_without_vowel() {
 		// hh m
-		let u = Utterance::build(&[CW, 51, 61, PERIOD], &texts(&["hmm"]));
+		let u = Utterance::build(&[CW, 51, 61, PERIOD], &["hmm"]);
 		assert_eq!(u.syls.len(), 1);
 		assert_eq!(u.syls[0].nucleus, None);
 		assert_eq!(syl_phones(&u, 0), vec![18, 26]);
@@ -339,7 +336,7 @@ mod tests {
 	#[test]
 	fn phrases_split_at_comma() {
 		// 'ey , b 'iy .
-		let u = Utterance::build(&[CW, 24, COMMA, CW, 39, 26, PERIOD], &texts(&["a", "b"]));
+		let u = Utterance::build(&[CW, 24, COMMA, CW, 39, 26, PERIOD], &["a", "b"]);
 		assert_eq!(u.phrases.len(), 2);
 		assert_eq!(u.phrases[0].end, Boundary::Comma);
 		assert_eq!(u.phrases[1].end, Boundary::Period);
@@ -351,37 +348,37 @@ mod tests {
 	#[test]
 	fn a_trailing_comma_ends_the_sentence() {
 		// 'ey ,  at the end of the input
-		let u = Utterance::build(&[CW, 24, COMMA], &texts(&["a"]));
+		let u = Utterance::build(&[CW, 24, COMMA], &["a"]);
 		assert_eq!(u.phrases.len(), 1);
 		assert_eq!(u.phrases[0].end, Boundary::Period);
 		// a comma inside the sentence stays
-		let u = Utterance::build(&[CW, 24, COMMA, CW, 39, 26, PERIOD], &texts(&["a", "b"]));
+		let u = Utterance::build(&[CW, 24, COMMA, CW, 39, 26, PERIOD], &["a", "b"]);
 		assert_eq!(u.phrases[0].end, Boundary::Comma);
 	}
 
 	#[test]
 	fn kind_detection() {
-		let w = texts(&["go"]);
+		let w = ["go"];
 		let go = [CW, 48, 27];		// g 'ow
 		let with = |p: u8| { let mut t = go.to_vec(); t.push(p); t };
 		assert_eq!(Utterance::build(&with(PERIOD), &w).kind, Kind::Statement);
 		assert_eq!(Utterance::build(&with(BANG), &w).kind, Kind::Exclamation);
 		assert_eq!(Utterance::build(&with(QMARK), &w).kind, Kind::YesNo);
-		assert_eq!(Utterance::build(&with(QMARK), &texts(&["Where"])).kind, Kind::Wh);
+		assert_eq!(Utterance::build(&with(QMARK), &["Where"]).kind, Kind::Wh);
 	}
 
 	#[test]
 	fn no_terminal_punctuation() {
-		let u = Utterance::build(&[CW, 51, 15], &texts(&["ha"]));
+		let u = Utterance::build(&[CW, 51, 15], &["ha"]);
 		assert_eq!(u.phrases.len(), 1);
-		assert_eq!(u.phrases[0].end, Boundary::None);
+		assert_eq!(u.phrases[0].end, Boundary::Unmarked);
 		assert_eq!(u.kind, Kind::Statement);
 	}
 
 	#[test]
 	fn empty_trailing_word_dropped() {
 		// a boundary token with no phones after the sentence end adds nothing
-		let u = Utterance::build(&[CW, 56, 18, 76, PERIOD, CW], &texts(&["cat"]));
+		let u = Utterance::build(&[CW, 56, 18, 76, PERIOD, CW], &["cat"]);
 		assert_eq!(u.words.len(), 1);
 		assert_eq!(u.phrases.len(), 1);
 		assert_eq!(u.kind, Kind::Statement);
@@ -389,7 +386,7 @@ mod tests {
 
 	#[test]
 	fn function_flag() {
-		let u = Utterance::build(&[FW, 43, 36, CW, 56, 18, 76, PERIOD], &texts(&["the", "cat"]));
+		let u = Utterance::build(&[FW, 43, 36, CW, 56, 18, 76, PERIOD], &["the", "cat"]);
 		assert!(u.words[0].function);
 		assert!(!u.words[1].function);
 		assert_eq!(u.words[1].text, "cat");
@@ -402,7 +399,7 @@ mod tests {
 		let mut toks = Vec::new();
 		for &(f, _) in words { toks.extend([if f { FW } else { CW }, 39, 15]); }
 		toks.push(PERIOD);
-		Utterance::build(&toks, &texts(&words.iter().map(|w| w.1).collect::<Vec<_>>()))
+		Utterance::build(&toks, &words.iter().map(|w| w.1).collect::<Vec<_>>())
 	}
 
 	#[test]
@@ -451,42 +448,42 @@ mod tests {
 	#[test]
 	fn flaps_between_a_vowel_and_an_unstressed_vowel() {
 		// s 'ih t iy: the t flaps
-		let u = Utterance::build(&[CW, 72, 25, 76, 54, PERIOD], &texts(&["city"]));
+		let u = Utterance::build(&[CW, 72, 25, 76, 54, PERIOD], &["city"]);
 		assert_eq!(phones(&u), vec![34, 19, 47, 21]);
 	}
 
 	#[test]
 	fn keeps_the_stop_before_a_stressed_vowel() {
 		// ax t 'ae k
-		let u = Utterance::build(&[CW, 36, 76, 16, 56, PERIOD], &texts(&["attack"]));
+		let u = Utterance::build(&[CW, 36, 76, 16, 56, PERIOD], &["attack"]);
 		assert_eq!(phones(&u)[1], 36);
 	}
 
 	#[test]
 	fn keeps_a_words_first_stop() {
 		// ax | t 'aa p
-		let u = Utterance::build(&[CW, 36, CW, 76, 15, 68, PERIOD], &texts(&["a", "top"]));
+		let u = Utterance::build(&[CW, 36, CW, 76, 15, 68, PERIOD], &["a", "top"]);
 		assert_eq!(phones(&u)[1], 36);
 	}
 
 	#[test]
 	fn flaps_a_word_final_stop_before_a_vowel() {
 		// g 'aa t | 'ih t: the first t flaps, the phrase-final one does not
-		let u = Utterance::build(&[CW, 48, 15, 76, CW, 25, 76, PERIOD], &texts(&["got", "it"]));
+		let u = Utterance::build(&[CW, 48, 15, 76, CW, 25, 76, PERIOD], &["got", "it"]);
 		assert_eq!(phones(&u), vec![17, 1, 47, 19, 36]);
 	}
 
 	#[test]
 	fn keeps_the_stop_before_a_syllabic_n() {
 		// b 'ah t ax n
-		let u = Utterance::build(&[CW, 39, 17, 76, 36, 64, PERIOD], &texts(&["button"]));
+		let u = Utterance::build(&[CW, 39, 17, 76, 36, 64, PERIOD], &["button"]);
 		assert_eq!(phones(&u)[2], 36);
 	}
 
 	#[test]
 	fn no_flap_across_a_phrase_break() {
 		// g 'aa t , 'ih t
-		let u = Utterance::build(&[CW, 48, 15, 76, COMMA, CW, 25, 76, PERIOD], &texts(&["got", "it"]));
+		let u = Utterance::build(&[CW, 48, 15, 76, COMMA, CW, 25, 76, PERIOD], &["got", "it"]);
 		assert_eq!(phones(&u)[2], 36);
 	}
 }

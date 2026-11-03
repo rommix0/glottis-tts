@@ -22,6 +22,10 @@ fn ends_day(c: u8, d: u8) -> bool {
 	!c.is_ascii_alphanumeric() && c != b'/' && !(matches!(c, b':' | b',' | b'.') && d.is_ascii_digit())
 }
 
+fn is_space(c: u8) -> bool { matches!(c, b' ' | 0x08 | 0x0A) }
+
+fn consume(buf: &mut cbuf, n: usize) { for _ in 0..n { buf.advance(); } }
+
 // text-number-homograph normalizer AIO (all-in-one)
 pub struct engine {
 	scratch_pad: cbuf,
@@ -402,13 +406,10 @@ impl engine {
 		let a = Self::ahead(buf, 48);
 		if a.is_empty() { return false; }
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
-		let letter = |c: u8| c.is_ascii_alphabetic();
-		let space = |c: u8| matches!(c, b' ' | 0x08 | 0x0A);
-		let consume = |buf: &mut cbuf, n: usize| for _ in 0..n { buf.advance(); };
 		let prev = Self::prev_byte(buf);
 
 		// an opening double quote is not read out
-		if space(at(0)) {
+		if is_space(at(0)) {
 			let q = if at(1) == b'"' { 1 } else if at(1) == 0xE2 && at(2) == 0x80 && (0x9C..=0x9F).contains(&at(3)) { 3 } else { 0 };
 			if q > 0 && at(1 + q).is_ascii_alphanumeric() {
 				self.scratch_pad.write_text(" ");
@@ -418,20 +419,20 @@ impl engine {
 		}
 
 		// a quote after a space: a decade ('90s), a word that keeps its apostrophe ('twas), or an opening quote
-		if space(at(0)) {
-			let q = if at(1) == b'\'' { 1 } else if a.get(1..4) == Some(&[0xE2, 0x80, 0x99][..]) || a.get(1..4) == Some(&[0xE2, 0x80, 0x98][..]) { 3 } else { 0 };
+		if is_space(at(0)) {
+			let q = if at(1) == b'\'' { 1 } else if a[1..].starts_with(&[0xE2, 0x80, 0x99]) || a[1..].starts_with(&[0xE2, 0x80, 0x98]) { 3 } else { 0 };
 			if q > 0 {
 				let r = 1 + q;
-				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's' && !letter(at(r + 3)) {
+				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's' && !at(r + 3).is_ascii_alphabetic() {
 					let w = self.words(((at(r) - b'0') * 10) as u64, false, false);
 					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
 					consume(buf, r + 3);
 					return true;
 				}
-				if letter(at(r)) {
+				if at(r).is_ascii_alphabetic() {
 					let mut w = String::from("'");
 					let mut k = r;
-					while letter(at(k)) { w.push(at(k).to_ascii_lowercase() as char); k += 1; }
+					while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; }
 					if Self::is_word(&w) {
 						self.scratch_pad.write_text(&format!(" {} ", w));
 						consume(buf, k);
@@ -446,10 +447,10 @@ impl engine {
 
 		// a sentence mark inside a closing double quote: a period goes on as a comma when the sentence does
 		if matches!(at(0), b'.' | b'?' | b'!') {
-			let q = if at(1) == b'"' { 1 } else if a.get(1..4) == Some(&[0xE2, 0x80, 0x9D][..]) { 3 } else { 0 };
+			let q = if at(1) == b'"' { 1 } else if a[1..].starts_with(&[0xE2, 0x80, 0x9D]) { 3 } else { 0 };
 			if q > 0 {
 				let mut k = 1 + q;
-				while space(at(k)) { k += 1; }
+				while is_space(at(k)) { k += 1; }
 				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { core::str::from_utf8(&a[..1]).unwrap_or(".") };
 				self.scratch_pad.write_text(&format!(" {} ", mark));
 				self.digit_prev = false;
@@ -460,7 +461,7 @@ impl engine {
 		}
 
 		// a run of question and exclamation marks (or one interrobang) is one mark: a question if any of them asks
-		if !space(prev) {
+		if !is_space(prev) {
 			let (mut k, mut marks, mut asks, mut odd) = (0, 0, false, false);
 			loop {
 				match (at(k), at(k + 1), at(k + 2)) {
@@ -491,10 +492,10 @@ impl engine {
 		}
 
 		// a web address is read without its scheme
-		if !letter(prev) {
-			let low: Vec<u8> = a.iter().take(8).map(|c| c.to_ascii_lowercase()).collect();
+		if !prev.is_ascii_alphabetic() {
+			let low = a.to_ascii_lowercase();
 			for scheme in [&b"https://"[..], b"http://"] {
-				if low.starts_with(scheme) && letter(at(scheme.len())) {
+				if low.starts_with(scheme) && at(scheme.len()).is_ascii_alphabetic() {
 					self.scratch_pad.write_text(" ");
 					consume(buf, scheme.len());
 					return true;
@@ -525,10 +526,10 @@ impl engine {
 				}
 				let num = self.words(v, false, false);
 				let mut j = k;
-				while space(at(j)) { j += 1; }
+				while is_space(at(j)) { j += 1; }
 				let scale = if j > k {
 					["thousand", "million", "billion", "trillion"].into_iter().find(|w| {
-						a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !letter(at(j + w.len()))
+						a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !at(j + w.len()).is_ascii_alphabetic()
 					})
 				} else { None };
 				let text = if let Some(w) = scale {
@@ -571,10 +572,10 @@ impl engine {
 			if at(n1) == b'.' {
 				let (c, nc) = Self::digits(&a, n1 + 1);
 				let mut j = n1 + 1 + nc;
-				while space(at(j)) { j += 1; }
-				let low: Vec<u8> = a.iter().skip(j).take(7).map(|c| c.to_ascii_lowercase()).collect();
+				while is_space(at(j)) { j += 1; }
+				let low = a[j..].to_ascii_lowercase();
 				let unit = [("dollars", "dollar"), ("dollar", "dollar"), ("euros", "euro"), ("euro", "euro")].into_iter()
-					.find(|(w, _)| low.starts_with(w.as_bytes()) && !letter(at(j + w.len())));
+					.find(|(w, _)| low.starts_with(w.as_bytes()) && !at(j + w.len()).is_ascii_alphabetic());
 				if let (2, true, Some((w, one))) = (nc, j > n1 + 3, unit) {
 					let cents = if c == 1 { " one cent".to_string() } else { format!(" {} cents", self.words(c, false, false)) };
 					let whole = format!(" {} {}{}", self.words(v1, false, false), one, if v1 == 1 { "" } else { "s" });
@@ -607,12 +608,12 @@ impl engine {
 					k += 1;
 					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
 				}
-				let joined = !space(at(k));
+				let joined = !is_space(at(k));
 				let mut j = k;
-				while space(at(j)) { j += 1; }
-				let low: Vec<u8> = a.iter().skip(j).take(5).map(|c| c.to_ascii_lowercase()).collect();
+				while is_space(at(j)) { j += 1; }
+				let low = a[j..].to_ascii_lowercase();
 				let unit = UNITS.iter()
-					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !letter(at(j + u.0.len())))
+					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !at(j + u.0.len()).is_ascii_alphabetic())
 					.max_by_key(|u| u.0.len());
 				if let Some(&(ab, one, many, _)) = unit {
 					let num = self.words(v, false, false);
@@ -647,7 +648,7 @@ impl engine {
 					parts.push(v);
 					k += 1 + n;
 				}
-				if parts.len() >= 3 && !letter(at(k)) {
+				if parts.len() >= 3 && !at(k).is_ascii_alphabetic() {
 					let said: Vec<String> = parts.iter().map(|&v| self.words(v, false, true)).collect();
 					self.scratch_pad.write_text(&format!(" {} ", said.join(" point ")));
 					consume(buf, k);
@@ -683,7 +684,7 @@ impl engine {
 					return true;
 				}
 			}
-			let ends = |i: usize| !letter(at(i)) && !at(i).is_ascii_digit();
+			let ends = |i: usize| !at(i).is_ascii_alphabetic() && !at(i).is_ascii_digit();
 			let plain = !(matches!(at(n1), b',' | b'\'' | b'_' | b'.' | b':') && at(n1 + 1).is_ascii_digit());
 			// a decade: the 1990s, the 2000s, the 90s (a possessive s may follow an apostrophe)
 			let s_at = if at(n1) == b's' { Some(n1) } else if at(n1) == b'\'' && at(n1 + 1) == b's' { Some(n1 + 1) } else { None };
@@ -698,12 +699,12 @@ impl engine {
 			// a year: four plain digits from 1100 to 2099 unless a plural noun follows ("2015 votes"), or from 1001
 			// after a word that leads a year ("in 2015 votes were cast", "in 1066")
 			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
-			let cue = space(prev) && YEAR_AFTER.contains(&Self::prev_word(buf).to_ascii_lowercase().as_str());
+			let cue = is_space(prev) && YEAR_AFTER.contains(&Self::prev_word(buf).to_ascii_lowercase().as_str());
 			let next: String = {
 				let mut k = n1;
-				while space(at(k)) { k += 1; }
+				while is_space(at(k)) { k += 1; }
 				let mut w = String::new();
-				if k > n1 { while letter(at(k)) { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
+				if k > n1 { while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
 				w
 			};
 			let counted = PLURAL.contains(&next.as_str()) || (next.len() >= 3 && next.ends_with('s')
@@ -730,11 +731,11 @@ impl engine {
 				while at(k).is_ascii_digit() { frac.push_str(&format!(" {}", self.words((at(k) - b'0') as u64, false, true))); k += 1; }
 			}
 			let mut j = k;
-			while space(at(j)) { j += 1; }
+			while is_space(at(j)) { j += 1; }
 			if j > k {
 				for scale in ["thousand", "million", "billion", "trillion"] {
 					let w = a.get(j..j + scale.len()).map(|s| s.eq_ignore_ascii_case(scale.as_bytes())).unwrap_or(false);
-					if w && !letter(at(j + scale.len())) {
+					if w && !at(j + scale.len()).is_ascii_alphabetic() {
 						let point = if frac.is_empty() { String::new() } else { format!(" point{}", frac) };
 						let num = self.words(v, false, false);
 						self.scratch_pad.write_text(&format!(" {}{} {} dollars ", num, point, scale));
@@ -746,19 +747,19 @@ impl engine {
 		}
 
 		// a month and a day: march third, jan. fifth
-		if space(at(0)) && letter(at(1)) {
-			let low: Vec<u8> = a.iter().map(|c| c.to_ascii_lowercase()).collect();
+		if is_space(at(0)) && at(1).is_ascii_alphabetic() {
+			let low = a.to_ascii_lowercase();
 			let mut found: Option<(usize, usize)> = None;
 			for (m, name) in MONTHS.iter().enumerate() {
 				if low[1..].starts_with(name.as_bytes()) { found = Some((m, name.len())); }
 			}
 			for (name, m) in SHORT {
-				if low[1..].starts_with(name.as_bytes()) && found.map_or(true, |(_, n)| name.len() > n) { found = Some((m, name.len())); }
+				if low[1..].starts_with(name.as_bytes()) && found.is_none_or(|(_, n)| name.len() > n) { found = Some((m, name.len())); }
 			}
 			if let Some((m, n)) = found {
 				let mut k = 1 + n;
-				if !letter(at(k)) && space(at(k)) {
-					while space(at(k)) { k += 1; }
+				if !at(k).is_ascii_alphabetic() && is_space(at(k)) {
+					while is_space(at(k)) { k += 1; }
 					let (d, nd) = Self::digits(&a, k);
 					if (1..=2).contains(&nd) && (1..=31).contains(&d) && ends_day(at(k + nd), at(k + nd + 1)) {
 						let day = self.words(d, true, false);
@@ -772,9 +773,9 @@ impl engine {
 		}
 
 		// "St.": saint before a name, street otherwise
-		if space(at(0)) && a.get(1..4) == Some(&b"St."[..]) {
+		if is_space(at(0)) && a[1..].starts_with(b"St.") {
 			let mut k = 4;
-			while space(at(k)) { k += 1; }
+			while is_space(at(k)) { k += 1; }
 			let saint = k > 4 && at(k).is_ascii_uppercase();
 			self.scratch_pad.write_text(if saint { " saint " } else { " street " });
 			consume(buf, 4);
@@ -783,19 +784,19 @@ impl engine {
 		}
 
 		// "www." spelled letter by letter
-		if !letter(prev) && a.len() >= 4 && a[..4].eq_ignore_ascii_case(b"www.") {
+		if !prev.is_ascii_alphabetic() && a.len() >= 4 && a[..4].eq_ignore_ascii_case(b"www.") {
 			self.scratch_pad.write_text(" w w w dot ");
 			consume(buf, 4);
 			return true;
 		}
 
 		// a word read by the word before it: "to record" against "a record", "it is close"
-		if letter(at(0)) && !letter(prev) && prev != b'\'' {
+		if at(0).is_ascii_alphabetic() && !prev.is_ascii_alphabetic() && prev != b'\'' {
 			let mut n = 0;
-			while letter(at(n)) { n += 1; }
+			while at(n).is_ascii_alphabetic() { n += 1; }
 			let w: String = a[..n].iter().map(|c| c.to_ascii_lowercase() as char).collect();
-			let plain = a[1..n].iter().all(|c| c.is_ascii_lowercase()) && !matches!(at(n), b'\'' | b'-');
-			let before = if space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
+			let plain = a[1..n].iter().all(u8::is_ascii_lowercase) && !matches!(at(n), b'\'' | b'-');
+			let before = if is_space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
 			let b = before.as_str();
 			let pair = STRESS_PAIRS.iter().find(|p| p.0 == w);
 			let cap = if !plain { None } else if let Some(&(_, cap_verb, default_verb)) = pair {
@@ -816,7 +817,7 @@ impl engine {
 		}
 
 		// a run of capitals: a Roman numeral, a word the dictionary knows (NASA, HELLO), or letters to spell
-		if at(0).is_ascii_uppercase() && !letter(prev) && prev != b'\'' {
+		if at(0).is_ascii_uppercase() && !prev.is_ascii_alphabetic() && prev != b'\'' {
 			let mut n = 0;
 			while at(n).is_ascii_uppercase() { n += 1; }
 			// a fixed-text rule as long or longer here ("MPG", "PAT. PEND.") goes first
@@ -839,10 +840,10 @@ impl engine {
 				}
 			}
 			// the article "A" before a word
-			if at(0) == b'A' && n == 1 && space(at(1)) {
+			if at(0) == b'A' && n == 1 && is_space(at(1)) {
 				let mut k = 1;
-				while space(at(k)) { k += 1; }
-				if letter(at(k)) && letter(at(k + 1)) {
+				while is_space(at(k)) { k += 1; }
+				if at(k).is_ascii_alphabetic() && at(k + 1).is_ascii_alphabetic() {
 					self.scratch_pad.write_text(" a");
 					consume(buf, 1);
 					return true;
@@ -851,7 +852,7 @@ impl engine {
 		}
 
 		// an emoticon after a space is the emoticon, not "colon"
-		if space(at(0)) && matches!(at(1), b':' | b';' | b'=') {
+		if is_space(at(0)) && matches!(at(1), b':' | b';' | b'=') {
 			buf.advance();
 			let face = self.table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= Self::lexer_len(buf));
 			buf.recede();
@@ -929,21 +930,20 @@ impl engine {
 	fn number_len(buf: &mut cbuf) -> usize {
 		// a number may start with a digit separator ("_00"), so it can outlast a fixed-text rule for "_"
 		let start = buf.getcurs();
-		let digit = |c: u8| c.is_ascii_digit();
 		let mut n = 0;
 		loop {
 			let save = (buf.getcurs(), n);
 			if matches!(buf.read(), b',' | b'\'' | b'_') { buf.advance(); n += 1; }
-			if !digit(buf.read()) { buf.setcurs(save.0); n = save.1; break; }
-			while digit(buf.read()) { buf.advance(); n += 1; }
+			if !buf.read().is_ascii_digit() { buf.setcurs(save.0); n = save.1; break; }
+			while buf.read().is_ascii_digit() { buf.advance(); n += 1; }
 		}
 		if n > 0 {
 			let c = buf.read();
 			buf.advance();
 			let d = buf.read();
-			if c == b'.' && digit(d) {
+			if c == b'.' && d.is_ascii_digit() {
 				n += 1;
-				while digit(buf.read()) { buf.advance(); n += 1; }
+				while buf.read().is_ascii_digit() { buf.advance(); n += 1; }
 			} else if matches!((c, d), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h')) {
 				n += 2;
 			}
@@ -965,7 +965,7 @@ impl engine {
 		let mut best: Option<(usize, usize)> = None;
 		for &r in FIRST[first as usize] {
 			if let Some(n) = Self::match_len(buf, RULES[r as usize].0) {
-				if best.map_or(true, |(b, _)| n > b) { best = Some((n, r as usize)); }
+				if best.is_none_or(|(b, _)| n > b) { best = Some((n, r as usize)); }
 			}
 		}
 		best

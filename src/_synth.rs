@@ -265,7 +265,7 @@ fn stop_place(x: u8) -> usize { match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 } }
 
 // a plosive's parts in samples: the closure and burst (an affricate's frication) play in its own segment,
 // the aspiration in the start of the next phone
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 struct Stop { closure: i32, burst: i32, asp: i32, }
 
 fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, word_start: bool) -> Stop {
@@ -820,7 +820,7 @@ impl engine {
 
 			// BACK VOWEL ALVEOLARIZATION (next to alveolar stops, nasals and fricatives, not l or r)
 			if self.pft_c == 0x000B {
-				let alveolar = |f: u16| f & 0x20 != 0 && f & 0x0C00 == 0;
+				fn alveolar(f: u16) -> bool { f & 0x20 != 0 && f & 0x0C00 == 0 }
 				if alveolar(self.pft_l1) {
 					self.F2_A_src += 250.0 * factor;
 				}
@@ -1357,14 +1357,14 @@ impl engine {
 				self.ab_at = self.marker_A.min(fifty_ms);
 			}
 			// sources switch quickly at obstruent edges; formants keep their own transition
-			let obstruent = |f: u16| f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0;
+			fn obstruent(f: u16) -> bool { f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0 }
 			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) { self.marker_A.min(fifteen_ms) } else { self.marker_A };
 			self.seg_start = self.counter;
 			if self.after_stop {
 				// voicing builds up quickly after a release
 				self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
 			}
-			let nasal = |f: u16| f & 0x10 != 0;
+			fn nasal(f: u16) -> bool { f & 0x10 != 0 }
 			if nasal(self.pft_c) || nasal(self.pft_l1) {
 				// a nasal's closure and release are quick
 				self.amp_len = samples(NASAL_EDGE_MS);
@@ -1374,13 +1374,13 @@ impl engine {
 			}
 			self.amp_start = 0;
 			self.voice_len = 0;
-			let sibilant = |f: u16| f & 0x8200 == 0x200;
-			let sonorant = |f: u16| f & 0x1 != 0 || f & 0x1C10 != 0;
-			let fricative = |p: u8| matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44);
-			let quiet = |p: u8| p == PAU || p == 0 || p == 48 || p == 49;
+			fn sibilant(f: u16) -> bool { f & 0x8200 == 0x200 }
+			fn sonorant(f: u16) -> bool { f & 0x1 != 0 || f & 0x1C10 != 0 }
+			fn fricative(p: u8) -> bool { matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44) }
+			fn quiet(p: u8) -> bool { p == PAU || p == 0 || p == 48 || p == 49 }
 			self.dip_half = 0;
 			// h is breath noise too: without the dip a fricative runs into it as one hiss
-			let hiss = |p: u8| fricative(p) || p == 18;
+			fn hiss(p: u8) -> bool { fricative(p) || p == 18 }
 			if hiss(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
 				self.dip_mid = self.amp_len / 2;
 				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
@@ -1612,7 +1612,8 @@ mod tests {
 				}
 			}
 		}
-		let order: Vec<usize> = seen.iter().map(|x| x.0).fold(Vec::new(), |mut v, s| { if v.last() != Some(&s) { v.push(s); } v });
+		let mut order: Vec<usize> = seen.iter().map(|x| x.0).collect();
+		order.dedup();
 		assert_eq!(order, vec![7, 8, 9, 10]);
 		for w in seen.windows(2) {
 			if w[0].0 == w[1].0 { assert!(w[1].1 >= w[0].1); } else { assert!(w[0].1 >= 0.95, "seg {} ended at {}", w[0].0, w[0].1); }

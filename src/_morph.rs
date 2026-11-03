@@ -61,7 +61,7 @@ fn ending(e: Ending, stem: &[u8]) -> Vec<u8> {
 
 // a stem's phones: the dictionary's, or the tree's for a known word
 fn lookup(w: &str, dict: &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> Option<Vec<u8>> {
-	if let Some(p) = dict(w) { if !p.is_empty() { return Some(p); } }
+	if let Some(p) = dict(w) && !p.is_empty() { return Some(p); }
 	if known(w) {
 		let p = _lts::word(&w.bytes().map(_lts::letter_code).collect::<Vec<u8>>());
 		if !p.is_empty() { return Some(p); }

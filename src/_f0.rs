@@ -30,7 +30,6 @@ the contour is evaluated per sample from the synthesizer's position.
 
 */
 use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstruent, is_sonorant};
-use core::cell::Cell;
 use core::f32::consts::PI;
 use alloc::vec::Vec;
 
@@ -71,10 +70,10 @@ const TROUGH_FULL_MS:       f32 = 500.0;	// accents this far apart dip to the ba
 const MERGE_MS:             f32 = 20.0;
 const HIGH_VOWEL_ST:        f32 = 0.7;		// high vowels rise this much over their middle
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Tk { Start, Accent, Low, Trough, End }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct Target {
 	pub seg:  usize,		// stream index of the segment
 	pub frac: f32,			// position inside the segment (0..1)
@@ -111,24 +110,24 @@ impl Shape {
 pub struct Contour {
 	targets: Vec<Target>,
 	bumps:   Vec<Bump>,
-	target_at: Cell<usize>,		// where the last hz_at found itself in targets
-	bump_at:   Cell<usize>,		// and in bumps
+	target_at: usize,		// where the last hz_at found itself in targets
+	bump_at:   usize,		// and in bumps
 }
 
 // the first item of v that before() says is not before the place sought, as partition_point gives; samples come in
 // order, so the answer for the last one usually still holds and is checked before searching
-fn find<T>(v: &[T], last: &Cell<usize>, before: impl Fn(&T) -> bool) -> usize {
-	let k = last.get().min(v.len());
+fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
+	let k = (*last).min(v.len());
 	let k = if (k == 0 || before(&v[k - 1])) && (k == v.len() || !before(&v[k])) { k } else { v.partition_point(before) };
-	last.set(k);
+	*last = k;
 	k
 }
 
 impl Contour {
-	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new(), target_at: Cell::new(0), bump_at: Cell::new(0) } }
+	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new(), target_at: 0, bump_at: 0 } }
 
-	pub fn targets_of(&self, seg: usize) -> Vec<Target> {
-		self.targets.iter().filter(|t| t.seg == seg).copied().collect()
+	pub fn targets_of(&self, seg: usize) -> impl Iterator<Item = &Target> {
+		self.targets.iter().filter(move |t| t.seg == seg)
 	}
 
 	pub fn add_utterance(&mut self, utt: &Utterance, stream: &[usize]) {
@@ -157,7 +156,7 @@ impl Contour {
 
 		let last_phrase = utt.phrases.len() - 1;
 		let mut first_height = ACCENT_ST;
-		let last_accent_seg = (0..utt.words.len()).rev().find_map(|w| accent_of(w));
+		let last_accent_seg = (0..utt.words.len()).rev().find_map(accent_of);
 		for (k, ph) in utt.phrases.iter().enumerate() {
 			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			let voiced: Vec<usize> = segs.clone().filter(|&i| is_voiced(utt.segs[i].phone)).collect();
@@ -212,16 +211,12 @@ impl Contour {
 
 			// phrase end
 			let be = base(time(last_v, 1.0));
-			let end_st = if ph.end == Boundary::Comma {
-				CONTINUATION_RISE_ST
-			} else if ph.end == Boundary::Minor {
-				MINOR_RISE_ST
-			} else if utt.kind == Kind::YesNo {
-				QUESTION_RISE_ST
-			} else if utt.kind == Kind::Exclamation {
-				FINAL_FALL_ST * EXCLAIM_RANGE
-			} else {
-				FINAL_FALL_ST
+			let end_st = match (ph.end, utt.kind) {
+				(Boundary::Comma, _)   => CONTINUATION_RISE_ST,
+				(Boundary::Minor, _)   => MINOR_RISE_ST,
+				(_, Kind::YesNo)       => QUESTION_RISE_ST,
+				(_, Kind::Exclamation) => FINAL_FALL_ST * EXCLAIM_RANGE,
+				_                      => FINAL_FALL_ST,
 			};
 			push(&mut new, last_v, 1.0, be + end_st, be, Tk::End);
 		}
@@ -295,15 +290,15 @@ impl Contour {
 	}
 
 	// the short offsets at a position, in semitones
-	fn bump_at(&self, seg: usize, frac: f32) -> f32 {
-		let k = find(&self.bumps, &self.bump_at, |b| b.seg < seg);
+	fn bump_at(&mut self, seg: usize, frac: f32) -> f32 {
+		let k = find(&self.bumps, &mut self.bump_at, |b| b.seg < seg);
 		self.bumps[k..].iter().take_while(|b| b.seg == seg).map(|b| b.shape.at(b.age0 + frac * b.dur)).sum()
 	}
 
-	pub fn hz_at(&self, seg: usize, frac: f32) -> f32 {
+	pub fn hz_at(&mut self, seg: usize, frac: f32) -> f32 {
 		let pos = seg as f32 + frac;
 		// order by segment first, so the end of one segment comes before the start of the next
-		let j = find(&self.targets, &self.target_at, |t| (t.seg, t.frac) <= (seg, frac));
+		let j = find(&self.targets, &mut self.target_at, |t| (t.seg, t.frac) <= (seg, frac));
 		let st = match j {
 			_ if self.targets.is_empty() => 0.0,
 			_ if j == self.targets.len() => self.targets[j - 1].st,
@@ -338,12 +333,12 @@ mod tests {
 	// words are (function?, consonant token, stressed vowel token); tokens from PHNIDToPhoneme
 	fn utt(words: &[(bool, u8, u8)], ends: &[(usize, u8)], first_text: &str) -> (Utterance, Contour) {
 		let mut toks: Vec<u8> = Vec::new();
-		let mut texts: Vec<String> = Vec::new();
+		let mut texts: Vec<&str> = Vec::new();
 		for (i, &(func, c, v)) in words.iter().enumerate() {
 			toks.push(if func { FW } else { CW });
 			toks.push(c);
 			toks.push(v);
-			texts.push(if i == 0 { first_text.to_string() } else { "w".to_string() });
+			texts.push(if i == 0 { first_text } else { "w" });
 			for &(after, p) in ends { if after == i { toks.push(p); } }
 		}
 		contour(Utterance::build(&toks, &texts))
@@ -371,8 +366,8 @@ mod tests {
 
 	#[test]
 	fn question_ends_higher_than_statement() {
-		let (us, cs) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
-		let (uq, cq) = utt(&[BAA, DEE], &[(1, QMARK)], "w");
+		let (us, mut cs) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
+		let (uq, mut cq) = utt(&[BAA, DEE], &[(1, QMARK)], "w");
 		let s = st(cs.hz_at(last_voiced(&us), 1.0));
 		let q = st(cq.hz_at(last_voiced(&uq), 1.0));
 		assert!(q - s >= 11.0, "question {} vs statement {}", q, s);
@@ -380,7 +375,7 @@ mod tests {
 
 	#[test]
 	fn comma_phrase_ends_above_baseline() {
-		let (u, c) = utt(&[BAA, DEE, GO, MA], &[(1, COMMA), (3, PERIOD)], "w");
+		let (u, mut c) = utt(&[BAA, DEE, GO, MA], &[(1, COMMA), (3, PERIOD)], "w");
 		let end = u.words[1].segs.end - 1;
 		let t = c.targets.iter().find(|t| t.kind == Tk::End && t.seg == end).unwrap();
 		assert!((t.st - (t.base + CONTINUATION_RISE_ST)).abs() < 0.01);
@@ -444,7 +439,7 @@ mod tests {
 	#[test]
 	fn a_voiced_obstruent_lowers_the_next_onset_and_high_vowels_rise() {
 		// b 'aa, then d 'iy: aa starts low after b; iy, also after a voiced d, is still up at its middle
-		let (u, c) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
+		let (u, mut c) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
 		let nucleus = |w: usize| u.syls[u.words[w].syls.start].nucleus.unwrap();
 		assert!(c.bump_at(nucleus(0), 0.0) < -0.5);
 		assert!(c.bump_at(nucleus(1), 0.5) > 0.5);
@@ -464,7 +459,7 @@ mod tests {
 
 	#[test]
 	fn minor_break_ends_with_a_small_rise() {
-		let mut u = Utterance::build(&[CW, 39, 15, CW, 42, 26, COMMA, CW, 48, 27, PERIOD], &["w".to_string(), "w".to_string(), "w".to_string()]);
+		let mut u = Utterance::build(&[CW, 39, 15, CW, 42, 26, COMMA, CW, 48, 27, PERIOD], &["w", "w", "w"]);
 		u.phrases[0].end = Boundary::Minor;
 		let (u, c) = contour(u);
 		let end = u.words[1].segs.end - 1;
@@ -535,7 +530,7 @@ mod tests {
 	#[test]
 	fn clamped() {
 		let w = [BAA, DEE, GO, MA, NEE, BAA, DEE, GO, MA, NEE];
-		let (u, c) = utt(&w, &[(9, BANG)], "w");
+		let (u, mut c) = utt(&w, &[(9, BANG)], "w");
 		for s in 0..u.segs.len() {
 			for k in 0..=10 {
 				let hz = c.hz_at(s, k as f32 / 10.0);
@@ -550,40 +545,40 @@ mod tests {
 
 	fn offsets(toks: &[u8]) -> (Utterance, Contour) {
 		let words = toks.iter().filter(|&&t| t == CW || t == FW).count();
-		contour(Utterance::build(toks, &vec!["w".to_string(); words]))
+		contour(Utterance::build(toks, &vec!["w"; words]))
 	}
 
 	#[test]
 	fn obstruents_raise_the_following_sonorant() {
 		// "slow": the l starts raised and the rise carries on, decaying, into the vowel
-		let (_, c) = offsets(&[CW, S, L, OW1, PERIOD]);
+		let (_, mut c) = offsets(&[CW, S, L, OW1, PERIOD]);
 		assert!((c.bump_at(1, 0.0) - VOICELESS_BUMP_ST).abs() < 0.01);
 		assert!(c.bump_at(2, 0.0) > 0.0 && c.bump_at(2, 0.0) < c.bump_at(1, 0.0));
 		// a voiced obstruent raises it less
-		let (_, c) = offsets(&[CW, D, OW1, PERIOD]);
+		let (_, mut c) = offsets(&[CW, D, OW1, PERIOD]);
 		assert!((c.bump_at(1, 0.0) - VOICED_BUMP_ST).abs() < 0.01);
 		// a nasal does nothing
-		let (u, c) = offsets(&[CW, M, OW1, PERIOD]);
+		let (u, mut c) = offsets(&[CW, M, OW1, PERIOD]);
 		assert!((0..u.segs.len()).all(|i| c.bump_at(i, 0.0) == 0.0));
 	}
 
 	#[test]
 	fn word_final_t_before_a_consonant_dips() {
 		// "mitt cow": F0 falls over the end of the vowel and stays low through the t
-		let (u, c) = offsets(&[CW, M, IH1, T, CW, K, OW1, PERIOD]);
+		let (u, mut c) = offsets(&[CW, M, IH1, T, CW, K, OW1, PERIOD]);
 		assert!(u.segs[1].dur_ms > T_DIP_MS);
 		assert_eq!(c.bump_at(1, 0.0), 0.0);
 		assert!((c.bump_at(1, 1.0) + T_DIP_ST).abs() < 0.01);
 		assert!((c.bump_at(2, 0.5) + T_DIP_ST).abs() < 0.01);
 		// "mitt owe": not before a vowel
-		let (_, c) = offsets(&[CW, M, IH1, T, CW, OW1, PERIOD]);
+		let (_, mut c) = offsets(&[CW, M, IH1, T, CW, OW1, PERIOD]);
 		assert_eq!(c.bump_at(2, 0.5), 0.0);
 	}
 
 	#[test]
 	fn stressed_vowel_starting_a_content_word_has_a_glottal_onset() {
 		// "mow it" with "it" a content word: after the vowel F0 falls into the catch over ONSET_LEAD_MS, then comes back
-		let (u, c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
+		let (u, mut c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
 		let d = u.segs[2].dur_ms;
 		assert_eq!(c.bump_at(2, 0.0), 0.0);
 		// ih is a high vowel, so its own rise rides on top
@@ -591,10 +586,10 @@ mod tests {
 		assert!((c.bump_at(2, ONSET_LEAD_MS / d) - high + ONSET_DIP_ST).abs() < 0.01);
 		assert!(d > ONSET_LEAD_MS + ONSET_DIP_MS && c.bump_at(2, 1.0) == 0.0);
 		// "it" after a pause starts low
-		let (_, c) = offsets(&[CW, IH1, T, PERIOD]);
+		let (_, mut c) = offsets(&[CW, IH1, T, PERIOD]);
 		assert!((c.bump_at(0, 0.0) + ONSET_DIP_ST).abs() < 0.01);
 		// not for a function word
-		let (_, c) = offsets(&[CW, M, OW1, FW, IH1, T, PERIOD]);
+		let (_, mut c) = offsets(&[CW, M, OW1, FW, IH1, T, PERIOD]);
 		assert_eq!(c.bump_at(2, 0.0), 0.0);
 	}
 }
