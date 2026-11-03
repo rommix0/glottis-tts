@@ -2,7 +2,7 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-11/01/2026          |
+| DATE:   8/11/2026-11/03/2026          |
 ---------------------------------------*/
 
 use crate::_vtm::{vtm, Voice, DB_GAIN};
@@ -317,16 +317,16 @@ pub struct engine {
 	pub tbl: &'static [u16; 1550],	// the formant table, swapped by --table
 	vtm_eng: vtm,
 	marker_A: i32,
-	amp_len: i32,		// samples the amplitudes take to reach this phone's values
-	amp_start: i32,		// counter value where that ramp starts
-	voice_len: i32,		// samples the voicing takes to switch at a fricative edge (0: it follows amp_len)
-	voice_start: i32,	// counter value where that switch starts
-	asp_fade: i32,		// samples the aspiration takes to fade out under the voice
-	dip_mid: i32,		// counter value at the middle of a dip (between two fricatives, or a glottal catch)
-	dip_half: i32,		// samples either side of it the dip takes (0: no dip)
-	dip_db: f32,		// and how deep it goes (dB)
-	gap: i32,			// samples of closure at the start of a fricative after a nasal (0: none)
-	ab_at: i32,			// counter value where the formants start moving from the A to the B targets
+	amp_len: i32,			// samples the amplitudes take to reach this phone's values
+	amp_start: i32,			// counter value where that ramp starts
+	voice_len: i32,			// samples the voicing takes to switch at a fricative edge (0: it follows amp_len)
+	voice_start: i32,		// counter value where that switch starts
+	asp_fade: i32,			// samples the aspiration takes to fade out under the voice
+	dip_mid: i32,			// counter value at the middle of a dip (between two fricatives, or a glottal catch)
+	dip_half: i32,			// samples either side of it the dip takes (0: no dip)
+	dip_db: f32,			// and how deep it goes (dB)
+	gap: i32,				// samples of closure at the start of a fricative after a nasal (0: none)
+	ab_at: i32,				// counter value where the formants start moving from the A to the B targets
 	marker_B: i32,
 	marker_BA: i32,
 	is_first: bool,
@@ -340,27 +340,27 @@ pub struct engine {
 	pdr_c:  i32,
 	pdr_r1: i32,
 	pst_l1: bool,
-	seg_c: usize,		// stream index of the playing segment
+	seg_c: usize,			// stream index of the playing segment
 	seg_r1: usize,
-	seg_start: i32,	// counter value when the playing segment started
-	pwi_c:  bool,		// phone starts a word
+	seg_start: i32,			// counter value when the playing segment started
+	pwi_c:  bool,			// phone starts a word
 	pwi_r1: bool,
-	stop_on: bool,		// playing a plosive's closure and burst
-	stop_bar: bool,		// voiced plosive after a voiced sound: a voice bar in the closure
+	stop_on: bool,			// playing a plosive's closure and burst
+	stop_bar: bool,			// voiced plosive after a voiced sound: a voice bar in the closure
 	stop_affric: bool,
 	stop_labial: bool,
-	lip_hold: f32,		// how far F2 and F3 are held down for a lip release (0..1)
+	lip_hold: f32,			// how far F2 and F3 are held down for a lip release (0..1)
 	burst_len: i32,
 	burst_decay: f32,
-	burst_gain: f32,	// linear gain on the burst
-	after_stop: bool,	// this phone follows a released plosive
-	f1_len: i32,		// samples F1 takes into this phone when it moves faster than the other formants (0: same)
-	f1_speed: f32,		// how much faster F1 moves than the shared interpolator
-	carry: [f32; 7],	// RD, F1-F3, B1-B3 change per sample when the last move started (a cut-off move's speed)
-	carry_n: i32,		// samples since then
-	last: [f32; 7],		// those registers one sample ago
+	burst_gain: f32,		// linear gain on the burst
+	after_stop: bool,		// this phone follows a released plosive
+	f1_len: i32,			// samples F1 takes into this phone when it moves faster than the other formants (0: same)
+	f1_speed: f32,			// how much faster F1 moves than the shared interpolator
+	carry: [f32; 7],		// RD, F1-F3, B1-B3 change per sample when the last move started (a cut-off move's speed)
+	carry_n: i32,			// samples since then
+	last: [f32; 7],			// those registers one sample ago
 	after_stop_next: bool,
-	asp_db: f32,		// aspiration level carried over from a voiceless stop (0: none)
+	asp_db: f32,			// aspiration level carried over from a voiceless stop (0: none)
 	asp_start: i32,
 	asp_seg: usize,
 	asp_db_next: f32,
@@ -677,15 +677,9 @@ impl engine {
 		self.pwi_c  = self.pwi_r1;
 		self.pwi_r1 = w;
 	}
-	pub fn is_running(&self) -> bool {
-		self.counter < self.marker_B
-	}
-	pub fn is_ready(&self) -> bool {
-		self.phn_c != 0
-	}
-	pub fn is_not_last(&self) -> bool {
-		self.phn_c == 0 || self.phn_r1 != 0
-	}
+	pub fn is_running(&self)  -> bool { self.counter < self.marker_B }
+	pub fn is_ready(&self)    -> bool { self.phn_c != 0 }
+	pub fn is_not_last(&self) -> bool { self.phn_c == 0 || self.phn_r1 != 0 }
 	fn fetch(&mut self) {
 		// the pause uses the silent row
 		let row: u8 = if self.phn_c == PAU { 0 } else { self.phn_c };
@@ -825,13 +819,12 @@ impl engine {
 				self.B2_A_src += 50.0 * factor;
 			}
 
-			// BACK VOWEL ALVEOLARIZATION (next to any alveolar, l and r included)
+			// BACK VOWEL ALVEOLARIZATION
 			if self.pft_c == 0x000B {
-				fn alveolar(f: u16) -> bool { f & 0x20 != 0 }
-				if alveolar(self.pft_l1) {
+				if self.pft_l1 & 0x20 != 0 {
 					self.F2_A_src += 250.0 * factor;
 				}
-				if alveolar(self.pft_r1) {
+				if self.pft_r1 & 0x20 != 0 {
 					self.F2_B_src += 250.0 * factor;
 				}
 			}
@@ -937,7 +930,7 @@ impl engine {
 		}
 		let alveolar = matches!(self.phn_c, 11 | 36 | 27 | 34 | 43 | 47);
 		let pull = |v: f32| if alveolar { v.max(ALVEOLAR_F2_FLOOR) } else { v };
-		let left = if prev_vowel { Some(prev_f2) } else { None };
+		let left  = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
 		// a side with no vowel holds the other side's value
 		if let Some(v) = left.or(right) { self.F2_A_src = c + k * pull(v); }
@@ -969,7 +962,7 @@ impl engine {
 		self.A7_reg_src  = 0.0;
 		self.A8_reg_src  = 0.0;
 		self.A9_reg_src  = 0.0;
-		self.A10_reg_src  = 0.0;
+		self.A10_reg_src = 0.0;
 		self.AB_reg_src  = 0.0;
 		self.AF_reg_src  = 0.0;
 		self.AH_reg_src  = 0.0;
@@ -997,9 +990,7 @@ impl engine {
 		self.AH_reg_trg  = db_gain(self.AH_src);
 		self.AV_reg_trg  = db_gain(self.AV_src);
 	}
-	fn regs(&self) -> [f32; 7] {
-		[self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg]
-	}
+	fn regs(&self) -> [f32; 7] { [self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg] }
 	fn start_move(&mut self) {
 		// keep the registers' speed going into the new move
 		let now = self.regs();
@@ -1008,6 +999,7 @@ impl engine {
 		self.interp = 0.0;
 	}
 	fn update_registers(&mut self) {
+		// update interpolator as long as interp is less than 1.0
 		if self.interp < 1.0 { self.interp = (self.interp + self.slope).min(1.0); }
 
 		// the carried speed fades to nothing over CARRY_MS: n (1 - n/N)^2 starts at that speed and ends at rest
@@ -1022,7 +1014,7 @@ impl engine {
 			let (e, v) = (TRACK_EASE, 1.0 / (1.0 - TRACK_EASE));
 			if x < e { v * x * x / (2.0 * e) } else if x > 1.0 - e { 1.0 - v * (1.0 - x) * (1.0 - x) / (2.0 * e) } else { v * (x - e / 2.0) }
 		};
-		let y = track(self.interp);
+		let y  = track(self.interp);
 		let y1 = track((self.interp * self.f1_speed).min(1.0));
 
 		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;

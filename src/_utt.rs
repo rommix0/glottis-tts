@@ -54,11 +54,11 @@ pub enum Boundary { Comma, Period, Question, Exclaim, Minor, Unmarked }
 pub enum Kind { Statement, Exclamation, YesNo, Wh }
 
 pub struct Seg {
-	pub phone:  u8,			// phone id
-	pub stress: u8,			// 0, 1 primary, 2 secondary
-	pub word:   usize,		// index into Utterance::words
-	pub syl:    usize,		// index into Utterance::syls
-	pub dur_ms: f32,		// set by the duration rules
+	pub phone:  u8,					// phone id
+	pub stress: u8,					// 0, 1 primary, 2 secondary
+	pub word:   usize,				// index into Utterance::words
+	pub syl:    usize,				// index into Utterance::syls
+	pub dur_ms: f32,				// set by the duration rules
 	pub rules:  Vec<&'static str>,	// duration rules that fired (for --trace)
 }
 pub struct Syl {
@@ -90,13 +90,23 @@ pub struct Utterance {
 const MAX_PHRASE_SYL: usize = 14;
 const MIN_PIECE_SYL:  usize = 5;
 // the break goes before one of these words best ...
-const BREAK_BEFORE: [&str; 23] = ["and", "but", "or", "nor", "so", "yet", "because", "while", "although", "though", "unless",
-	"whereas", "until", "if", "when", "whether", "since", "that", "which", "who", "whom", "whose", "where"];
+const BREAK_BEFORE: [&str; 23] = [
+	"and", "but", "or", "nor", "so", "yet", "because", "while",
+	"although", "though", "unless", "whereas", "until", "if", "when", "whether",
+	"since", "that", "which", "who", "whom", "whose", "where"
+];
 // ... else before a preposition ("to" is too often an infinitive's or a compound's, "text to speech")
-const PREPOSITIONS: [&str; 31] = ["in", "on", "at", "by", "near", "over", "under", "after", "before", "with", "without", "from",
-	"into", "onto", "through", "during", "across", "about", "against", "along", "among", "around", "behind", "below",
-	"beside", "between", "beyond", "toward", "towards", "upon", "within"];
-const WH_WORDS: [&str; 9] = ["who", "what", "when", "where", "why", "how", "which", "whose", "whom"];
+const PREPOSITIONS: [&str; 31] = [
+	"in", "on", "at", "by", "near", "over", "under", "after",
+	"before", "with", "without", "from", "into", "onto", "through", "during",
+	"across", "about", "against", "along", "among", "around", "behind", "below",
+	"beside", "between", "beyond", "toward", "towards", "upon", "within"
+];
+const WH_WORDS: [&str; 9] = [
+	"who", "what", "when",
+	"where", "why", "how",
+	"which", "whose", "whom"
+];
 
 impl Utterance {
 	pub fn build(tokens: &[u8], texts: &[impl AsRef<str>]) -> Utterance {

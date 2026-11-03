@@ -54,7 +54,7 @@ fn ending(e: Ending, stem: &[u8]) -> Vec<u8> {
 	let kind = LAST_KIND[*stem.last().unwrap() as usize];
 	match e {
 		Ending::Phones(p) => p.to_vec(),
-		Ending::S => match kind { 4 | 5 => vec![PH_IX, PH_Z], 1 | 3 => vec![PH_S], _ => vec![PH_Z] },
+		Ending::S  => match kind { 4 | 5 => vec![PH_IX, PH_Z], 1 | 3 => vec![PH_S], _ => vec![PH_Z] },
 		Ending::Ed => match kind { 1 | 2 => vec![PH_IX, PH_D], 3 | 4 => vec![PH_T], _ => vec![PH_D] },
 	}
 }

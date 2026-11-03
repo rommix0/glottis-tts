@@ -5,7 +5,7 @@
 #########################################
 
   author: anthony c. bartman (@rommix0)
-  date:   4/6/2026 - 11/01/2026
+  date:   4/6/2026 - 11/03/2026
 
 */
 
@@ -131,9 +131,7 @@ pub const VOICES: [Voice; 8] = [
 
 struct noise { nxt: u32 }
 impl noise {
-	fn new() -> noise {
-		noise { nxt: 0x2545F491 }
-	}
+	fn new() -> noise { noise { nxt: 0x2545F491 } }
 	fn xorshift(&mut self) {
 		// 32-bit state: repeats after 2^32 - 1 samples instead of 3 s
 		self.nxt ^= self.nxt << 13;
@@ -586,53 +584,53 @@ pub struct vtm {
 impl vtm {
 	pub fn new() -> vtm {
 		let mut tract = vtm {
-			F0     : 125.0,				// fundamental frequency (Hz)
-			AV     : DB_GAIN[60],		// Amplitude of voicing (60 dB)
-			RD     : 0.0,				// RD fant tilt param (for glottal pulse model)
-			AH     : 0.0,				// Amplitude of aspiration, in dB
-			AF     : 0.0,				// Amplitude of frication, in dB
-			BR     : 6.0,				// breathiness amp (dB)
-			F1     : F1_INIT,			// Frequency of 1st formant, in Hz
-			B1     : B1_INIT,			// Bandwidth of 1st formant, in Hz
-			F2     : F2_INIT,			// Frequency of 2nd formant, in Hz
-			B2     : B2_INIT,			// Bandwidth of 2nd formant, in Hz
-			F3     : F3_INIT,			// Frequency of 3rd formant, in Hz
-			B3     : B3_INIT,			// Bandwidth of 3rd formant, in Hz
-			NC     : 0.0,				// nasal coupling
-			A2     : 0.0,				// Amp of parallel 2nd formant, in dB
-			A3     : 0.0,				// Amp of parallel 3rd formant, in dB
-			A4     : 0.0,				// Amp of parallel 4th formant, in dB
-			A5     : 0.0,				// Amp of parallel 5th formant, in dB
-			A6     : 0.0,				// Amp of parallel 6th formant, in dB
-			A7     : 0.0,				// Amp of parallel 7th formant, in dB
-			A8     : 0.0,				// Amp of parallel 8th formant, in dB
-			A9     : 0.0,				// Amp of parallel 9th formant, in dB
-			A10    : 0.0,				// Amp of parallel 10th formant, in dB
-			AB     : 0.0,				// Amp of parallel bypass path, in dB
-			B1_ADJ : 1.0,				// B1 adjustment factor
-			B2_ADJ : 1.0,				// B2 adjustment factor
-			B3_ADJ : 1.0,				// B3 adjustment factor
-			noisegen : noise::new(),
-			glottal  : LfSource::new(),
-			VR1      : resonator::new(F1_INIT,  B1_INIT,  false),
-			VR2      : resonator::new(F2_INIT,  B2_INIT,  false),
-			VR3      : resonator::new(F3_INIT,  B3_INIT,  false),
-			VR4      : resonator::new(F4_INIT,  B4_INIT,  false),
-			VR5      : resonator::new(F5_INIT,  B5_INIT,  false),
-			VR6      : resonator::new(F6_INIT,  B6_INIT,  false),
-			VR7      : resonator::new(F7_INIT,  B7_INIT,  false),
-			VR8      : resonator::new(F8_INIT,  B8_INIT,  false),
-			NPR      : resonator::new(FN_INIT,  BN_INIT,  false),
-			NZR      : resonator::new(FN_INIT,  BN_INIT,  true),
-			FR2      : resonator::new(F2_INIT,  B2_INIT,  false),
-			FR3      : resonator::new(F3_INIT,  B3_INIT,  false),
-			FR4      : resonator::new(F4_INIT,  B4_INIT,  false),
-			FR5      : resonator::new(F5_INIT,  B5_INIT,  false),
-			FR6      : resonator::new(F6_INIT,  B6_INIT,  false),
-			FR7      : resonator::new(F7_INIT,  B7_INIT,  false),
-			FR8      : resonator::new(F8_INIT,  B8_INIT,  false),
-			FR9      : resonator::new(F9_INIT,  B9_INIT,  false),
-			FR10     : resonator::new(F10_INIT, B10_INIT, false),
+			F0     : 125.0,											// fundamental frequency (Hz)
+			AV     : DB_GAIN[60],									// Amplitude of voicing (60 dB)
+			RD     : 0.0,											// RD fant tilt param (for glottal pulse model)
+			AH     : 0.0,											// Amplitude of aspiration, in dB
+			AF     : 0.0,											// Amplitude of frication, in dB
+			BR     : 6.0,											// breathiness amp (dB)
+			F1     : F1_INIT,										// Frequency of 1st formant, in Hz
+			B1     : B1_INIT,										// Bandwidth of 1st formant, in Hz
+			F2     : F2_INIT,										// Frequency of 2nd formant, in Hz
+			B2     : B2_INIT,										// Bandwidth of 2nd formant, in Hz
+			F3     : F3_INIT,										// Frequency of 3rd formant, in Hz
+			B3     : B3_INIT,										// Bandwidth of 3rd formant, in Hz
+			NC     : 0.0,											// nasal coupling
+			A2     : 0.0,											// Amp of parallel 2nd formant, in dB
+			A3     : 0.0,											// Amp of parallel 3rd formant, in dB
+			A4     : 0.0,											// Amp of parallel 4th formant, in dB
+			A5     : 0.0,											// Amp of parallel 5th formant, in dB
+			A6     : 0.0,											// Amp of parallel 6th formant, in dB
+			A7     : 0.0,											// Amp of parallel 7th formant, in dB
+			A8     : 0.0,											// Amp of parallel 8th formant, in dB
+			A9     : 0.0,											// Amp of parallel 9th formant, in dB
+			A10    : 0.0,											// Amp of parallel 10th formant, in dB
+			AB     : 0.0,											// Amp of parallel bypass path, in dB
+			B1_ADJ : 1.0,											// B1 adjustment factor
+			B2_ADJ : 1.0,											// B2 adjustment factor
+			B3_ADJ : 1.0,											// B3 adjustment factor
+			noisegen : noise::new(),								// noise generator
+			glottal  : LfSource::new(),								// glottal pulse generator
+			VR1      : resonator::new(F1_INIT,  B1_INIT,  false),	// cascade resonators
+			VR2      : resonator::new(F2_INIT,  B2_INIT,  false),	//    |
+			VR3      : resonator::new(F3_INIT,  B3_INIT,  false),	//    |
+			VR4      : resonator::new(F4_INIT,  B4_INIT,  false),	//    |
+			VR5      : resonator::new(F5_INIT,  B5_INIT,  false),	//    |
+			VR6      : resonator::new(F6_INIT,  B6_INIT,  false),	//    |
+			VR7      : resonator::new(F7_INIT,  B7_INIT,  false),	//    |
+			VR8      : resonator::new(F8_INIT,  B8_INIT,  false),	//    V
+			NPR      : resonator::new(FN_INIT,  BN_INIT,  false),	// nasal pair
+			NZR      : resonator::new(FN_INIT,  BN_INIT,  true),	//    |
+			FR2      : resonator::new(F2_INIT,  B2_INIT,  false),	// parallel resonators
+			FR3      : resonator::new(F3_INIT,  B3_INIT,  false),	//    |
+			FR4      : resonator::new(F4_INIT,  B4_INIT,  false),	//    |
+			FR5      : resonator::new(F5_INIT,  B5_INIT,  false),	//    |
+			FR6      : resonator::new(F6_INIT,  B6_INIT,  false),	//    |
+			FR7      : resonator::new(F7_INIT,  B7_INIT,  false),	//    |
+			FR8      : resonator::new(F8_INIT,  B8_INIT,  false),	//    |
+			FR9      : resonator::new(F9_INIT,  B9_INIT,  false),	//    |
+			FR10     : resonator::new(F10_INIT, B10_INIT, false),	//    V
 
 			// past sample for lip radiation filter
 			xp1: 0.0,
@@ -640,6 +638,7 @@ impl vtm {
 			fric_y1: 0.0,
 			voice: VOICES[0],
 			vgain: 1.0,
+
 			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
 			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
 			out_g:   libm::powf(10.0, OUT_DB / 20.0),
@@ -673,9 +672,8 @@ impl vtm {
 		// like fix_bw, this relies on _synth setting them again every sample
 		let v = self.voice;
 		let top = F_MAX_SR * m_sr as f32;
-		if v.range != 100.0 {
-			self.F0 = REF_HZ * libm::powf(self.F0 / REF_HZ, v.range / 100.0);
-		}
+		if v.range != 100.0 { self.F0 = REF_HZ * libm::powf(self.F0 / REF_HZ, v.range / 100.0); }
+
 		self.F0 *= v.f0 / 100.0;
 		self.F1 = (self.F1 * (v.f1 / 100.0)).min(top);
 		self.F2 = (self.F2 * (v.f2 / 100.0)).min(top);
@@ -797,11 +795,11 @@ impl vtm {
 		xx
 	}
 	pub fn step(&mut self) -> f32 {
+		// apply voice profile and sample from the sound generators
 		self.apply_voice();
 		let n = self.noisegen.step();
 		let (mut voice, nmod) = self.glottal.step(self.F0, self.RD, self.voice.fl);
 		voice *= 0.01;
-		let f = n * 0.54;		// aspiration: white noise
 
 		// adjust bandwidths if formants are close together
 		self.fix_bw();
@@ -811,18 +809,20 @@ impl vtm {
 		let (br_mod, af_mod) = (modulate(BREATH_MOD), modulate(FRIC_MOD));
 
 		// route audio sources to a source fed in by cascade filter
-		voice   = voice + (n * self.db2lin(self.BR) * br_mod);
-		let casc_in: f32 = voice * self.AV.min(1.0) + f * self.AH.min(1.0);
+		voice += (n * self.db2lin(self.BR) * br_mod);
+		let casc_in: f32 = voice * self.AV.min(1.0) + (n * 0.54) * self.AH.min(1.0);
 
 		// route noise source to source fed in by parallel filter
 		// frication is broadband noise, rolled off above FRIC_LP_HZ
-		let a = self.fric_a;
-		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
+		self.fric_y1 = (1.0 - self.fric_a) * n + self.fric_a * self.fric_y1;
 		let parr_in: f32 = self.fric_y1 * self.AF.min(1.0) * af_mod;
 
+		// filter the sources
 		let casc_out: f32 = self.cascade(casc_in) * CASC_GAIN;
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
+		// sum them up and send to lip radiation filter
+		// softclip the output to prevent clipping
 		let out = self.radiate(casc_out + parr_out) * self.out_g * self.vgain;
 		self.softclip(out)
 	}

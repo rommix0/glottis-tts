@@ -71,7 +71,7 @@ const MERGE_MS:             f32 = 20.0;
 const HIGH_VOWEL_ST:        f32 = 0.7;		// high vowels rise this much over their middle
 
 #[derive(Debug, PartialEq)]
-pub enum Tk { Start, Accent, Low, Trough, End }
+pub enum TargetKind { Start, Accent, Low, Trough, End }
 
 #[derive(Debug)]
 pub struct Target {
@@ -79,7 +79,7 @@ pub struct Target {
 	pub frac: f32,			// position inside the segment (0..1)
 	pub st:   f32,			// semitones from REF_HZ
 	pub base: f32,			// the baseline here (for tracing and tests)
-	pub kind: Tk,			// an End target holds its value until the next one
+	pub kind: TargetKind,	// an End target holds its value until the next one
 }
 
 // a short pitch offset, drawn on each segment it covers; age is the ms since the offset began
@@ -150,7 +150,7 @@ impl Contour {
 		};
 
 		let mut new: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
-		let push = |new: &mut Vec<(usize, f32, Target)>, i: usize, frac: f32, st: f32, base: f32, kind: Tk| {
+		let push = |new: &mut Vec<(usize, f32, Target)>, i: usize, frac: f32, st: f32, base: f32, kind: TargetKind| {
 			new.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind }));
 		};
 
@@ -166,7 +166,7 @@ impl Contour {
 			let (ts, te) = (t0[segs.start], t0[segs.end]);
 			let base = |t: f32| b0 - BASELINE_FALL_ST * if te > ts { (t - ts) / (te - ts) } else { 0.0 };
 
-			push(&mut new, first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), Tk::Start);
+			push(&mut new, first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), TargetKind::Start);
 
 			// accents, stepping down within the phrase
 			if k > 0 { first_height = (first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
@@ -183,13 +183,13 @@ impl Contour {
 				n_acc += 1;
 				let is_last = Some(n) == last_accent_seg && k == last_phrase;
 				let (frac, kind) = match (is_last, utt.kind) {
-					(true, Kind::YesNo) => (LOW_ACCENT_FRAC, Tk::Low),
-					(true, _) => (NUCLEAR_FRAC, Tk::Accent),
-					_ => (ACCENT_FRAC, Tk::Accent),
+					(true, Kind::YesNo) => (LOW_ACCENT_FRAC, TargetKind::Low),
+					(true, _) => (NUCLEAR_FRAC, TargetKind::Accent),
+					_ => (ACCENT_FRAC, TargetKind::Accent),
 				};
 				let tp = time(n, frac);
 				let height = match kind {
-					Tk::Low => LOW_ACCENT_ST,
+					TargetKind::Low => LOW_ACCENT_ST,
 					_ if utt.kind != Kind::Exclamation => h,
 					_ if is_last => (h + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE,
 					_ => h * EXCLAIM_RANGE,
@@ -202,7 +202,7 @@ impl Contour {
 						let fr = if utt.segs[i].dur_ms > 0.0 { ((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0) } else { 0.0 };
 						let k = ((tp - pt - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
 						let sag = (1.0 - k) * ph.min(height).max(0.0);
-						push(&mut new, i, fr, base(tm) + sag, base(tm), Tk::Trough);
+						push(&mut new, i, fr, base(tm) + sag, base(tm), TargetKind::Trough);
 					}
 				}
 				push(&mut new, n, frac, base(tp) + height, base(tp), kind);
@@ -218,7 +218,7 @@ impl Contour {
 				(_, Kind::Exclamation) => FINAL_FALL_ST * EXCLAIM_RANGE,
 				_                      => FINAL_FALL_ST,
 			};
-			push(&mut new, last_v, 1.0, be + end_st, be, Tk::End);
+			push(&mut new, last_v, 1.0, be + end_st, be, TargetKind::End);
 		}
 
 		// targets closer than MERGE_MS within a phrase: keep the later one
@@ -305,7 +305,7 @@ impl Contour {
 			0 => self.targets[0].st,
 			j => {
 				let (a, b) = (&self.targets[j - 1], &self.targets[j]);
-				if a.kind == Tk::End {
+				if a.kind == TargetKind::End {
 					a.st
 				} else {
 					let (pa, pb) = (a.seg as f32 + a.frac, b.seg as f32 + b.frac);
@@ -377,7 +377,7 @@ mod tests {
 	fn comma_phrase_ends_above_baseline() {
 		let (u, mut c) = utt(&[BAA, DEE, GO, MA], &[(1, COMMA), (3, PERIOD)], "w");
 		let end = u.words[1].segs.end - 1;
-		let t = c.targets.iter().find(|t| t.kind == Tk::End && t.seg == end).unwrap();
+		let t = c.targets.iter().find(|t| t.kind == TargetKind::End && t.seg == end).unwrap();
 		assert!((t.st - (t.base + CONTINUATION_RISE_ST)).abs() < 0.01);
 		assert!((t.base - (0.0 - BASELINE_FALL_ST)).abs() < 0.01);
 		assert!((st(c.hz_at(end, 1.0)) - 1.0).abs() < 0.5);
@@ -386,7 +386,7 @@ mod tests {
 	#[test]
 	fn downstep_within_phrase_and_restart() {
 		let (_, c) = utt(&[BAA, IT, DEE, IT, GO, MA, IT, NEE], &[(4, COMMA), (7, PERIOD)], "w");
-		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
+		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == TargetKind::Accent).map(|t| t.st - t.base).collect();
 		assert_eq!(h.len(), 5);
 		assert!((h[0] - 6.0).abs() < 0.01);
 		assert!((h[1] - 4.8).abs() < 0.01);
@@ -399,7 +399,7 @@ mod tests {
 	fn downstep_floor() {
 		// 13 syllables, one phrase
 		let (_, c) = utt(&[BAA, IT, DEE, IT, GO, IT, MA, IT, NEE, IT, BAA, IT, DEE], &[(12, PERIOD)], "w");
-		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
+		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == TargetKind::Accent).map(|t| t.st - t.base).collect();
 		assert!(h.iter().all(|&x| x >= ACCENT_FLOOR_ST - 0.01));
 		assert!((h[6] - ACCENT_FLOOR_ST).abs() < 0.01);
 	}
@@ -410,10 +410,10 @@ mod tests {
 		let w = [BAA, DEE, GO, MA, NEE, BAA, DEE, GO, MA, NEE, BAA, DEE];
 		let ends: Vec<(usize, u8)> = (0..12).map(|i| (i, if i == 11 { PERIOD } else { COMMA })).collect();
 		let (_, c) = utt(&w, &ends, "w");
-		for t in c.targets.iter().filter(|t| t.kind == Tk::Accent) {
+		for t in c.targets.iter().filter(|t| t.kind == TargetKind::Accent) {
 			assert!(t.st - t.base >= ACCENT_FLOOR_ST - 0.01, "accent {} above baseline", t.st - t.base);
 		}
-		for t in c.targets.iter().filter(|t| t.kind == Tk::Start) {
+		for t in c.targets.iter().filter(|t| t.kind == TargetKind::Start) {
 			assert!(t.base >= -PHRASE_RESET_MAX_ST - 0.01, "phrase starts at {}", t.base);
 		}
 	}
@@ -421,7 +421,7 @@ mod tests {
 	#[test]
 	fn the_last_accent_peaks_early() {
 		let (_, c) = utt(&[BAA, IT, DEE], &[(2, PERIOD)], "w");
-		let fracs: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.frac).collect();
+		let fracs: Vec<f32> = c.targets.iter().filter(|t| t.kind == TargetKind::Accent).map(|t| t.frac).collect();
 		assert_eq!(fracs, [ACCENT_FRAC, NUCLEAR_FRAC]);
 	}
 
@@ -429,11 +429,11 @@ mod tests {
 	fn an_exclamation_widens_accents_and_the_fall() {
 		let (_, cs) = utt(&[BAA, IT, DEE], &[(2, PERIOD)], "w");
 		let (_, ce) = utt(&[BAA, IT, DEE], &[(2, BANG)], "w");
-		let rise = |c: &Contour, kind: Tk| c.targets.iter().find(|t| t.kind == kind).map(|t| t.st - t.base).unwrap();
-		assert!(rise(&ce, Tk::Accent) > rise(&cs, Tk::Accent) + 1.0);
-		assert!(rise(&ce, Tk::End) < rise(&cs, Tk::End) - 1.0);
-		assert!((rise(&ce, Tk::Accent) - EXCLAIM_RANGE * rise(&cs, Tk::Accent)).abs() < 0.01);
-		assert!((rise(&ce, Tk::End) - EXCLAIM_RANGE * rise(&cs, Tk::End)).abs() < 0.01);
+		let rise = |c: &Contour, kind: TargetKind| c.targets.iter().find(|t| t.kind == kind).map(|t| t.st - t.base).unwrap();
+		assert!(rise(&ce, TargetKind::Accent) > rise(&cs, TargetKind::Accent) + 1.0);
+		assert!(rise(&ce, TargetKind::End) < rise(&cs, TargetKind::End) - 1.0);
+		assert!((rise(&ce, TargetKind::Accent) - EXCLAIM_RANGE * rise(&cs, TargetKind::Accent)).abs() < 0.01);
+		assert!((rise(&ce, TargetKind::End) - EXCLAIM_RANGE * rise(&cs, TargetKind::End)).abs() < 0.01);
 	}
 
 	#[test]
@@ -449,12 +449,12 @@ mod tests {
 	fn deaccents_a_content_word_after_an_accented_one() {
 		// b 'aa d 'iy g 'ow ih t m 'aa .: d 'iy follows an accent and is not last, so only it loses its accent
 		let (u, c) = utt(&[BAA, DEE, GO, IT, MA], &[(4, PERIOD)], "w");
-		let peaks: Vec<usize> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.seg).collect();
+		let peaks: Vec<usize> = c.targets.iter().filter(|t| t.kind == TargetKind::Accent).map(|t| t.seg).collect();
 		let nucleus = |w: usize| u.syls[u.words[w].syls.start].nucleus.unwrap();
 		assert_eq!(peaks, vec![nucleus(0), nucleus(2), nucleus(4)]);
 		// the last content word keeps its accent after an accented one
 		let (u, c) = utt(&[BAA, DEE], &[(1, PERIOD)], "w");
-		assert_eq!(c.targets.iter().filter(|t| t.kind == Tk::Accent).count(), 2, "{}", u.words.len());
+		assert_eq!(c.targets.iter().filter(|t| t.kind == TargetKind::Accent).count(), 2, "{}", u.words.len());
 	}
 
 	#[test]
@@ -463,7 +463,7 @@ mod tests {
 		u.phrases[0].end = Boundary::Minor;
 		let (u, c) = contour(u);
 		let end = u.words[1].segs.end - 1;
-		let t = c.targets.iter().find(|t| t.kind == Tk::End && t.seg == end).unwrap();
+		let t = c.targets.iter().find(|t| t.kind == TargetKind::End && t.seg == end).unwrap();
 		assert!((t.st - (t.base + MINOR_RISE_ST)).abs() < 0.01, "{} over {}", t.st, t.base);
 	}
 
@@ -471,24 +471,24 @@ mod tests {
 	fn wh_question_falls() {
 		let (u, c) = utt(&[(true, 81, 26), BAA, DEE], &[(2, QMARK)], "where");
 		assert_eq!(u.kind, crate::_utt::Kind::Wh);
-		let t = c.targets.iter().find(|t| t.kind == Tk::End).unwrap();
+		let t = c.targets.iter().find(|t| t.kind == TargetKind::End).unwrap();
 		assert!((t.st - (t.base + FINAL_FALL_ST)).abs() < 0.01);
 	}
 
 	#[test]
 	fn low_rise_question() {
 		let (u, c) = utt(&[BAA, DEE], &[(1, QMARK)], "w");
-		let low = c.targets.iter().find(|t| t.kind == Tk::Low).unwrap();
+		let low = c.targets.iter().find(|t| t.kind == TargetKind::Low).unwrap();
 		assert_eq!(low.seg, u.syls[u.words[1].syls.start].nucleus.unwrap());
 		assert!((low.frac - LOW_ACCENT_FRAC).abs() < 0.01);
 		assert!((low.st - (low.base + LOW_ACCENT_ST)).abs() < 0.01);
-		assert_eq!(c.targets.iter().filter(|t| t.kind == Tk::Accent).count(), 1);
+		assert_eq!(c.targets.iter().filter(|t| t.kind == TargetKind::Accent).count(), 1);
 	}
 
 	#[test]
 	fn exclamation_boosts_last_accent() {
 		let (_, c) = utt(&[BAA, DEE], &[(1, BANG)], "w");
-		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(|t| t.st - t.base).collect();
+		let h: Vec<f32> = c.targets.iter().filter(|t| t.kind == TargetKind::Accent).map(|t| t.st - t.base).collect();
 		assert!((h[1] - (4.8 + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE).abs() < 0.01);
 	}
 
@@ -496,9 +496,9 @@ mod tests {
 	fn no_content_words() {
 		// it is .
 		let (_, c) = utt(&[(true, 76, 25), (true, 87, 25)], &[(1, PERIOD)], "it");
-		assert_eq!(c.targets.iter().filter(|t| t.kind == Tk::Accent).count(), 0);
-		assert!(c.targets.iter().any(|t| t.kind == Tk::Start));
-		assert!(c.targets.iter().any(|t| t.kind == Tk::End));
+		assert_eq!(c.targets.iter().filter(|t| t.kind == TargetKind::Accent).count(), 0);
+		assert!(c.targets.iter().any(|t| t.kind == TargetKind::Start));
+		assert!(c.targets.iter().any(|t| t.kind == TargetKind::End));
 	}
 
 	#[test]
@@ -513,8 +513,8 @@ mod tests {
 			let (u, c) = utt(&w, &[(w.len() - 1, PERIOD)], "w");
 			let t0: Vec<f32> = u.segs.iter().scan(0.0, |a, s| { let t = *a; *a += s.dur_ms; Some(t) }).collect();
 			let time = |t: &Target| t0[t.seg] + t.frac * u.segs[t.seg].dur_ms;
-			let acc: Vec<f32> = c.targets.iter().filter(|t| t.kind == Tk::Accent).map(time).collect();
-			let Some(tr) = c.targets.iter().find(|t| t.kind == Tk::Trough) else { continue };
+			let acc: Vec<f32> = c.targets.iter().filter(|t| t.kind == TargetKind::Accent).map(time).collect();
+			let Some(tr) = c.targets.iter().find(|t| t.kind == TargetKind::Trough) else { continue };
 			let gap = acc[1] - acc[0];
 			if gap >= TROUGH_FULL_MS {
 				far = true;
