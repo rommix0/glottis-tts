@@ -68,7 +68,7 @@ const BREATH_MOD: f32 = 0.3;
 const FRIC_MOD: f32 = 1.0;
 
 // makeup gain for the parallel branch (frication)
-const PARR_GAIN: f32 = 2.5;
+const PARR_GAIN: f32 = 7.5;
 
 // init constants and nasal murmur
 const RA_REF:   f32 = 3.8;
@@ -129,11 +129,10 @@ pub const VOICES: [Voice; 8] = [
 	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 7 shaky
 ];
 
-struct noise { alpha: f32, nxt: u32, xp1: f32 }
+struct noise { nxt: u32 }
 impl noise {
 	fn new() -> noise {
-		// the aspiration source's smoothing was tuned as 0.75 per sample at 32 kHz; keep that corner (~1.5 kHz)
-		noise { alpha: libm::powf(0.75, 32000.0 / m_sr as f32), nxt: 0x2545F491, xp1: 0.0 }
+		noise { nxt: 0x2545F491 }
 	}
 	fn xorshift(&mut self) {
 		// 32-bit state: repeats after 2^32 - 1 samples instead of 3 s
@@ -141,13 +140,10 @@ impl noise {
 		self.nxt ^= self.nxt >> 17;
 		self.nxt ^= self.nxt << 5;
 	}
-	fn step(&mut self) -> (f32, f32) {
-		// white noise and the smoothed aspiration noise
+	fn step(&mut self) -> f32 {
+		// white noise
 		self.xorshift();
-		let n: f32 = ((self.nxt >> 16) as u16 as i16) as f32 / 32767.0;
-		let f: f32 = (1.0 - self.alpha) * n + self.alpha * self.xp1;
-		self.xp1 = f;
-		(n, f)
+		((self.nxt >> 16) as u16 as i16) as f32 / 32767.0
 	}
 }
 
@@ -802,10 +798,10 @@ impl vtm {
 	}
 	pub fn step(&mut self) -> f32 {
 		self.apply_voice();
-		let (n, mut f) = self.noisegen.step();
+		let n = self.noisegen.step();
 		let (mut voice, nmod) = self.glottal.step(self.F0, self.RD, self.voice.fl);
 		voice *= 0.01;
-		f *= 0.6;
+		let f = n * 0.54;		// aspiration: white noise
 
 		// adjust bandwidths if formants are close together
 		self.fix_bw();
@@ -985,7 +981,7 @@ mod tests {
 	#[test]
 	fn noise_does_not_repeat_within_seconds() {
 		let mut n = noise::new();
-		let x: Vec<f32> = (0..4 * m_sr).map(|_| n.step().0).collect();
+		let x: Vec<f32> = (0..4 * m_sr).map(|_| n.step()).collect();
 		let head = &x[..64];
 		assert!(!x[1..].windows(64).any(|w| w == head), "noise repeats within 4 s");
 	}
@@ -1008,14 +1004,6 @@ mod tests {
 				assert!(r.bf <= F_MAX_SR * m_sr as f32, "voice {} puts a formant at {} Hz", i, r.bf);
 			}
 		}
-	}
-
-	#[test]
-	fn aspiration_noise_corner_is_in_hz() {
-		// smoothed as tuned at 32 kHz: corner near 1.47 kHz whatever the rate
-		let n = noise::new();
-		let fc = -n.alpha.ln() * m_sr as f32 / (2.0 * PI);
-		assert!((fc - 1465.0).abs() < 30.0, "aspiration noise corner {} Hz", fc);
 	}
 
 	#[test]
