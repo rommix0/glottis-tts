@@ -52,7 +52,7 @@ pub async fn synthesize<W: WriteSample>(text: String, writer: W) -> Result<(), W
 
 // where the speech goes as the synthesizer makes it, for tools that want more than synthesize gives: the float
 // samples, the segment each belongs to, and the trace
-pub trait Out {
+pub trait SpeechSink {
 	type Error;
 
 	// one sample (-1 to 1), and the stream index of the segment playing
@@ -64,9 +64,9 @@ pub trait Out {
 // a float sample as a signed 16-bit one
 pub fn to_i16(x: f32) -> i16 { libm::roundf(x.clamp(-1.0, 1.0) * 32767.0) as i16 }
 
-// a WriteSample as an Out
+// a WriteSample as a SpeechSink
 struct Pcm<W>(W);
-impl<W: WriteSample> Out for Pcm<W> {
+impl<W: WriteSample> SpeechSink for Pcm<W> {
 	type Error = W::Error;
 	async fn sample(&mut self, x: f32, _seg: usize) -> Result<(), W::Error> {
 		self.0.write_sample(to_i16(x)).await
@@ -119,7 +119,7 @@ pub fn normalize(text: &str) -> String {
 pub struct Speaker {
 	pub synth: _synth::engine,
 	pub rate:  f32,			// speaking rate, 0.5 to 2
-	pub trace: bool,		// send each word's and segment's plan to Out::trace
+	pub trace: bool,		// send each word's and segment's plan to SpeechSink::trace
 	contour:   _f0::Contour,
 	next_seg:  usize,		// stream index for the next segment
 	started:   bool,
@@ -139,7 +139,7 @@ impl Speaker {
 		}
 	}
 
-	async fn play<O: Out>(&mut self, out: &mut O, phone: u8, dur_ms: f32, stressed: bool, seg: usize, word_start: bool) -> Result<(), O::Error> {
+	async fn play<O: SpeechSink>(&mut self, out: &mut O, phone: u8, dur_ms: f32, stressed: bool, seg: usize, word_start: bool) -> Result<(), O::Error> {
 		// feed one phone into the synthesizer and send out what it plays
 		self.last = phone;
 		if self.synth.load(phone, libm::roundf(dur_ms) as i32, stressed, seg, word_start) {
@@ -153,7 +153,7 @@ impl Speaker {
 	}
 
 	// play out what is still in the synthesizer
-	pub async fn finish<O: Out>(&mut self, out: &mut O) -> Result<(), O::Error> {
+	pub async fn finish<O: SpeechSink>(&mut self, out: &mut O) -> Result<(), O::Error> {
 		let mut finish_off = true;
 		while self.synth.is_not_last() {
 			let seg = self.take_seg();
@@ -180,7 +180,7 @@ impl Speaker {
 	}
 
 	// synthesize one sentence of phone tokens
-	pub async fn sentence<O: Out>(&mut self, tokens: &[u8], texts: &[impl AsRef<str>], out: &mut O) -> Result<(), O::Error> {
+	pub async fn sentence<O: SpeechSink>(&mut self, tokens: &[u8], texts: &[impl AsRef<str>], out: &mut O) -> Result<(), O::Error> {
 		let mut utt = Utterance::build(tokens, texts);
 		_dur::assign(&mut utt, self.rate);
 
@@ -242,7 +242,7 @@ impl Speaker {
 	}
 
 	// synthesize text, sentence by sentence; finish plays out the end
-	pub async fn speak<O: Out>(&mut self, text: &str, out: &mut O) -> Result<(), O::Error> {
+	pub async fn speak<O: SpeechSink>(&mut self, text: &str, out: &mut O) -> Result<(), O::Error> {
 		let mut buf  = cbuf::new();					// text stream buffer
 		let mut wbuf = cbuf::new();					// word buffer
 		let mut dict_reader = dictreader::new();	// dictionary reader
@@ -383,7 +383,7 @@ mod tests {
 
 	// the samples and the playing segment of each
 	struct Collect { x: Vec<f32>, segs: Vec<usize> }
-	impl Out for Collect {
+	impl SpeechSink for Collect {
 		type Error = Infallible;
 		async fn sample(&mut self, x: f32, seg: usize) -> Result<(), Infallible> { self.x.push(x); self.segs.push(seg); Ok(()) }
 	}

@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io::{BufWriter, Write};
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
-use tts_synth::{_vtm, Out, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
+use tts_synth::{_vtm, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
 
 type Wav = hound::WavWriter<BufWriter<File>>;
 
@@ -70,7 +70,7 @@ struct WavOut {
 	dump:   Option<BufWriter<File>>,	// the playing segment index of every sample
 }
 
-impl Out for WavOut {
+impl SpeechSink for WavOut {
 	type Error = hound::Error;
 
 	async fn sample(&mut self, x: f32, seg: usize) -> Result<(), hound::Error> {
