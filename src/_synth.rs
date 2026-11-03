@@ -207,6 +207,16 @@ fn lerp_gain(a: f32, b: f32, y: f32) -> f32 {
 	audible(a * (1.0 - y) + b * y)
 }
 
+fn lin2smooth(x: f32) -> f32 {
+	// ease from 0 to 1 as x goes from 0 to 1, slow at both ends
+	x * x * (3.0 - 2.0 * x)
+}
+
+fn share_of(d: i32, pct: u8) -> i32 {
+	// pct percent of a duration
+	(d as f32 * (pct as f32 / 100.0)) as i32
+}
+
 fn feats(x: u8) -> u16 {
 	/*
 
@@ -667,17 +677,14 @@ impl engine {
 		self.pwi_c  = self.pwi_r1;
 		self.pwi_r1 = w;
 	}
-	pub fn is_running(&mut self) -> bool {
-		if self.counter >= self.marker_B { return false; }
-		true
+	pub fn is_running(&self) -> bool {
+		self.counter < self.marker_B
 	}
-	pub fn is_ready(&mut self) -> bool {
-		if self.phn_c != 0 { return true; }
-		false
+	pub fn is_ready(&self) -> bool {
+		self.phn_c != 0
 	}
-	pub fn is_not_last(&mut self) -> bool {
-		if self.phn_c != 0 && self.phn_r1 == 0 { return false; }
-		true
+	pub fn is_not_last(&self) -> bool {
+		self.phn_c == 0 || self.phn_r1 != 0
 	}
 	fn fetch(&mut self) {
 		// the pause uses the silent row
@@ -942,9 +949,6 @@ impl engine {
 			if let Some(v) = right.or(left) { self.F3_B_src = c3 + k3 * v; }
 		}
 	}
-	fn get_control_A_duration(&mut self, x: u8, d: i32) -> i32 {
-		(d as f32 * (x as f32 / 100.0)) as i32
-	}
 	fn load_registers(&mut self) {
 		// load for the first time
 		self.counter = 0;
@@ -993,9 +997,6 @@ impl engine {
 		self.AH_reg_trg  = db_gain(self.AH_src);
 		self.AV_reg_trg  = db_gain(self.AV_src);
 	}
-	fn lin2smooth(&mut self, x: f32) -> f32 {
-		x * x * (3.0 - 2.0 * x)
-	}
 	fn regs(&self) -> [f32; 7] {
 		[self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg]
 	}
@@ -1041,7 +1042,7 @@ impl engine {
 		self.B3_reg += self.carry[6] * c;
 	}
 	fn update_amp_registers(&mut self, c: i32, l: i32) {
-		let y = if l > 0 { self.lin2smooth(((c - self.amp_start) as f32 / l as f32).clamp(0.0, 1.0)) } else { 0.0 };
+		let y = if l > 0 { lin2smooth(((c - self.amp_start) as f32 / l as f32).clamp(0.0, 1.0)) } else { 0.0 };
 
 		// the nasal coupling switches with the amplitudes
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
@@ -1083,7 +1084,7 @@ impl engine {
 		self.AF_reg = fade(lerp_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
 		self.AH_reg = fade(lerp_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
 
-		let yv = if self.voice_len > 0 { self.lin2smooth(((c - self.voice_start) as f32 / self.voice_len as f32).clamp(0.0, 1.0)) } else { y };
+		let yv = if self.voice_len > 0 { lin2smooth(((c - self.voice_start) as f32 / self.voice_len as f32).clamp(0.0, 1.0)) } else { y };
 		self.AV_reg = fade(lerp_gain(self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
 
 		if self.stop_on && c >= 0 {
@@ -1286,9 +1287,9 @@ impl engine {
 					if back { self.f1_len = samples(BACK_F1_MS); }
 				} else {
 					// l, r, w and y: get transition from formant table
-					self.marker_A = self.get_control_A_duration(self.C_A_src, self.pdr_c);
+					self.marker_A = share_of(self.pdr_c, self.C_A_src);
 				}
-				self.marker_B = self.get_control_A_duration(100 - self.C_B_src, self.pdr_c);
+				self.marker_B = share_of(self.pdr_c, 100 - self.C_B_src);
 				if self.pft_c & 0x1 != 0 {
 					// short vowels get a shorter transition so they still reach their target
 					self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
@@ -1318,14 +1319,14 @@ impl engine {
 			if self.is_first {
 				// load in registers if this is the first time
 				// and reset counter
-				self.marker_BA = self.get_control_A_duration(self.C_B_src, self.pdr_c);
+				self.marker_BA = share_of(self.pdr_c, self.C_B_src);
 				self.is_first = false;
 				self.load_registers();
 			} else {
 				// do locus calculation here and set counter to negative number
 				// so we can do a complete locus transition
 				self.update_B_to_Next();
-				self.marker_BA = self.get_control_A_duration(self.C_B_src, self.pdr_c);
+				self.marker_BA = share_of(self.pdr_c, self.C_B_src);
 			}
 			if self.pft_c & 0x1 != 0 && self.marker_BA > samples(VOWEL_EXIT_MS) {
 				// a long vowel keeps its own formants longer, the move into the next phone takes the same time
