@@ -809,7 +809,7 @@ impl vtm {
 		let (br_mod, af_mod) = (modulate(BREATH_MOD), modulate(FRIC_MOD));
 
 		// route audio sources to a source fed in by cascade filter
-		voice += (n * self.db2lin(self.BR) * br_mod);
+		voice += n * self.db2lin(self.BR) * br_mod;
 		let casc_in: f32 = voice * self.AV.min(1.0) + (n * 0.54) * self.AH.min(1.0);
 
 		// route noise source to source fed in by parallel filter
