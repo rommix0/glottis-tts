@@ -30,13 +30,10 @@ const LIP_MATCH: f32 = 0.5;
 const PERTURB_SPREAD: f32 = 1.5;
 
 // output trim, keeps peaks under the soft clip
-const OUT_DB: f32 = -2.0;
+const OUT_DB: f32 = -11.5;
 
 // makeup gain for the cascade branch (unity DC gain per resonator)
 const CASC_GAIN: f32 = 2328.0;
-
-// high frequency emphasis for the cascade branch
-const CASC_EMPH: f32 = 0.75;
 
 // frication noise: rolled off above this, so consonants are not too bright
 const FRIC_LP_HZ: f32 = 4500.0;
@@ -65,10 +62,6 @@ pub const DB_GAIN: [f32; 88] = [
 // formants closer than MIN_D (Hz) get their bandwidths widened, by up to 1 + MUL_B times when they meet
 const MIN_D: f32 = 350.0;
 const MUL_B: f32 = 2.5;
-
-// low shelf on the cascade branch: this much more level (dB) below about LOW_SHELF_HZ
-const LOW_SHELF_DB: f32 = 4.0;
-const LOW_SHELF_HZ: f32 = 250.0;
 
 // how much voicing modulates breath noise and frication (1 is half-level noise in every other half period, 2 is none)
 const BREATH_MOD: f32 = 0.3;
@@ -587,14 +580,10 @@ pub struct vtm {
 	FR9:      resonator,
 	FR10:     resonator,
 	xp1:      f32,
-	ep1:      f32,
-	shelf_y1: f32,
 	fric_y1:  f32,		// frication noise lowpass state
 	voice:    Voice,	// voice profile
 	vgain:    f32,		// the voice profile's output level, linear
 	fric_a:   f32,		// frication lowpass coefficient
-	shelf_a:  f32,		// low shelf lowpass coefficient
-	shelf_g:  f32,		// low shelf: the lowpassed copy's gain
 	lip_d:    f32,		// lip radiation coefficient at this rate
 	out_g:    f32,		// output trim, linear
 }
@@ -652,15 +641,10 @@ impl vtm {
 			// past sample for lip radiation filter
 			xp1: 0.0,
 
-			// past sample for cascade emphasis filter
-			ep1: 0.0,
-			shelf_y1: 0.0,
 			fric_y1: 0.0,
 			voice: VOICES[0],
 			vgain: 1.0,
 			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
-			shelf_a: libm::expf(-2.0 * PI * LOW_SHELF_HZ / m_sr as f32),
-			shelf_g: libm::powf(10.0, LOW_SHELF_DB / 20.0) - 1.0,
 			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
 			out_g:   libm::powf(10.0, OUT_DB / 20.0),
 		};
@@ -806,18 +790,6 @@ impl vtm {
 		let excess: f32 = a - CLIP_LIMIT;
 		x.signum() * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
 	}
-	fn low_shelf(&mut self, x: f32) -> f32 {
-		// add a low-passed copy back on top, so only the bottom of the spectrum gains level
-		let a = self.shelf_a;
-		self.shelf_y1 = (1.0 - a) * x + a * self.shelf_y1;
-		x + self.shelf_g * self.shelf_y1
-	}
-	fn emph(&mut self, x: f32) -> f32 {
-		// brighten the cascade output
-		let xx = x - CASC_EMPH * self.ep1;
-		self.ep1 = x;
-		xx
-	}
 	fn radiate(&mut self, x: f32) -> f32 {
 		// lip radiation with its coefficient moved toward the tuned rate's response, at the same low-frequency gain
 		let d = self.lip_d;
@@ -852,9 +824,7 @@ impl vtm {
 		self.fric_y1 = (1.0 - a) * n + a * self.fric_y1;
 		let parr_in: f32 = self.fric_y1 * self.AF.min(1.0) * af_mod;
 
-		let casc_out: f32 = self.cascade(casc_in);
-		let casc_out: f32 = self.emph(casc_out) * CASC_GAIN;
-		let casc_out: f32 = self.low_shelf(casc_out);
+		let casc_out: f32 = self.cascade(casc_in) * CASC_GAIN;
 		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
 
 		let out = self.radiate(casc_out + parr_out) * self.out_g * self.vgain;
@@ -880,23 +850,6 @@ mod tests {
 			assert!((z - last).abs() < 10.0, "zero jumps {} -> {}", last, z);
 			last = z;
 		}
-	}
-
-	#[test]
-	fn low_shelf_lifts_only_the_bottom() {
-		// steady DC comes out LOW_SHELF_DB louder; an alternating (Nyquist) signal is nearly unchanged
-		let mut v = vtm::new();
-		let mut y = 0.0;
-		for _ in 0..20000 { y = v.low_shelf(1.0); }
-		assert!((20.0 * y.log10() - LOW_SHELF_DB).abs() < 0.1, "DC gain {} dB", 20.0 * y.log10());
-		let mut v = vtm::new();
-		let mut peak = 0.0f32;
-		for i in 0..20000 {
-			let x = if i % 2 == 0 { 1.0 } else { -1.0 };
-			let y = v.low_shelf(x);
-			if i > 10000 { peak = peak.max(y.abs()); }
-		}
-		assert!((20.0 * peak.log10()).abs() < 0.3, "Nyquist gain {} dB", 20.0 * peak.log10());
 	}
 
 	// 4000 samples of a steady vowel with these F1, F2, B1, B2 in voice
