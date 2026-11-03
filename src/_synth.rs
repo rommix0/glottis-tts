@@ -825,9 +825,9 @@ impl engine {
 				self.B2_A_src += 50.0 * factor;
 			}
 
-			// BACK VOWEL ALVEOLARIZATION (next to alveolar stops, nasals and fricatives, not l or r)
+			// BACK VOWEL ALVEOLARIZATION (next to any alveolar, l and r included)
 			if self.pft_c == 0x000B {
-				fn alveolar(f: u16) -> bool { f & 0x20 != 0 && f & 0x0C00 == 0 }
+				fn alveolar(f: u16) -> bool { f & 0x20 != 0 }
 				if alveolar(self.pft_l1) {
 					self.F2_A_src += 250.0 * factor;
 				}
@@ -2241,13 +2241,12 @@ mod tests {
 	}
 
 	#[test]
-	fn only_alveolar_obstruents_front_uw() {
+	fn alveolars_front_uw() {
+		// d, l and r all front uw; b does not
 		let (_, a_b, b_b) = vowel_targets(9, 39, 9);
-		let (_, a_d, b_d) = vowel_targets(11, 39, 11);
-		assert!(a_d > a_b + 100.0 && b_d > b_b + 100.0, "uw not fronted next to d: {} {} vs {} {}", a_d, b_d, a_b, b_b);
-		for &(l, r) in &[(24u8, 25u8), (32, 33)] {
+		for &(l, r) in &[(11u8, 11u8), (24, 25), (32, 33)] {
 			let (_, a, b) = vowel_targets(l, 39, r);
-			assert!((a - a_b).abs() < 60.0 && (b - b_b).abs() < 60.0, "uw fronted next to {}/{}: {} {} vs {} {}", l, r, a, b, a_b, b_b);
+			assert!(a > a_b + 100.0 && b > b_b + 100.0, "uw not fronted next to {}/{}: {} {} vs {} {}", l, r, a, b, a_b, b_b);
 		}
 	}
 
