@@ -60,6 +60,7 @@ pub struct Seg {
 	pub syl:    usize,				// index into Utterance::syls
 	pub dur_ms: f32,				// set by the duration rules
 	pub rules:  Vec<&'static str>,	// duration rules that fired (for --trace)
+	pub glide:  bool,				// a w or y put between two vowels
 }
 pub struct Syl {
 	pub segs:    Range<usize>,
@@ -152,12 +153,16 @@ impl Utterance {
 					let w = u.words.len() - 1;
 					for (p, s) in [(pa, sa), (pb, sb)] {
 						if p == 0 { continue; }
-						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower", "being")
-						let prev = u.segs.last().filter(|x| x.word == w).map(|x| x.phone);
+						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower", "being"),
+						// and into an unstressed vowel starting the next word of its phrase ("go away"); a stressed one
+						// starts with a glottal catch instead
+						let first = u.words[w].segs.is_empty();
+						let prev = u.segs.last().filter(|x| x.word == w
+							|| (first && s == 0 && x.word + 1 == w && u.words[x.word].phrase == u.words[w].phrase)).map(|x| x.phone);
 						if is_vowel(p) && let Some(g) = prev.and_then(offglide) {
-							u.segs.push(Seg { phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new() });
+							u.segs.push(Seg { phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: true });
 						}
-						u.segs.push(Seg { phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new() });
+						u.segs.push(Seg { phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: false });
 						u.words[w].segs.end = u.segs.len();
 					}
 				},
@@ -309,8 +314,13 @@ mod tests {
 		let u = Utterance::build(&[CW, 46, 15, 60, 66, 37, PERIOD], &["follower"]);
 		assert_eq!(u.segs.iter().map(|s| s.phone).collect::<Vec<_>>(), vec![16, 1, 25, 29, 41, 7]);
 		assert_eq!(syl_phones(&u, 2), vec![41, 7]);
-		// not across words
+		// across words into an unstressed vowel, which the w starts ("go away"); not into a stressed one, nor across a comma
 		let u = Utterance::build(&[CW, 66, CW, 32, PERIOD], &["owe", "aa"]);
+		assert_eq!(u.segs.iter().map(|s| (s.phone, s.word)).collect::<Vec<_>>(), vec![(29, 0), (41, 1), (1, 1)]);
+		assert!(u.segs[1].glide && !u.segs[0].glide);
+		let u = Utterance::build(&[CW, 66, CW, 15, PERIOD], &["owe", "aa"]);
+		assert_eq!(u.segs.len(), 2);
+		let u = Utterance::build(&[CW, 66, COMMA, CW, 32, PERIOD], &["owe", "aa"]);
 		assert_eq!(u.segs.len(), 2);
 	}
 

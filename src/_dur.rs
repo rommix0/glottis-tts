@@ -9,7 +9,7 @@ each segment's duration is
 so only the stretchable part above the minimum is scaled.
 
 */
-use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent, offglide};
+use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent};
 use alloc::vec::Vec;
 
 pub struct PhoneDur { pub inherent: f32, pub min: f32 }
@@ -136,9 +136,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
 			if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
 			if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
-			if i > 0 && same_word(i - 1) && offglide(utt.segs[i - 1].phone) == Some(p) && same_word(i + 1) && is_vowel(utt.segs[i + 1].phone) {
-				apply("glide-through", GLIDE_THROUGH);
-			}
+			if utt.segs[i].glide { apply("glide-through", GLIDE_THROUGH); }
 		}
 
 		if word.function { apply("function-word", FUNCTION_WORD); }
