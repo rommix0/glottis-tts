@@ -1,3 +1,195 @@
-HOW TO RUN THE TTS DEMO:
-========================
-cargo run --release --example tts_demo -- "this is an example sentence."
+HOW TO USE TTS_SYNTH (src/lib.rs)
+=================================
+
+tts_synth turns English text into speech: mono, signed 16-bit samples at
+SAMPLE_RATE (22050 Hz). It is a no_std library that needs only an allocator,
+so the same code runs on a desktop, or on a microcontroller with an FPU.
+
+
+1. ADD IT
+---------
+In your Cargo.toml:
+
+    [dependencies]
+    tts_synth = { path = "../tts_synth" }
+
+
+2. SPEAK SOME TEXT
+------------------
+Implement WriteSample for wherever the samples should go, then call synthesize:
+
+    use std::{convert::Infallible, pin::pin, task::{Context, Poll, Waker}};
+    use tts_synth::{SAMPLE_RATE, WriteSample, synthesize};
+
+    struct Samples(Vec<i16>);
+
+    impl WriteSample for Samples {
+        type Error = Infallible;
+
+        async fn write_sample(&mut self, sample: i16) -> Result<(), Infallible> {
+            self.0.push(sample);
+            Ok(())
+        }
+    }
+
+    // synthesize is async; with a writer that never waits, polling it
+    // to the end is all a runtime has to do
+    fn block_on<F: Future>(f: F) -> F::Output {
+        let mut f = pin!(f);
+        let mut cx = Context::from_waker(Waker::noop());
+        loop {
+            if let Poll::Ready(r) = f.as_mut().poll(&mut cx) { return r; }
+        }
+    }
+
+    fn main() {
+        let mut out = Samples(Vec::new());
+        let Ok(()) = block_on(synthesize("Hello, world.".to_string(), &mut out));
+        println!("{} samples at {} Hz", out.0.len(), SAMPLE_RATE);
+    }
+
+synthesize takes the writer by value; pass &mut writer to keep it afterwards.
+
+Writers that wait or fail:
+  - write_sample may wait, for example until an audio device has room. The
+    synthesis pauses with it, so samples can stream to a sound card as they
+    are made, in any async runtime.
+  - An error from write_sample stops the synthesis, and synthesize returns it.
+  - Dropping the future stops the synthesis too.
+
+
+3. VOICE AND SPEAKING RATE
+--------------------------
+Speaker gives the settings that synthesize leaves at their defaults:
+
+    use tts_synth::{Speaker, _vtm};
+
+    let mut sp = Speaker::new();
+    sp.rate = 1.2;                          // 0.5 (slow) to 2.0 (fast)
+    sp.synth.set_voice(_vtm::VOICES[2]);
+    let Ok(()) = block_on(sp.synthesize("Hello again.", &mut out));
+
+Use a new Speaker for each text. The voices:
+
+    0  table voice (the default)
+    1  large head
+    2  female
+    3  child
+    4  giant
+    5  deep voice, tiny head
+    6  pulled apart
+    7  shaky
+
+
+4. TEXT INPUT
+-------------
+  - Plain English. The text normalizer spells out numbers, money, times,
+    common titles such as "Dr." and symbols such as "&". normalize(text)
+    shows what it makes of a text.
+  - Sentences end at ".", "?" or "!". A question mark gives a yes/no rising
+    ending (questions starting with a question word fall), "!" a livelier
+    contour, and commas a rise and a short pause.
+
+
+5. FLOAT SAMPLES AND TIMING (LIP SYNC)
+--------------------------------------
+Speaker::speak with your own SpeechSink gives more than 16-bit samples: each
+sample as an f32 (-1 to 1), the index of the segment (phone) it belongs to,
+and, with sp.trace = true, a text line per word and segment describing its
+plan. Call finish after the last speak to play out the end:
+
+    use tts_synth::{SpeechSink, Speaker};
+
+    struct Floats { x: Vec<f32>, seg: Vec<usize> }
+
+    impl SpeechSink for Floats {
+        type Error = Infallible;
+
+        async fn sample(&mut self, x: f32, seg: usize) -> Result<(), Infallible> {
+            self.x.push(x);
+            self.seg.push(seg);
+            Ok(())
+        }
+
+        fn trace(&mut self, line: &str) { println!("{line}"); }
+    }
+
+    let mut sp = Speaker::new();
+    sp.trace = true;
+    let mut out = Floats { x: Vec::new(), seg: Vec::new() };
+    let Ok(()) = block_on(async {
+        sp.speak("Hello.", &mut out).await?;
+        sp.finish(&mut out).await
+    });
+
+The segment indices line up with the seg= field of the TRACE lines, which also
+give each segment's phone (see the phone list in section 6) and stress, enough
+to drive lip sync. to_i16 converts a float sample the way synthesize does.
+
+trace has a default that ignores the lines, so a sink that only wants samples
+implements sample alone.
+
+
+6. SAYING PHONES DIRECTLY
+-------------------------
+Speaker::sentence skips the text front end and says phone tokens: a word
+boundary, the word's phones, then an end mark. phone_token turns a phone
+number (list below) into its token. The word texts may be &str or String:
+
+    use tts_synth::{Speaker, phone_token};
+
+    let mut sp = Speaker::new();
+    let aa = phone_token(1).unwrap();
+    let Ok(()) = block_on(async {
+        sp.sentence(&[90, aa, 92], &["ah"], &mut out).await?;
+        sp.finish(&mut out).await
+    });
+
+Boundary and punctuation tokens (use these directly, not through phone_token):
+
+    90  content word boundary      93  question mark
+    91  comma                      94  exclamation point
+    92  period                     95  function word boundary
+
+Phone numbers for phone_token:
+
+     1 aa    12 dh    23 k     34 s
+     2 ae    13 eh    24 l     35 sh
+     3 ah    14 er    25 lx    36 t
+     4 ao    15 ey    26 m     37 th
+     5 aw    16 f     27 n     38 uh
+     6 ax    17 g     28 ng    39 uw
+     7 axr   18 hh    29 ow    40 v
+     8 ay    19 ih    30 oy    41 w
+     9 b     20 ix    31 p     42 y
+    10 ch    21 iy    32 r     43 z
+    11 d     22 jh    33 rx    44 zh
+
+The synthesizer makes a few more phones itself: 45 l_dv and 46 r_dv
+(devoiced l and r), 47 dx (flap), 48 axp and 49 ixp (phrase-final releases)
+and 56 pau (pause). They have no token, so phone_token returns None for them,
+as it does for 0.
+
+
+7. WITHOUT THE STANDARD LIBRARY
+-------------------------------
+The library is #![no_std] and uses alloc, so the program must provide a global
+allocator. It does its arithmetic in f32; a CPU with a floating-point unit (a
+Pentium, a Cortex-M4F, an ESP32) runs it well, one without one will be slow.
+
+
+8. TRYING IT BY HAND
+--------------------
+tts_demo writes tts_demo.wav in the current folder:
+
+    cargo run --release --example tts_demo -- "this is an example sentence."
+
+Options:
+    --voice N         voice 0 to 7
+    --rate R          speaking rate, 0.5 to 2.0
+    --16bit           16-bit samples instead of 32-bit float
+    --text            print the normalized text instead of speaking
+    --trace           print each word's and segment's plan
+    --seg-dump FILE   write the segment index of every sample (32-bit)
+    --phone N         say one phone, by its number in section 6
+    --table FILE      use a formant table file instead of the built-in one
