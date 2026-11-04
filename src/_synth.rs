@@ -145,6 +145,10 @@ const NASAL_CARRY_MS: f32 = 40.0;
 const ASP_DB: f32 = 15.5;
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.8;
+// a word-internal t before an unstressed schwa ("button", "Clinton") is softer still: this share of that aspiration,
+// this much quieter
+const SCHWA_T_ASP: f32 = 0.5;
+const SCHWA_T_ASP_DB: f32 = 6.0;
 
 // after aspiration the voicing builds up over VOICE_ONSET_MS while the aspiration fades out under it
 const VOICE_ONSET_MS: f32 = 10.0;
@@ -313,8 +317,10 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 	}
 
 	// context only shortens the aspiration; the closure takes the time it gives up
+	let schwa_t = phone == 36 && !word_start && matches!(next, 6 | 20) && !next_stressed;
 	if nf & 0x1 != 0 {
 		if !next_stressed { asp = (asp as f32 * ASP_UNSTRESSED) as i32; }
+		if schwa_t { asp = (asp as f32 * SCHWA_T_ASP) as i32; }
 	} else if nf & 0x1C00 != 0 {
 		asp = (asp as f32 * ASP_BEFORE_SONORANT) as i32;
 	} else {
@@ -1317,6 +1323,7 @@ impl engine {
 						ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0
 					} else { 0.0 };
 					level -= front.max(ASP_FOLLOW * self.quiet_next_db());
+					if self.phn_c == 36 && !self.pwi_c && matches!(self.phn_r1, 6 | 20) && !self.pst_r1 { level -= SCHWA_T_ASP_DB; }
 					self.asp_db_next = level.max(1.0);
 					self.asp_seg_next = self.seg_c;
 				}
@@ -1669,6 +1676,8 @@ mod tests {
 		assert_eq!(t(35, 1, true, false).asp, 0, "after sh in the word");
 		assert!((t(34, 1, true, true).asp - ms(55.0)).abs() <= 1, "after s across a word start");
 		assert!((t(1, 1, false, true).asp - ms(33.0)).abs() <= 1, "before an unstressed vowel");
+		assert!((t(3, 6, false, false).asp - ms(33.0 * SCHWA_T_ASP)).abs() <= 1, "inside a word before a schwa");
+		assert!((t(1, 6, false, true).asp - ms(33.0)).abs() <= 1, "starting a word before a schwa");
 		assert!((t(1, 24, true, true).asp - ms(55.0 * ASP_BEFORE_SONORANT)).abs() <= 1, "before l");
 		assert_eq!(t(1, 34, true, true).asp, 0, "before s");
 		assert_eq!(t(1, 48, false, true).asp, 0, "phrase-final");
