@@ -21,7 +21,7 @@ fn ends_day(c: u8, d: u8) -> bool {
 	!c.is_ascii_alphanumeric() && c != b'/' && !(matches!(c, b':' | b',' | b'.') && d.is_ascii_digit())
 }
 
-fn is_space(c: u8) -> bool { matches!(c, b' ' | 0x08 | 0x0A) }
+fn is_space(c: u8) -> bool { matches!(c, b' ' | b'\t' | b'\n') }
 
 fn consume(buf: &mut cbuf, n: usize) { for _ in 0..n { buf.advance(); } }
 
@@ -893,8 +893,7 @@ let mut t5;
                             yystate = 1;
                             continue 'yyl;
                         }
-                        0x08 |
-                        0x0A => {
+                        0x09 ..= 0x0A => {
                             buf.advance();
                             yystate = 4;
                             continue 'yyl;
@@ -1482,8 +1481,7 @@ let mut t5;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 113;
@@ -1503,8 +1501,7 @@ let mut t5;
                 16 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 7;
@@ -1628,8 +1625,7 @@ let mut t5;
                 23 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 118;
@@ -1818,8 +1814,7 @@ let mut t5;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 118;
@@ -1839,8 +1834,7 @@ let mut t5;
                 29 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 118;
@@ -2367,8 +2361,7 @@ let mut t5;
                 83 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 158;
@@ -2462,8 +2455,7 @@ let mut t5;
                 90 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 162;
@@ -2537,8 +2529,7 @@ let mut t5;
                 99 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 167;
@@ -2610,12 +2601,8 @@ let mut t5;
                             yystate = 281;
                             continue 'yyl;
                         }
-                        14 => {
-                            yystate = 26;
-                            continue 'yyl;
-                        }
                         _ => {
-                            yystate = 467;
+                            yystate = 26;
                             continue 'yyl;
                         }
                     }
@@ -4536,8 +4523,7 @@ let mut t5;
                 216 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 285;
@@ -4557,8 +4543,7 @@ let mut t5;
                 217 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 287;
@@ -4578,8 +4563,7 @@ let mut t5;
                 218 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 289;
@@ -4599,8 +4583,7 @@ let mut t5;
                 219 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 291;
@@ -4620,8 +4603,7 @@ let mut t5;
                 220 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 293;
@@ -4641,8 +4623,7 @@ let mut t5;
                 221 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 295;
@@ -4662,8 +4643,7 @@ let mut t5;
                 222 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 297;
@@ -4683,8 +4663,7 @@ let mut t5;
                 223 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 299;
@@ -4704,8 +4683,7 @@ let mut t5;
                 224 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 301;
@@ -4725,8 +4703,7 @@ let mut t5;
                 225 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 303;
@@ -4746,8 +4723,7 @@ let mut t5;
                 226 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 305;
@@ -4767,8 +4743,7 @@ let mut t5;
                 227 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 307;
@@ -4788,8 +4763,7 @@ let mut t5;
                 228 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 309;
@@ -4809,8 +4783,7 @@ let mut t5;
                 229 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 311;
@@ -4830,8 +4803,7 @@ let mut t5;
                 230 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 313;
@@ -4851,8 +4823,7 @@ let mut t5;
                 231 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 315;
@@ -4872,8 +4843,7 @@ let mut t5;
                 232 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 317;
@@ -4893,8 +4863,7 @@ let mut t5;
                 233 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 319;
@@ -4914,8 +4883,7 @@ let mut t5;
                 234 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 321;
@@ -4935,8 +4903,7 @@ let mut t5;
                 235 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 323;
@@ -4956,8 +4923,7 @@ let mut t5;
                 236 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 325;
@@ -4977,8 +4943,7 @@ let mut t5;
                 237 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 327;
@@ -4998,8 +4963,7 @@ let mut t5;
                 238 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 329;
@@ -5019,8 +4983,7 @@ let mut t5;
                 239 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 331;
@@ -5040,8 +5003,7 @@ let mut t5;
                 240 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 333;
@@ -5061,8 +5023,7 @@ let mut t5;
                 241 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 335;
@@ -5082,8 +5043,7 @@ let mut t5;
                 242 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 337;
@@ -5103,8 +5063,7 @@ let mut t5;
                 243 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 339;
@@ -5124,8 +5083,7 @@ let mut t5;
                 244 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 341;
@@ -5145,8 +5103,7 @@ let mut t5;
                 245 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 343;
@@ -5166,8 +5123,7 @@ let mut t5;
                 246 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 345;
@@ -5187,8 +5143,7 @@ let mut t5;
                 247 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 347;
@@ -5208,8 +5163,7 @@ let mut t5;
                 248 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 349;
@@ -5229,8 +5183,7 @@ let mut t5;
                 249 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 351;
@@ -5250,8 +5203,7 @@ let mut t5;
                 250 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 353;
@@ -5271,8 +5223,7 @@ let mut t5;
                 251 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 355;
@@ -5292,8 +5243,7 @@ let mut t5;
                 252 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 357;
@@ -5313,8 +5263,7 @@ let mut t5;
                 253 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 359;
@@ -5334,8 +5283,7 @@ let mut t5;
                 254 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 361;
@@ -5355,8 +5303,7 @@ let mut t5;
                 255 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 363;
@@ -5376,8 +5323,7 @@ let mut t5;
                 256 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 365;
@@ -5397,8 +5343,7 @@ let mut t5;
                 257 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 367;
@@ -5418,8 +5363,7 @@ let mut t5;
                 258 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 369;
@@ -5439,8 +5383,7 @@ let mut t5;
                 259 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 371;
@@ -5460,8 +5403,7 @@ let mut t5;
                 260 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 373;
@@ -5481,8 +5423,7 @@ let mut t5;
                 261 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 375;
@@ -5502,8 +5443,7 @@ let mut t5;
                 262 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 377;
@@ -5523,8 +5463,7 @@ let mut t5;
                 263 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 379;
@@ -5544,8 +5483,7 @@ let mut t5;
                 264 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 381;
@@ -5565,8 +5503,7 @@ let mut t5;
                 265 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 383;
@@ -5586,8 +5523,7 @@ let mut t5;
                 266 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 385;
@@ -5909,8 +5845,7 @@ let mut t5;
                 286 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 285;
@@ -5929,8 +5864,7 @@ let mut t5;
                 288 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 287;
@@ -5949,8 +5883,7 @@ let mut t5;
                 290 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 289;
@@ -5969,8 +5902,7 @@ let mut t5;
                 292 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 291;
@@ -5989,8 +5921,7 @@ let mut t5;
                 294 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 293;
@@ -6009,8 +5940,7 @@ let mut t5;
                 296 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 295;
@@ -6029,8 +5959,7 @@ let mut t5;
                 298 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 297;
@@ -6049,8 +5978,7 @@ let mut t5;
                 300 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 299;
@@ -6069,8 +5997,7 @@ let mut t5;
                 302 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 301;
@@ -6089,8 +6016,7 @@ let mut t5;
                 304 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 303;
@@ -6109,8 +6035,7 @@ let mut t5;
                 306 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 305;
@@ -6129,8 +6054,7 @@ let mut t5;
                 308 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 307;
@@ -6149,8 +6073,7 @@ let mut t5;
                 310 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 309;
@@ -6169,8 +6092,7 @@ let mut t5;
                 312 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 311;
@@ -6189,8 +6111,7 @@ let mut t5;
                 314 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 313;
@@ -6209,8 +6130,7 @@ let mut t5;
                 316 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 315;
@@ -6229,8 +6149,7 @@ let mut t5;
                 318 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 317;
@@ -6249,8 +6168,7 @@ let mut t5;
                 320 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 319;
@@ -6269,8 +6187,7 @@ let mut t5;
                 322 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 321;
@@ -6289,8 +6206,7 @@ let mut t5;
                 324 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 323;
@@ -6309,8 +6225,7 @@ let mut t5;
                 326 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 325;
@@ -6329,8 +6244,7 @@ let mut t5;
                 328 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 327;
@@ -6349,8 +6263,7 @@ let mut t5;
                 330 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 329;
@@ -6369,8 +6282,7 @@ let mut t5;
                 332 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 331;
@@ -6389,8 +6301,7 @@ let mut t5;
                 334 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 333;
@@ -6409,8 +6320,7 @@ let mut t5;
                 336 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 335;
@@ -6429,8 +6339,7 @@ let mut t5;
                 338 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 337;
@@ -6449,8 +6358,7 @@ let mut t5;
                 340 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 339;
@@ -6469,8 +6377,7 @@ let mut t5;
                 342 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 341;
@@ -6489,8 +6396,7 @@ let mut t5;
                 344 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 343;
@@ -6509,8 +6415,7 @@ let mut t5;
                 346 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 345;
@@ -6529,8 +6434,7 @@ let mut t5;
                 348 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 347;
@@ -6549,8 +6453,7 @@ let mut t5;
                 350 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 349;
@@ -6569,8 +6472,7 @@ let mut t5;
                 352 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 351;
@@ -6589,8 +6491,7 @@ let mut t5;
                 354 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 353;
@@ -6609,8 +6510,7 @@ let mut t5;
                 356 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 355;
@@ -6629,8 +6529,7 @@ let mut t5;
                 358 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 357;
@@ -6649,8 +6548,7 @@ let mut t5;
                 360 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 359;
@@ -6669,8 +6567,7 @@ let mut t5;
                 362 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 361;
@@ -6689,8 +6586,7 @@ let mut t5;
                 364 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 363;
@@ -6709,8 +6605,7 @@ let mut t5;
                 366 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 365;
@@ -6729,8 +6624,7 @@ let mut t5;
                 368 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 367;
@@ -6749,8 +6643,7 @@ let mut t5;
                 370 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 369;
@@ -6769,8 +6662,7 @@ let mut t5;
                 372 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 371;
@@ -6789,8 +6681,7 @@ let mut t5;
                 374 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 373;
@@ -6809,8 +6700,7 @@ let mut t5;
                 376 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 375;
@@ -6829,8 +6719,7 @@ let mut t5;
                 378 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 377;
@@ -6849,8 +6738,7 @@ let mut t5;
                 380 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 379;
@@ -6869,8 +6757,7 @@ let mut t5;
                 382 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 381;
@@ -6889,8 +6776,7 @@ let mut t5;
                 384 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 383;
@@ -6909,8 +6795,7 @@ let mut t5;
                 386 => {
                     yych = buf.read();
                     match yych {
-                        0x08 |
-                        0x0A |
+                        0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
                             yystate = 385;
@@ -8337,7 +8222,7 @@ let mut t5;
                         0x5F |
                         0x6E |
                         0x72 ..= 0x74 => {
-                            yystate = 466;
+                            yystate = 197;
                             continue 'yyl;
                         }
                         _ => {
@@ -8346,84 +8231,6 @@ let mut t5;
                             continue 'yyl;
                         }
                     }
-                }
-                464 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 465;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                465 => {
-                    yyaccept = 15;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    yystate = 466;
-                    continue 'yyl;
-                }
-                466 => {
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 464;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 465;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 467;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                467 => {
-                    t1 = yyt1;
-                    {
-				self.digit_prev = true;
-				let end = buf.getcurs();
-				buf.setcurs(t1);
-				while buf.getcurs() < end {
-					self.reset_ntw();
-					self.consume_digit(buf.read());
-					self.ntw(true, false);
-					buf.advance();
-				}
-				break;
-			}
                 }
                 _ => panic!("internal lexer error"),
             }

@@ -20,7 +20,7 @@ fn ends_day(c: u8, d: u8) -> bool {
 	!c.is_ascii_alphanumeric() && c != b'/' && !(matches!(c, b':' | b',' | b'.') && d.is_ascii_digit())
 }
 
-fn is_space(c: u8) -> bool { matches!(c, b' ' | 0x08 | 0x0A) }
+fn is_space(c: u8) -> bool { matches!(c, b' ' | b'\t' | b'\n') }
 
 fn consume(buf: &mut cbuf, n: usize) { for _ in 0..n { buf.advance(); } }
 
@@ -885,7 +885,7 @@ impl engine {
 			re2c:tags           = 1;
 
 			/* NORMAL GRAMMAR */
-			space       = " " | "\x08" | "\x0A";
+			space       = " " | "\x09" | "\x0A";
 			comma       = ",";
 			period      = ".";
 			dquote      = "\x22" | "\u201c" | "\u201d" | "\u201e" | "\u201f";
@@ -1463,22 +1463,8 @@ impl engine {
 				break;
 			}
 
-			/* ROUTINE FOR NUMBERS STARTING WITH ZEROES */
-			@t1 "0" whole_num {
-				self.digit_prev = true;
-				let end = buf.getcurs();
-				buf.setcurs(t1);
-				while buf.getcurs() < end {
-					self.reset_ntw();
-					self.consume_digit(buf.read());
-					self.ntw(true, false);
-					buf.advance();
-				}
-				break;
-			}
-
-			/* ROUTINE FOR NUMBERS GREATER THAN QUADRILLION */
-			@t1 whole_num{19,} {
+			/* ROUTINE FOR NUMBERS STARTING WITH ZEROES OR PAST QUADRILLIONS: DIGIT BY DIGIT */
+			@t1 ("0" whole_num | whole_num{19,}) {
 				self.digit_prev = true;
 				let end = buf.getcurs();
 				buf.setcurs(t1);

@@ -6,7 +6,7 @@ usage: python tools/build_normalizer.py [RE2C]     (RE2C defaults to re2c on the
 tools/normalizer_rules.txt holds the fixed-text rules (homographs, abbreviations, units, emoji), one per line:
     PATTERN<TAB>"REPLACEMENT"
 in the lexer's own pattern syntax: "..." matches exactly, '...' matches letters in either case, `space` or
-`wbound` is a space, backspace or newline, `period` and `comma` are themselves, `?` makes the piece before it
+`wbound` is a space, tab or newline, `period` and `comma` are themselves, `?` makes the piece before it
 optional and `|` separates alternatives. In the replacement, {s} (or any {...}) is added only after a plural
 number, as with "5 km". Lines starting with # are comments.
 
@@ -108,7 +108,7 @@ def write_tables(rules, path):
         for s in starts:
             first[s].append(i)
     lines = ['// fixed-text normalizer rules', '',
-             f'// pattern bytes: {SPACE:#04x} any space (space, backspace, newline), {EITHER:#04x} then a lowercase letter that',
+             f'// pattern bytes: {SPACE:#04x} any space (space, tab, newline), {EITHER:#04x} then a lowercase letter that',
              '// matches either case; then the replacement, the plural ending added after a plural number, the rest',
              f'pub static RULES: [(&[u8], &str, &str, &str); {len(entries)}] = [']
     lines += [f'\t({rust_bytes(p)}, {rust_str(h)}, {rust_str(pl)}, {rust_str(t)}),' for p, h, pl, t in entries]

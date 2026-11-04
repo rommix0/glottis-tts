@@ -47,7 +47,7 @@ z		43
 zh		44
 l_dv	45		// devoiced L. internal use only
 r_dv	46		// devoiced R. internal use only
-dx		47		// alveolar flap. not used at the moment.
+dx		47		// alveolar flap.
 axp		48		// plosive/phrase-final release					|-> automatically generated at end of phrases.
 ixp		49		// plosive/phrase-final release (alveolar)		|   can be inserted manually.
 #		50		// content word boundary

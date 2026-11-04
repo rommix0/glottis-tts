@@ -1,6 +1,6 @@
 // fixed-text normalizer rules
 
-// pattern bytes: 0x01 any space (space, backspace, newline), 0x02 then a lowercase letter that
+// pattern bytes: 0x01 any space (space, tab, newline), 0x02 then a lowercase letter that
 // matches either case; then the replacement, the plural ending added after a plural number, the rest
 pub static RULES: [(&[u8], &str, &str, &str); 1980] = [
 	(b"august of ", "AUGUST of ", "", ""),
