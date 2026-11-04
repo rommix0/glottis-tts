@@ -780,6 +780,20 @@ impl engine {
 				self.F2_B_src = self.F2_B_src.min(self.F2_A_src);
 			}
 
+			// GLIDE TOWARD THE NEXT CONSONANT
+			// a vowel's own F2 glide does not head away from where the next consonant takes F2 ("cat", "pick");
+			// the diphthongs aw, ay and oy keep theirs
+			if !matches!(self.phn_c, 5 | 8 | 30) && self.pft_r1 & 0x1 == 0 && !matches!(self.phn_r1, 0 | 18 | 48 | 49 | PAU) {
+				let next_f2 = match locus(self.phn_r1) {
+					Some((k, o)) if matches!(self.phn_r1, 11 | 36 | 27 | 34 | 43 | 47) => o + k * self.F2_B_src.max(ALVEOLAR_F2_FLOOR),
+					Some((k, o)) => o + k * self.F2_B_src,
+					None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
+				};
+				if (self.F2_B_src - self.F2_A_src) * (next_f2 - self.F2_B_src) < 0.0 {
+					self.F2_B_src = self.F2_A_src;
+				}
+			}
+
 			// WIDEN BANDWIDTH AFTER UNVOICED PLOSIVE
 			if self.pft_l1 & 0x42 == 0x40 {
 				self.B1_A_src += 125.0 * factor;
@@ -2301,6 +2315,16 @@ mod tests {
 				assert!((tb - rb - RHOTIC_F3).abs() < 5.0, "vowel {} ends at F3 {} before r, {} before t", v, rb, tb);
 			}
 		}
+	}
+
+	#[test]
+	fn vowel_glide_does_not_turn_away_from_the_next_consonant() {
+		// ae glides down in F2, an alveolar is higher: ae holds its F2 before t, ay keeps its glide
+		let f2 = |v: u8| { let e = loaded(&[(PAU, 50, false), (26, 100, false), (v, 150, true), (36, 80, false), (6, 100, false)], v); (e.F2_A_src, e.F2_B_src) };
+		let (a, b) = f2(2);
+		assert_eq!(a, b, "ae before t glides from {} to {}", a, b);
+		let (a, b) = f2(8);
+		assert!(b - a > 500.0, "ay before t glides from {} to {}", a, b);
 	}
 
 	#[test]
