@@ -1130,7 +1130,7 @@ impl engine {
 			/*-------------------------*/
 
 			space exc_point {
-				self.scratch_pad.write_text(" exclaimation point ");
+				self.scratch_pad.write_text(" exclamation point ");
 				break;
 			}
 			"(" space {

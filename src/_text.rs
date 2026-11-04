@@ -2490,7 +2490,7 @@ let mut t5;
                     }
                 }
                 94 => {
-				self.scratch_pad.write_text(" exclaimation point ");
+				self.scratch_pad.write_text(" exclamation point ");
 				break;
 			},
                 95 => {
