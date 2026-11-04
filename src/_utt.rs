@@ -179,7 +179,6 @@ impl Utterance {
 		}
 		u.break_long_phrases();
 		u.flap();
-		u.syllabic_n();
 		u.kind = match u.phrases.last().map(|p| p.end) {
 			Some(Boundary::Exclaim) => Kind::Exclamation,
 			Some(Boundary::Question) => {
@@ -239,17 +238,6 @@ impl Utterance {
 				vowel(next.phone) && self.words[next.word].phrase == w.phrase && self.words[next.word].segs.start == i + 1
 			};
 			if flaps { self.segs[i].phone = DX; }
-		}
-	}
-	fn syllabic_n(&mut self) {
-		// in "button" the t closes straight into the n, which takes the place of the schwa
-		const T: u8 = 36; const N: u8 = 27;
-		for i in 1..self.segs.len().saturating_sub(2) {
-			let (prev, cur) = (&self.segs[i - 1], &self.segs[i]);
-			if cur.phone == T && prev.word == cur.word && (is_vowel(prev.phone) || matches!(prev.phone, 33 | 27 | 24 | 25))
-				&& matches!(self.segs[i + 1].phone, 6 | 20) && self.segs[i + 2].phone == N && i + 3 == self.words[cur.word].segs.end {
-				self.segs[i + 1].phone = N;
-			}
 		}
 	}
 	fn close_word(&mut self) {
@@ -503,9 +491,9 @@ mod tests {
 
 	#[test]
 	fn keeps_the_stop_before_a_syllabic_n() {
-		// b 'ah t ax n: the t stays and the schwa becomes the n
+		// b 'ah t ax n
 		let u = Utterance::build(&[CW, 39, 17, 76, 36, 64, PERIOD], &["button"]);
-		assert_eq!(phones(&u), vec![9, 3, 36, 27, 27]);
+		assert_eq!(phones(&u), vec![9, 3, 36, 6, 27]);
 	}
 
 	#[test]
