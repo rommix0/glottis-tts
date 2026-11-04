@@ -177,6 +177,8 @@ fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 
 // velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
+// ng's F3 comes down to just above its F2 (the velar pinch that sets it apart from n)
+const NG_PINCH_HZ: f32 = 300.0;
 
 // consonant F2 next to a vowel, by place: (slope, offset, floor) of F2 = offset + slope * max(the vowel's F2, floor)
 fn locus(x: u8) -> Option<(f32, f32, f32)> {
@@ -185,7 +187,8 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 		37 | 12                     => Some((0.5, 900.0, 0.0)),					// dental: th dh
 		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0, ALVEOLAR_F2_FLOOR)),	// alveolar: d t n s z dx
 		35 | 44 | 10 | 22           => Some((0.3, 1500.0, 0.0)),				// postalveolar: sh zh ch jh
-		17 | 23 | 28                => Some((0.5, 1100.0, 0.0)),				// velar: g k ng
+		17 | 23                     => Some((0.5, 1100.0, 0.0)),				// velar: g k
+		28                          => Some((0.9, 400.0, 0.0)),					// ng: near the vowel's own F2
 		_                           => None,
 	}
 }
@@ -918,10 +921,14 @@ impl engine {
 		if let Some(v) = left.or(right) { self.F2_A_src = f2_offset + f2_slope * v.max(floor); }
 		if let Some(v) = right.or(left) { self.F2_B_src = f2_offset + f2_slope * v.max(floor); }
 		if self.pft_c & 0x100 != 0 {
-			// velars: F3 comes down toward F2 by front vowels
+			// velars: F3 comes down toward F2 by front vowels; ng's pinches to just above its F2
 			let (f3_slope, f3_offset) = VELAR_F3;
-			if let Some(v) = left.or(right) { self.F3_A_src = f3_offset + f3_slope * v; }
-			if let Some(v) = right.or(left) { self.F3_B_src = f3_offset + f3_slope * v; }
+			if self.phn_c == 28 {
+				(self.F3_A_src, self.F3_B_src) = (self.F2_A_src + NG_PINCH_HZ, self.F2_B_src + NG_PINCH_HZ);
+			} else {
+				if let Some(v) = left.or(right) { self.F3_A_src = f3_offset + f3_slope * v; }
+				if let Some(v) = right.or(left) { self.F3_B_src = f3_offset + f3_slope * v; }
+			}
 		}
 	}
 	fn load_registers(&mut self) {
@@ -2110,6 +2117,16 @@ mod tests {
 			}
 			assert!(f3[0] > f3[1] + 400.0, "{}: F3 {} before iy, {} before aa", c, f3[0], f3[1]);
 		}
+	}
+
+	#[test]
+	fn ng_stays_apart_from_n() {
+		// between back vowels ng's F2 sits well under n's, and its F3 just above its F2 (the velar pinch)
+		let at = |c: u8| loaded(&[(PAU, 50, true), (3, 1000, true), (c, 90, true), (3, 1000, true)], c);
+		let (ng, n) = (at(28), at(27));
+		assert!(n.F2_A_src - ng.F2_A_src > 100.0, "ng F2 {} vs n {}", ng.F2_A_src, n.F2_A_src);
+		assert!((ng.F3_A_src - ng.F2_A_src - NG_PINCH_HZ).abs() < 1.0, "ng F3 {} over F2 {}", ng.F3_A_src, ng.F2_A_src);
+		assert!(n.F3_A_src - n.F2_A_src > 2.0 * NG_PINCH_HZ, "n F3 {} over F2 {}", n.F3_A_src, n.F2_A_src);
 	}
 
 	#[test]
