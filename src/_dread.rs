@@ -26,10 +26,8 @@ use crate::_dict::dictdat;
 use crate::_dict::getLetterOffset;
 
 pub struct dictreader {
-	start:    usize,
-	memcount: usize,
-	counter:  usize,
-	wordload: [u8; 32],
+	pos:      usize,		// read position in dictdat
+	word:     [u8; 32],		// the word to look up
 	wordlen:  u8,
 	funcword: bool,
 	is_valid: bool,
@@ -37,24 +35,21 @@ pub struct dictreader {
 impl dictreader {
 	pub fn new() -> dictreader {
 		dictreader {
-			start:    0,
-			memcount: 0,
-			counter:  0,
-			wordload: [0; 32],
+			pos:      0,
+			word:     [0; 32],
 			wordlen:  0,
 			funcword: false,
 			is_valid: false,
 		}
 	}
 	pub fn reset(&mut self) { *self = dictreader::new(); }
-	pub fn isFunctionWord(&mut self) -> bool { self.funcword }
+	pub fn isFunctionWord(&self) -> bool { self.funcword }
 	pub fn readIn(&mut self, x: u8) {
 		// read in the word to look up
-		if self.counter < 32 {
+		if (self.wordlen as usize) < 32 {
 			if x > 0x20 && x < 0x7F {
 				self.is_valid = true;
-				self.wordload[self.counter] = x;
-				self.counter += 1;
+				self.word[self.wordlen as usize] = x;
 				self.wordlen += 1;
 			}
 		} else {
@@ -63,64 +58,42 @@ impl dictreader {
 	}
 	pub fn readOut(&mut self) -> u8 {
 		// read out phoneme stream of found word
-		let xx = dictdat[self.memcount];
-		if xx != 0xFF { self.memcount += 1; }
-		xx
+		let x = dictdat[self.pos];
+		if x != 0xFF { self.pos += 1; }
+		x
 	}
 	pub fn search(&mut self) -> bool {
-		// return false if not valid
+		// a naive scan through the word's letter partition; on a match pos is at its phones
 		if !self.is_valid { return false; }
-		
-		// find the word using naive lookup method
-		// set up some variables
-		let mut found:   bool = false;
-
-		self.start = getLetterOffset(self.wordload[0].to_ascii_lowercase());
-		self.memcount = self.start;
-
-		// search loop
+		self.pos = getLetterOffset(self.word[0].to_ascii_lowercase());
 		loop {
-
-			// end of partition, break out
-			if dictdat[self.memcount] == 0xFD { break; }
-
-			// check if function word
-			self.funcword = dictdat[self.memcount] == 1;
-			self.memcount += 1;
-			self.start = self.memcount;
-
-			// match loop
-			for wmode in 0..2 {
-				let mut strcomp = true;
+			if dictdat[self.pos] == 0xFD { return false; }
+			self.funcword = dictdat[self.pos] == 1;
+			self.pos += 1;
+			let entry = self.pos;
+			for lowercase in [false, true] {
+				let mut matched = true;
 				let mut length: u8 = 0;
-				self.counter  = 0;
-				self.memcount = self.start;
+				let mut i = 0;
+				self.pos = entry;
 				loop {
-					let mut x = self.wordload[self.counter];
-					let y = dictdat[self.memcount];
-					if wmode == 1 { x = x.to_ascii_lowercase(); }
-
-					self.counter  += 1;
-					self.memcount += 1;
+					let mut x = self.word[i];
+					let y = dictdat[self.pos];
+					if lowercase { x = x.to_ascii_lowercase(); }
+					i += 1;
+					self.pos += 1;
 					if y == 0xFE { break; }
 					length += 1;
-
-					if x != y { strcomp = false; }
+					if x != y { matched = false; }
 				}
-				if strcomp && length == self.wordlen {
-					found = true;
-					break;
-				}
+				if matched && length == self.wordlen { return true; }
 			}
-
-			if found { break; }
 			// skip this entry's phones
 			loop {
-				let y = dictdat[self.memcount];
-				self.memcount += 1;
+				let y = dictdat[self.pos];
+				self.pos += 1;
 				if y == 0xFF { break; }
 			}
 		}
-		found
 	}
 }

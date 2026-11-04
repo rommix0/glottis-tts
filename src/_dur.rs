@@ -105,9 +105,9 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 		let syl = utt.segs[i].syl;
 		let word = &utt.words[w];
 		let same_word = |j: usize| j < utt.segs.len() && utt.segs[j].word == w;
-		let mut f: f32 = 1.0;
+		let mut factor: f32 = 1.0;
 		let mut rules: Vec<&'static str> = Vec::new();
-		let mut apply = |name: &'static str, x: f32| { f *= x; rules.push(name); };
+		let mut apply = |name: &'static str, x: f32| { factor *= x; rules.push(name); };
 
 		// phrase-final lengthening: the nucleus and coda of the last syllable of a phrase
 		if utt.is_last_syl_of_phrase(syl) {
@@ -115,7 +115,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let is_nucleus = nucleus == Some(i);
 			let is_coda = !vowel && nucleus.is_some_and(|n| i > n);
 			if is_nucleus || is_coda {
-				if is_nucleus { apply("phrase-final", PHRASE_FINAL_VOWEL); } else { apply("phrase-final", PHRASE_FINAL_CODA); }
+				apply("phrase-final", if is_nucleus { PHRASE_FINAL_VOWEL } else { PHRASE_FINAL_CODA });
 				if !matches!(utt.phrases[word.phrase].end, Boundary::Comma | Boundary::Minor) { apply("sentence-final", SENTENCE_FINAL); }
 			}
 		}
@@ -144,7 +144,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 		if word.function { apply("function-word", FUNCTION_WORD); }
 
 		let pd = phone_dur(p);
-		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * f / rate;
+		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / rate;
 		utt.segs[i].rules = rules;
 	}
 }
@@ -152,7 +152,6 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::_utt::Utterance;
 
 	const CW: u8 = 90;
 	const COMMA: u8 = 91;

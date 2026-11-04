@@ -11,12 +11,12 @@ most vowels were analyzed with the creator's voice as reference (part Anthony's 
 %A  is control A percentage from start of phoneme (percent of total phoneme length)
 %B  is control B percentage from end of phoneme (percent of total phoneme length)
 
-RD -> LF tilt parameter (as integer, so 0.7 is store as 70 in the formant table)
+RD -> LF tilt parameter (as integer, so 0.7 is stored as 70 in the formant table)
 	+ higher for front vowels
 	+ lower for back vowels
 
 
-formant_table columns (31 columns):
+formant_tbl columns (31 columns):
 	%A, %B,
 	RD_A, RD_B,
 	NZF_A,
@@ -30,7 +30,7 @@ formant_table columns (31 columns):
 
 50 phonemes in total
 
-when adding new vowel phonemes, make sure A1-A10 parameters are set to 60 dB by default.
+when adding new vowel phonemes, make sure A2-A10 parameters are set to 60 dB by default.
 otherwise the consonants may not sound as good as they should due to interpolation.
 
 */

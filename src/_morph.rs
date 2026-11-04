@@ -75,13 +75,13 @@ pub fn compose(w: &str, dict: &mut dyn FnMut(&str) -> Option<Vec<u8>>, depth: u3
 	if p.is_some() || depth == 0 { return p; }
 	for &(suf, ways, e) in SUFFIXES.iter() {
 		if w.len() >= suf.len() + MIN_STEM && w.ends_with(suf) {
-			let s = &w[..w.len() - suf.len()];
+			let base = &w[..w.len() - suf.len()];
 			for &way in ways {
-				if let Some(st) = stem(s, way) {
-					if let Some(mut q) = compose(&st, dict, depth - 1) {
-						let tail = ending(e, &q);
-						q.extend(tail);
-						return Some(q);
+				if let Some(respelled) = stem(base, way) {
+					if let Some(mut phones) = compose(&respelled, dict, depth - 1) {
+						let tail = ending(e, &phones);
+						phones.extend(tail);
+						return Some(phones);
 					}
 				}
 			}

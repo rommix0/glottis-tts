@@ -87,11 +87,11 @@ struct Bump { seg: usize, age0: f32, dur: f32, shape: Shape }
 
 #[derive(Clone, Copy)]
 enum Shape {
-	Decay { st: f32, ms: f32 },		// st at age 0, decaying with time constant ms
-	Fall  { st: f32, ms: f32 },		// 0 at age 0, falling to -st at ms, then held
-	Rise  { st: f32, ms: f32 },		// -st at age 0, back to 0 at ms
+	Decay { st: f32, ms: f32 },				// st at age 0, decaying with time constant ms
+	Fall  { st: f32, ms: f32 },				// 0 at age 0, falling to -st at ms, then held
+	Rise  { st: f32, ms: f32 },				// -st at age 0, back to 0 at ms
 	Vee   { st: f32, down: f32, up: f32 },	// 0 at age 0, -st at down, back to 0 up later
-	Hump  { st: f32, ms: f32 },		// 0 at age 0, st halfway through ms, 0 again at ms
+	Hump  { st: f32, ms: f32 },				// 0 at age 0, st halfway through ms, 0 again at ms
 }
 
 impl Shape {
@@ -110,8 +110,8 @@ impl Shape {
 pub struct Contour {
 	targets: Vec<Target>,
 	bumps:   Vec<Bump>,
-	target_at: usize,		// where the last hz_at found itself in targets
-	bump_at:   usize,		// and in bumps
+	target_hint: usize,		// where the last hz_at found itself in targets
+	bump_hint:   usize,		// and in bumps
 }
 
 // the first item of v that before() says is not before the place sought, as partition_point gives; samples come in
@@ -124,7 +124,7 @@ fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
 }
 
 impl Contour {
-	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new(), target_at: 0, bump_at: 0 } }
+	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new(), target_hint: 0, bump_hint: 0 } }
 
 	pub fn targets_of(&self, seg: usize) -> impl Iterator<Item = &Target> {
 		self.targets.iter().filter(move |t| t.seg == seg)
@@ -149,9 +149,9 @@ impl Contour {
 			syls.iter().find(|s| s.stress == 1).or_else(|| syls.iter().find(|s| s.stress == 2)).and_then(|s| s.nucleus)
 		};
 
-		let mut new: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
-		let push = |new: &mut Vec<(usize, f32, Target)>, i: usize, frac: f32, st: f32, base: f32, kind: TargetKind| {
-			new.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind }));
+		let mut placed: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
+		let mut push = |i: usize, frac: f32, st: f32, base: f32, kind: TargetKind| {
+			placed.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind }));
 		};
 
 		let last_phrase = utt.phrases.len() - 1;
@@ -166,7 +166,7 @@ impl Contour {
 			let (ts, te) = (t0[segs.start], t0[segs.end]);
 			let base = |t: f32| b0 - BASELINE_FALL_ST * if te > ts { (t - ts) / (te - ts) } else { 0.0 };
 
-			push(&mut new, first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), TargetKind::Start);
+			push(first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), TargetKind::Start);
 
 			// accents, stepping down within the phrase
 			if k > 0 { first_height = (first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
@@ -194,18 +194,18 @@ impl Contour {
 					_ if is_last => (h + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE,
 					_ => h * EXCLAIM_RANGE,
 				};
-				if let Some((pi, pt, ph)) = prev_peak {
-					if tp - pt > TROUGH_GAP_MS {
+				if let Some((prev_i, prev_t, prev_h)) = prev_peak {
+					if tp - prev_t > TROUGH_GAP_MS {
 						// trough on the baseline halfway between the peaks
-						let tm = (pt + tp) / 2.0;
-						let i = (pi..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
+						let tm = (prev_t + tp) / 2.0;
+						let i = (prev_i..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
 						let fr = if utt.segs[i].dur_ms > 0.0 { ((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0) } else { 0.0 };
-						let k = ((tp - pt - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
-						let sag = (1.0 - k) * ph.min(height).max(0.0);
-						push(&mut new, i, fr, base(tm) + sag, base(tm), TargetKind::Trough);
+						let apart = ((tp - prev_t - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
+						let sag = (1.0 - apart) * prev_h.min(height).max(0.0);
+						push(i, fr, base(tm) + sag, base(tm), TargetKind::Trough);
 					}
 				}
-				push(&mut new, n, frac, base(tp) + height, base(tp), kind);
+				push(n, frac, base(tp) + height, base(tp), kind);
 				prev_peak = Some((n, tp, height));
 			}
 
@@ -218,14 +218,14 @@ impl Contour {
 				(_, Kind::Exclamation) => FINAL_FALL_ST * EXCLAIM_RANGE,
 				_                      => FINAL_FALL_ST,
 			};
-			push(&mut new, last_v, 1.0, be + end_st, be, TargetKind::End);
+			push(last_v, 1.0, be + end_st, be, TargetKind::End);
 		}
 
 		// targets closer than MERGE_MS within a phrase: keep the later one
 		// (phrases are apart by their pause, which utterance time leaves out)
-		new.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
+		placed.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
 		let mut kept: Vec<(usize, f32, Target)> = Vec::new();
-		for (ph, t, tg) in new {
+		for (ph, t, tg) in placed {
 			if let Some(&(pph, pt, _)) = kept.last() {
 				if pph == ph && t - pt < MERGE_MS { kept.pop(); }
 			}
@@ -243,46 +243,46 @@ impl Contour {
 		let word_end = |i: usize| utt.words[utt.segs[i].word].segs.end == i + 1;
 		let same_phrase = |i: usize, j: usize| utt.phrase_of_seg(i) == utt.phrase_of_seg(j);
 		let mut bumps: Vec<Bump> = Vec::new();
-		let draw = |bumps: &mut Vec<Bump>, segs: core::ops::Range<usize>, start: f32, shape: Shape| {
+		let mut draw = |segs: core::ops::Range<usize>, start: f32, shape: Shape| {
 			for j in segs { bumps.push(Bump { seg: stream[j], age0: t0[j] - start, dur: utt.segs[j].dur_ms, shape }); }
 		};
 		for i in 0..n {
 			let after_pause = i == 0 || !same_phrase(i - 1, i);
-			let (p, q) = (phone(i), if after_pause { PAU } else { phone(i - 1) });
+			let (p, prev) = (phone(i), if after_pause { PAU } else { phone(i - 1) });
 
 			// a sonorant or vowel after an obstruent (not a flap): raised, decaying until the next obstruent or the phrase end
-			if !after_pause && is_sonorant(p) && is_obstruent(q) && q != FLAP {
-				let shape = if is_voiced(q) {
+			if !after_pause && is_sonorant(p) && is_obstruent(prev) && prev != FLAP {
+				let shape = if is_voiced(prev) {
 					Shape::Decay { st: VOICED_BUMP_ST, ms: VOICED_BUMP_MS }
 				} else {
 					Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS }
 				};
 				let end = (i..n).find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= BUMP_SPAN_MS).unwrap_or(n);
-				draw(&mut bumps, i..end, t0[i], shape);
+				draw(i..end, t0[i], shape);
 			}
 
 			// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays low through it
-			if p == T && !after_pause && is_sonorant(q) && word_end(i) && i + 1 < n && same_phrase(i, i + 1) && !is_vowel(phone(i + 1)) {
+			if p == T && !after_pause && is_sonorant(prev) && word_end(i) && i + 1 < n && same_phrase(i, i + 1) && !is_vowel(phone(i + 1)) {
 				let start = t0[i] - T_DIP_MS;
 				let first = (0..i).rev().take_while(|&j| t0[j + 1] > start && same_phrase(j, i)).last().unwrap_or(i);
-				draw(&mut bumps, first..i + 1, start, Shape::Fall { st: T_DIP_ST, ms: T_DIP_MS });
+				draw(first..i + 1, start, Shape::Fall { st: T_DIP_ST, ms: T_DIP_MS });
 			}
 
 			// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
 			let s = &utt.segs[i];
-			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function && (after_pause || is_sonorant(q)) {
+			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function && (after_pause || is_sonorant(prev)) {
 				let (span, shape) = if !after_pause {
 					(ONSET_LEAD_MS + ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS })
 				} else {
 					(ONSET_DIP_MS, Shape::Rise { st: ONSET_DIP_ST, ms: ONSET_DIP_MS })
 				};
 				let end = (i..n).find(|&j| t0[j] - t0[i] >= span || !same_phrase(i, j)).unwrap_or(n);
-				draw(&mut bumps, i..end, t0[i], shape);
+				draw(i..end, t0[i], shape);
 			}
 
 			// ih iy uh uw: intrinsically a little higher
 			if matches!(p, 19 | 21 | 38 | 39) {
-				draw(&mut bumps, i..i + 1, t0[i], Shape::Hump { st: HIGH_VOWEL_ST, ms: s.dur_ms });
+				draw(i..i + 1, t0[i], Shape::Hump { st: HIGH_VOWEL_ST, ms: s.dur_ms });
 			}
 		}
 		bumps.sort_by_key(|b| b.seg);
@@ -291,14 +291,14 @@ impl Contour {
 
 	// the short offsets at a position, in semitones
 	fn bump_at(&mut self, seg: usize, frac: f32) -> f32 {
-		let k = find(&self.bumps, &mut self.bump_at, |b| b.seg < seg);
+		let k = find(&self.bumps, &mut self.bump_hint, |b| b.seg < seg);
 		self.bumps[k..].iter().take_while(|b| b.seg == seg).map(|b| b.shape.at(b.age0 + frac * b.dur)).sum()
 	}
 
 	pub fn hz_at(&mut self, seg: usize, frac: f32) -> f32 {
 		let pos = seg as f32 + frac;
 		// order by segment first, so the end of one segment comes before the start of the next
-		let j = find(&self.targets, &mut self.target_at, |t| (t.seg, t.frac) <= (seg, frac));
+		let j = find(&self.targets, &mut self.target_hint, |t| (t.seg, t.frac) <= (seg, frac));
 		let st = match j {
 			_ if self.targets.is_empty() => 0.0,
 			_ if j == self.targets.len() => self.targets[j - 1].st,
@@ -321,7 +321,6 @@ impl Contour {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::_utt::Utterance;
 
 	const CW: u8 = 90;
 	const FW: u8 = 95;

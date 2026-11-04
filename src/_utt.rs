@@ -28,11 +28,11 @@ pub fn offglide(p: u8) -> Option<u8> {
 }
 
 // legal word onsets, used to split consonants between syllables
-fn is_legal_onset(c: &[u8]) -> bool {
+fn is_legal_onset(cluster: &[u8]) -> bool {
 	const P: u8 = 31; const B: u8 = 9;  const T: u8 = 36;  const D: u8 = 11; const K: u8 = 23;  const G: u8 = 17;
 	const F: u8 = 16; const V: u8 = 40; const TH: u8 = 37; const S: u8 = 34; const SH: u8 = 35; const HH: u8 = 18;
 	const M: u8 = 26; const N: u8 = 27; const L: u8 = 24;  const R: u8 = 32; const W: u8 = 41;  const Y: u8 = 42;
-	match c {
+	match cluster {
 		[] => true,
 		[x] => !is_vowel(*x) && !matches!(*x, 25 | 28 | 33),		// not lx, ng, rx
 		[S, P | T | K | M | N | L | W | F] => true,
@@ -119,7 +119,6 @@ impl Utterance {
 			match pa {
 				50 | 55 => {
 					u.close_word();
-					u.drop_empty_word();
 					let text = String::from(texts.get(text_i).map_or("", AsRef::as_ref));
 					text_i += 1;
 					let n  = u.segs.len();
@@ -128,7 +127,6 @@ impl Utterance {
 				},
 				51..=54 => {
 					u.close_word();
-					u.drop_empty_word();
 					let end = match pa {
 						51 => Boundary::Comma,
 						52 => Boundary::Period,
@@ -166,7 +164,6 @@ impl Utterance {
 			}
 		}
 		u.close_word();
-		u.drop_empty_word();
 		if u.words.len() > phrase_start {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::Unmarked });
 		}
@@ -237,14 +234,12 @@ impl Utterance {
 			if flaps { self.segs[i].phone = DX; }
 		}
 	}
-	fn drop_empty_word(&mut self) {
-		// a word boundary with no phones after it is not a word
-		if self.words.last().is_some_and(|w| w.segs.is_empty()) { self.words.pop(); }
-	}
 	fn close_word(&mut self) {
-		// split the last word into syllables, once it has all its phones
+		// split the last word into syllables, once it has all its phones; a word boundary with no phones after it
+		// is not a word
 		let Some(w) = self.words.len().checked_sub(1) else { return; };
-		if self.words[w].syls.end > self.words[w].syls.start || self.words[w].segs.is_empty() { return; }
+		if self.words[w].segs.is_empty() { self.words.pop(); return; }
+		if self.words[w].syls.end > self.words[w].syls.start { return; }
 		let segs = self.words[w].segs.clone();
 		let nuclei: Vec<usize> = segs.clone().filter(|&i| is_vowel(self.segs[i].phone)).collect();
 		let first_syl = self.syls.len();

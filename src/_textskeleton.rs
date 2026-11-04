@@ -1,4 +1,3 @@
-// bring in cbuf so lexer can use it
 use crate::_utils::cbuf;
 // fixed-text rules (homographs, abbreviations, units, emoji) from tools/normalizer_rules.txt
 use crate::_text_rules::{RULES, FIRST};
@@ -9,9 +8,9 @@ use alloc::{format, string::{String, ToString}, vec, vec::Vec};
 fn roman(s: &str) -> Option<u64> {
 	if s.len() < 2 || !s.bytes().all(|c| matches!(c, b'I' | b'V' | b'X')) { return None; }
 	let v = (1..=39).find(|&v| {
-		let tens = "X".repeat(v / 10);
+		let tens = &"XXX"[..v / 10];
 		let ones = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"][v % 10];
-		format!("{}{}", tens, ones) == s
+		s.strip_prefix(tens) == Some(ones)
 	})?;
 	Some(v as u64)
 }
@@ -25,23 +24,20 @@ fn is_space(c: u8) -> bool { matches!(c, b' ' | 0x08 | 0x0A) }
 
 fn consume(buf: &mut cbuf, n: usize) { for _ in 0..n { buf.advance(); } }
 
-// text-number-homograph normalizer AIO (all-in-one)
+// English text normalizer: numbers, homographs, abbreviations
 pub struct engine {
 	scratch_pad: cbuf,
-	punct_prev:  bool,
+	// a number's plurality and "after a digit" carry on across lex() calls until a letter or punctuation clears them
 	digit_prev:  bool,
 	is_plural:   bool,
-	past_number: u64,
 	number:      u64,
 }
 impl engine {
 	pub fn new() -> engine {
 		engine {
 			scratch_pad: cbuf::new(),
-			punct_prev:  false,
 			digit_prev:  false,
 			is_plural:   false,
-			past_number: 0,
 			number:      0,
 		}
 	}
@@ -55,143 +51,32 @@ impl engine {
 	}
 
 	// NUMBER TO WORD PART
-	fn reset_ntw(&mut self) {
-		self.past_number = 0;
-		self.number = 0;
-	}
-	fn is_number(&mut self, x: u8) -> bool {
-		if x >= 0x30 && x <= 0x39 { return true; }
-		false
-	}
+	fn reset_ntw(&mut self) { self.number = 0; }
 	fn consume_digit(&mut self, x: u8) {
-		// consume digit for NTW
-		if self.is_number(x) {
-			let xx = (x - 0x30) % 10;
-			self.number = (self.number * 10) + xx as u64;
-			self.past_number = self.number;
-		}
+		if x.is_ascii_digit() { self.number = self.number * 10 + (x - b'0') as u64; }
 	}
 	fn process_number(&mut self, x: u64, zero_oh: bool, is_ordinal: bool) {
-		// number to word normalization
-		if x < 20 {
-			match x {
-				1 => {
-					if is_ordinal {
-						self.scratch_pad.write_text(" first ");
-					} else {
-						self.scratch_pad.write_text(" one ");
-					}
-				},
-				2 => {
-					if is_ordinal {
-						self.scratch_pad.write_text(" second ");
-					} else {
-						self.scratch_pad.write_text(" two ");
-					}
-				},
-				3 => {
-					if is_ordinal {
-						self.scratch_pad.write_text(" third ");
-					} else {
-						self.scratch_pad.write_text(" three ");
-					}
-				},
-				4|6|7|10|11|13|14|15|16|17|18|19 => {
-					if x == 4 || x == 14 {
-						self.scratch_pad.write_text(" four");
-					} else if x == 6 || x == 16 {
-						self.scratch_pad.write_text(" six");
-					} else if x == 7 || x == 17 {
-						self.scratch_pad.write_text(" seven");
-					} else if x == 10 {
-						self.scratch_pad.write_text(" ten");
-					} else if x == 11 {
-						self.scratch_pad.write_text(" eleven");
-					}
-					if x > 12 {
-						if x == 13 {
-							self.scratch_pad.write_text(" thir");
-						} else if x == 15 {
-							self.scratch_pad.write_text(" fif");
-						} else if x == 18 {
-							self.scratch_pad.write_text(" eigh");
-						} else if x == 19 {
-							self.scratch_pad.write_text(" nine");
-						}
-						self.scratch_pad.write_text("teen");
-					}
-					if is_ordinal {
-						self.scratch_pad.write_text("th");
-					}
-					self.scratch_pad.write_text(" ");
-				},
-				5|12 => {
-					if x == 5 {
-						self.scratch_pad.write_text(" fi");
-					} else if x == 12 {
-						self.scratch_pad.write_text(" twel");
-					}
-					if is_ordinal {
-						self.scratch_pad.write_text("fth");
-					} else {
-						self.scratch_pad.write_text("ve");
-					}
-					self.scratch_pad.write_text(" ");
-				},
-				8 => {
-					self.scratch_pad.write_text(" eight");
-					if is_ordinal {
-						self.scratch_pad.write_text("h");
-					}
-					self.scratch_pad.write_text(" ");
-				},
-				9 => {
-					self.scratch_pad.write_text(" nin");
-					if is_ordinal {
-						self.scratch_pad.write_text("th");
-					} else {
-						self.scratch_pad.write_text("e");
-					}
-					self.scratch_pad.write_text(" ");
-				},
-				_ => {
-					if zero_oh {
-						self.scratch_pad.write_text(" oh ");
-					} else {
-						self.scratch_pad.write_text(" zero");
-						if is_ordinal {
-							self.scratch_pad.write_text("th");
-						}
-						self.scratch_pad.write_text(" ");
-					}
-				},
-			}
+		const ONES: [&str; 20] = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+			"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+		const ONES_TH: [&str; 20] = ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
+			"ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth",
+			"eighteenth", "nineteenth"];
+		const TENS: [&str; 10] = ["", "", "twen", "thir", "for", "fif", "six", "seven", "eigh", "nine"];
+		const SCALES: [(u64, &str); 6] = [(1_000_000_000_000_000, "quadrillion"), (1_000_000_000_000, "trillion"),
+			(1_000_000_000, "billion"), (1_000_000, "million"), (1000, "thousand"), (100, "hundred")];
+		if x == 0 && zero_oh {
+			self.scratch_pad.write_text(" oh ");
+		} else if x < 20 {
+			self.scratch_pad.write_text(" ");
+			self.scratch_pad.write_text(if is_ordinal { ONES_TH[x as usize] } else { ONES[x as usize] });
+			self.scratch_pad.write_text(" ");
 		} else if x < 100 {
-			let tens = x / 10;
-			let ones = x % 10;
-
-			if tens == 2 {
-				self.scratch_pad.write_text(" twen");
-			} else if tens == 3 {
-				self.scratch_pad.write_text(" thir");
-			} else if tens == 4 {
-				self.scratch_pad.write_text(" for");
-			} else if tens == 5 {
-				self.scratch_pad.write_text(" fif");
-			} else if tens == 6 {
-				self.scratch_pad.write_text(" six");
-			} else if tens == 7 {
-				self.scratch_pad.write_text(" seven");
-			} else if tens == 8 {
-				self.scratch_pad.write_text(" eigh");
-			} else if tens == 9 {
-				self.scratch_pad.write_text(" nine");
-			}
-
+			let (tens, ones) = (x / 10, x % 10);
+			self.scratch_pad.write_text(" ");
+			self.scratch_pad.write_text(TENS[tens as usize]);
 			if is_ordinal && ones == 0 {
 				self.scratch_pad.write_text("tieth ");
 			} else {
-				// do the 'ones' recursively
 				self.scratch_pad.write_text("ty");
 				if ones > 0 {
 					self.process_number(ones, zero_oh, is_ordinal);
@@ -199,67 +84,11 @@ impl engine {
 					self.scratch_pad.write_text(" ");
 				}
 			}
-
-		} else if x < 1000 {
-			let hundreds = x / 100;
-			let unders   = x % 100;
-			self.process_number(hundreds, false, false);
-			self.scratch_pad.write_text("hundred");
-			if is_ordinal && unders == 0 {
-				self.scratch_pad.write_text("th ");
-			} else if unders > 0 {
-				self.process_number(unders, zero_oh, is_ordinal);
-			}
-			self.scratch_pad.write_text(" ");
-		} else if x < 1000000 {
-			let thousands = x / 1000;
-			let unders    = x % 1000;
-			self.process_number(thousands, false, false);
-			self.scratch_pad.write_text("thousand");
-			if is_ordinal && unders == 0 {
-				self.scratch_pad.write_text("th ");
-			} else if unders > 0 {
-				self.process_number(unders, zero_oh, is_ordinal);
-			}
-			self.scratch_pad.write_text(" ");
-		} else if x < 1000000000 {
-			let millions = x / 1000000;
-			let unders   = x % 1000000;
-			self.process_number(millions, false, false);
-			self.scratch_pad.write_text("million");
-			if is_ordinal && unders == 0 {
-				self.scratch_pad.write_text("th ");
-			} else if unders > 0 {
-				self.process_number(unders, zero_oh, is_ordinal);
-			}
-			self.scratch_pad.write_text(" ");
-		} else if x < 1000000000000 {
-			let billions = x / 1000000000;
-			let unders   = x % 1000000000;
-			self.process_number(billions, false, false);
-			self.scratch_pad.write_text("billion");
-			if is_ordinal && unders == 0 {
-				self.scratch_pad.write_text("th ");
-			} else if unders > 0 {
-				self.process_number(unders, zero_oh, is_ordinal);
-			}
-			self.scratch_pad.write_text(" ");
-		} else if x < 1000000000000000 {
-			let trillions = x / 1000000000000;
-			let unders    = x % 1000000000000;
-			self.process_number(trillions, false, false);
-			self.scratch_pad.write_text("trillion");
-			if is_ordinal && unders == 0 {
-				self.scratch_pad.write_text("th ");
-			} else if unders > 0 {
-				self.process_number(unders, zero_oh, is_ordinal);
-			}
-			self.scratch_pad.write_text(" ");
-		} else if x < 1000000000000000000 {
-			let quadrillions = x / 1000000000000000;
-			let unders       = x % 1000000000000000;
-			self.process_number(quadrillions, false, false);
-			self.scratch_pad.write_text("quadrillion");
+		} else if x < 1_000_000_000_000_000_000 {
+			let &(unit, name) = SCALES.iter().find(|s| x >= s.0).unwrap();
+			let unders = x % unit;
+			self.process_number(x / unit, false, false);
+			self.scratch_pad.write_text(name);
 			if is_ordinal && unders == 0 {
 				self.scratch_pad.write_text("th ");
 			} else if unders > 0 {
@@ -269,8 +98,7 @@ impl engine {
 		}
 	}
 	fn ntw(&mut self, zero_oh: bool, is_ordinal: bool) {
-		self.is_plural = false;
-		if self.number > 1 { self.is_plural = true; }
+		self.is_plural = self.number > 1;
 		self.process_number(self.number, zero_oh, is_ordinal);
 	}
 
@@ -313,7 +141,6 @@ impl engine {
 		// the dictionary has it, or it is a CMUdict word the letter-to-sound tree says right
 		if crate::_morph::known(w) { return true; }
 		let mut r = dictreader::new();
-		r.reset();
 		for b in w.bytes() { r.readIn(b); }
 		r.search()
 	}
@@ -322,7 +149,7 @@ impl engine {
 		let saved = core::mem::replace(&mut self.scratch_pad, cbuf::new());
 		self.process_number(n, zero_oh, ordinal);
 		let mut out = Vec::new();
-		while self.scratch_pad.is_not_empty() { out.push(self.scratch_pad.read()); self.scratch_pad.advance(); }
+		while self.is_not_empty() { out.push(self.read()); }
 		self.scratch_pad = saved;
 		String::from_utf8(out).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ")
 	}
@@ -347,10 +174,10 @@ impl engine {
 		}
 		(v, n)
 	}
-	fn special_rule(&mut self, buf: &mut cbuf) -> bool {
+	fn context_rule(&mut self, buf: &mut cbuf) -> bool {
 		const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august",
 			"september", "october", "november", "december"];
-		const SHORT: [(&str, usize); 13] = [("jan.", 0), ("feb.", 1), ("mar.", 2), ("apr.", 3), ("jun.", 5), ("jul.", 6),
+		const SHORT_MONTHS: [(&str, usize); 13] = [("jan.", 0), ("feb.", 1), ("mar.", 2), ("apr.", 3), ("jun.", 5), ("jul.", 6),
 			("aug.", 7), ("sep.", 8), ("sept.", 8), ("oct.", 9), ("nov.", 10), ("dec.", 11), ("may", 4)];
 		// a numeral after one of these words is a plain number ("chapter four"); after another name, a ruler's
 		// ordinal ("henry the eighth")
@@ -450,7 +277,7 @@ impl engine {
 			if q > 0 {
 				let mut k = 1 + q;
 				while is_space(at(k)) { k += 1; }
-				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { core::str::from_utf8(&a[..1]).unwrap_or(".") };
+				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { match at(0) { b'?' => "?", b'!' => "!", _ => "." } };
 				self.scratch_pad.write_text(&format!(" {} ", mark));
 				self.digit_prev = false;
 				self.is_plural = false;
@@ -461,18 +288,18 @@ impl engine {
 
 		// a run of question and exclamation marks (or one interrobang) is one mark: a question if any of them asks
 		if !is_space(prev) {
-			let (mut k, mut marks, mut asks, mut odd) = (0, 0, false, false);
+			let (mut k, mut marks, mut asks, mut double_mark) = (0, 0, false, false);
 			loop {
 				match (at(k), at(k + 1), at(k + 2)) {
 					(b'?', _, _) => { k += 1; asks = true; },
 					(b'!', _, _) => { k += 1; },
-					(0xE2, 0x80, 0xBC) => { k += 3; odd = true; },
-					(0xE2, 0x80, 0xBD) | (0xE2, 0x81, 0x87..=0x89) => { k += 3; asks = true; odd = true; },
+					(0xE2, 0x80, 0xBC) => { k += 3; double_mark = true; },
+					(0xE2, 0x80, 0xBD) | (0xE2, 0x81, 0x87..=0x89) => { k += 3; asks = true; double_mark = true; },
 					_ => break,
 				}
 				marks += 1;
 			}
-			if marks >= 2 || (odd && asks) {
+			if marks >= 2 || (double_mark && asks) {
 				self.scratch_pad.write_text(if asks { " ? " } else { " ! " });
 				self.digit_prev = false;
 				self.is_plural = false;
@@ -683,7 +510,7 @@ impl engine {
 					return true;
 				}
 			}
-			let ends = |i: usize| !at(i).is_ascii_alphabetic() && !at(i).is_ascii_digit();
+			let ends = |i: usize| !at(i).is_ascii_alphanumeric();
 			let plain = !(matches!(at(n1), b',' | b'\'' | b'_' | b'.' | b':') && at(n1 + 1).is_ascii_digit());
 			// a decade: the 1990s, the 2000s, the 90s (a possessive s may follow an apostrophe)
 			let s_at = if at(n1) == b's' { Some(n1) } else if at(n1) == b'\'' && at(n1 + 1) == b's' { Some(n1 + 1) } else { None };
@@ -733,7 +560,7 @@ impl engine {
 			while is_space(at(j)) { j += 1; }
 			if j > k {
 				for scale in ["thousand", "million", "billion", "trillion"] {
-					let w = a.get(j..j + scale.len()).map(|s| s.eq_ignore_ascii_case(scale.as_bytes())).unwrap_or(false);
+					let w = a.get(j..j + scale.len()).is_some_and(|s| s.eq_ignore_ascii_case(scale.as_bytes()));
 					if w && !at(j + scale.len()).is_ascii_alphabetic() {
 						let point = if frac.is_empty() { String::new() } else { format!(" point{}", frac) };
 						let num = self.words(v, false, false);
@@ -752,12 +579,12 @@ impl engine {
 			for (m, name) in MONTHS.iter().enumerate() {
 				if low[1..].starts_with(name.as_bytes()) { found = Some((m, name.len())); }
 			}
-			for (name, m) in SHORT {
+			for (name, m) in SHORT_MONTHS {
 				if low[1..].starts_with(name.as_bytes()) && found.is_none_or(|(_, n)| name.len() > n) { found = Some((m, name.len())); }
 			}
 			if let Some((m, n)) = found {
 				let mut k = 1 + n;
-				if !at(k).is_ascii_alphabetic() && is_space(at(k)) {
+				if is_space(at(k)) {
 					while is_space(at(k)) { k += 1; }
 					let (d, nd) = Self::digits(&a, k);
 					if (1..=2).contains(&nd) && (1..=31).contains(&d) && ends_day(at(k + nd), at(k + nd + 1)) {
@@ -820,7 +647,7 @@ impl engine {
 			let mut n = 0;
 			while at(n).is_ascii_uppercase() { n += 1; }
 			// a fixed-text rule as long or longer here ("MPG", "PAT. PEND.") goes first
-			let longer = self.table_best(buf).is_some_and(|(len, _)| len >= n);
+			let longer = Self::table_best(buf).is_some_and(|(len, _)| len >= n);
 			if n >= 2 && !at(n).is_ascii_lowercase() && !longer {
 				let run = core::str::from_utf8(&a[..n]).unwrap_or("");
 				if let Some(v) = roman(run) {
@@ -853,7 +680,7 @@ impl engine {
 		// an emoticon after a space is the emoticon, not "colon"
 		if is_space(at(0)) && matches!(at(1), b':' | b';' | b'=') {
 			buf.advance();
-			let face = self.table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= Self::lexer_len(buf));
+			let face = Self::table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= Self::lexer_len(buf));
 			buf.recede();
 			if face {
 				self.scratch_pad.write_text(" ");
@@ -873,7 +700,7 @@ impl engine {
 			if i == pat.len() { break true; }
 			let c = buf.read();
 			let ok = match pat[i] {
-				0x01 => { i += 1; c == b' ' || c == 0x08 || c == 0x0A },
+				0x01 => { i += 1; is_space(c) },
 				0x02 => { i += 2; c.is_ascii_alphabetic() && c.to_ascii_lowercase() == pat[i - 1] },
 				p => { i += 1; c == p },
 			};
@@ -891,7 +718,7 @@ impl engine {
 		let mut best = 0;
 		for w in [&b" for"[..], &b" the"[..]] {
 			if let Some(n) = Self::match_len(buf, w) {
-				for _ in 0..n { buf.advance(); }
+				consume(buf, n);
 				let mut k = n;
 				while buf.read() == b' ' { buf.advance(); k += 1; }
 				if k > n && matches!(buf.read(), b'a' | b'e' | b'i' | b'o' | b'u') { best = best.max(k + 1); }
@@ -900,7 +727,7 @@ impl engine {
 		}
 		if let Some(n) = Self::match_len(buf, b":00") {
 			let mut k = n;
-			for _ in 0..n { buf.advance(); }
+			consume(buf, n);
 			if buf.read() == b' ' { buf.advance(); k += 1; }
 			let ap = buf.read().to_ascii_lowercase();
 			if ap == b'a' || ap == b'p' {
@@ -953,12 +780,12 @@ impl engine {
 	fn end_after_period(&mut self, buf: &mut cbuf) {
 		// a period eaten by an abbreviation also ends the sentence when only spaces follow it
 		let start = buf.getcurs();
-		while matches!(buf.read(), b' ' | 0x08 | 0x0A) { buf.advance(); }
+		while is_space(buf.read()) { buf.advance(); }
 		let end = buf.read() == 0x00;
 		buf.setcurs(start);
 		if end { self.scratch_pad.write_text(" . "); }
 	}
-	fn table_best(&mut self, buf: &mut cbuf) -> Option<(usize, usize)> {
+	fn table_best(buf: &mut cbuf) -> Option<(usize, usize)> {
 		// the longest fixed-text rule matching at the cursor, the earlier on a tie: (length, rule)
 		let first = buf.read();
 		let mut best: Option<(usize, usize)> = None;
@@ -973,20 +800,20 @@ impl engine {
 		// the longest fixed-text rule at the cursor writes its replacement, unless a lexer rule matches longer
 		// there; the lexer's " for"/" the" rules come first, so they also win a tie
 		let first = buf.read();
-		let Some((n, r)) = self.table_best(buf) else { return false };
+		let Some((n, r)) = Self::table_best(buf) else { return false };
 		// a rule that starts (ends) with a letter starts (ends) a word: no "kg" inside "background" or "kgb"
 		let pat = RULES[r].0;
 		let letter = |c: Option<&u8>| c.is_some_and(|&c| c.is_ascii_alphabetic() || c == 0x02);
 		if letter(pat.first()) && Self::prev_byte(buf).is_ascii_alphabetic() { return false; }
 		if letter(pat.last()) {
-			for _ in 0..n { buf.advance(); }
+			consume(buf, n);
 			let next = buf.read();
 			for _ in 0..n { buf.recede(); }
 			if next.is_ascii_alphabetic() { return false; }
 		}
 		let lex = Self::lexer_len(buf);
 		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
-		for _ in 0..n { buf.advance(); }
+		consume(buf, n);
 		let (_, text, plural, rest) = RULES[r];
 		self.scratch_pad.write_text(text);
 		if self.is_plural && !plural.is_empty() {
@@ -996,7 +823,7 @@ impl engine {
 		self.scratch_pad.write_text(rest);
 		// a unit or abbreviation ends what a number before it started
 		self.digit_prev = false;
-		if RULES[r].0.last() == Some(&b'.') && !text.trim_end().ends_with('.') { self.end_after_period(buf); }
+		if pat.last() == Some(&b'.') && !text.trim_end().ends_with('.') { self.end_after_period(buf); }
 		true
 	}
 
@@ -1005,10 +832,7 @@ impl engine {
 		let mut text_done: bool  = false;
 		let mut yymarker: usize = 0;
 
-		// a number's plurality and "after a digit" carry on until a letter or punctuation clears them
-		self.punct_prev = false;
-
-		if self.special_rule(buf) { return false; }
+		if self.context_rule(buf) { return false; }
 		if self.table_rule(buf) { return false; }
 
 		// Final tag variables available in semantic action.
@@ -1018,10 +842,7 @@ impl engine {
 		/*!stags:re2c format = 'let mut @@ = usize::MAX;'; */
 
 		%{
-			/*-----------------------------------------------*/
-			/* GENERIC API IS BEING USED SO WE CAN INTERFACE */
-			/* OUR RING BUFFER SETUP WITH THIS LEXER CODE    */
-			/*-----------------------------------------------*/
+			/* generic API: the lexer reads through the ring buffer */
 			re2c:api            = generic;
 			re2c:YYPEEK         = "buf.read()";
 			re2c:YYSKIP         = "buf.advance();";
@@ -1069,12 +890,7 @@ impl engine {
 			area_code   = "("? digit{3} area_sep;
 			phone_num   = area_code? digit{3} pnum_sep digit{4};
 
-			/*---------------------------------*/
-			/*  HOMOGRAPHS TO DEAL WITH FIRST  */
-			/*                                 */
-			/* clever use of case-sensitivity  */
-			/* to mark and retrieve homographs */
-			/*---------------------------------*/
+			/* homographs first: an uppercase word marks the other reading */
 
 			" for" " "+ vowel {
 				// "fer" becomes "for" before word-initial vowels
@@ -1083,8 +899,7 @@ impl engine {
 				break;
 			}
 			" the" " "+ vowel {
-				// change "the" to "thee" if next word
-				// starts with a vowel (e.g., "thee apple")
+				// "thee" before a vowel ("thee apple")
 				buf.recede();
 				self.scratch_pad.write_text(" thee ");
 				break;
@@ -1299,14 +1114,7 @@ impl engine {
 				break;
 			}
 
-			/*---------------------*/
-			/* OTHER ABBREVIATIONS */
-			/*---------------------*/
-
-
-			/*--------------------*/
-			/* START OF MANY2MANY */
-			/*--------------------*/
+			/* section signs */
 
 			"\xA7"{2,} {
 				self.scratch_pad.write_text(" sections ");
@@ -1356,10 +1164,7 @@ impl engine {
 			":" space | ";" space | period space {
 				self.digit_prev = false;
 				self.is_plural  = false;
-				if !self.punct_prev {
-					self.scratch_pad.write_text(" . ");
-					self.punct_prev = true;
-				}
+				self.scratch_pad.write_text(" . ");
 				// leave the space, so an abbreviation starting the next sentence still has its word boundary
 				buf.recede();
 				break;
@@ -1381,7 +1186,6 @@ impl engine {
 				break;
 			}
 			squote {
-				// write out the apostrophe
 				self.scratch_pad.write_text("\x27");
 				break;
 			}
@@ -1408,19 +1212,13 @@ impl engine {
 			exc_point {
 				self.digit_prev = false;
 				self.is_plural  = false;
-				if !self.punct_prev {
-					self.scratch_pad.write_text(" ! ");
-					self.punct_prev = true;
-				}
+				self.scratch_pad.write_text(" ! ");
 				break;
 			}
 			ques_mark {
 				self.digit_prev = false;
 				self.is_plural  = false;
-				if !self.punct_prev {
-					self.scratch_pad.write_text(" ? ");
-					self.punct_prev = true;
-				}
+				self.scratch_pad.write_text(" ? ");
 				break;
 			}
 			':00' " "? 'a' period? 'm' period? {
@@ -1475,10 +1273,7 @@ impl engine {
 			dquote | comma | space "(" | ")" space {
 				self.digit_prev = false;
 				self.is_plural  = false;
-				if !self.punct_prev {
-					self.scratch_pad.write_text(" , ");
-					self.punct_prev = true;
-				}
+				self.scratch_pad.write_text(" , ");
 				break;
 			}
 
@@ -1637,21 +1432,18 @@ impl engine {
 
 			/* NORMAL ROUTINE FOR LETTERS */
 			letter {
-				if self.is_plural  { self.is_plural  = false; }
-				if self.punct_prev { self.punct_prev = false; }
-				if self.digit_prev { self.digit_prev = false; }
-				buf.recede();
-				self.scratch_pad.write(buf.read());
-				buf.advance();
+				self.is_plural  = false;
+				self.digit_prev = false;
+				self.scratch_pad.write(Self::prev_byte(buf));
 				break;
 			}
 
 			/* ROUTINE FOR NUMBERS STARTING WITH ZEROES */
 			@t1 "0" whole_num {
 				self.digit_prev = true;
-				yymarker = buf.getcurs();
+				let end = buf.getcurs();
 				buf.setcurs(t1);
-				while buf.getcurs() < yymarker {
+				while buf.getcurs() < end {
 					self.reset_ntw();
 					self.consume_digit(buf.read());
 					self.ntw(true, false);
@@ -1663,9 +1455,9 @@ impl engine {
 			/* ROUTINE FOR NUMBERS GREATER THAN QUADRILLION */
 			@t1 whole_num{19,} {
 				self.digit_prev = true;
-				yymarker = buf.getcurs();
+				let end = buf.getcurs();
 				buf.setcurs(t1);
-				while buf.getcurs() < yymarker {
+				while buf.getcurs() < end {
 					self.reset_ntw();
 					self.consume_digit(buf.read());
 					self.ntw(true, false);
@@ -1677,12 +1469,12 @@ impl engine {
 			/* ROUTINE FOR U.S. PHONE NUMBERS */
 			@t1 phone_num {
 				self.digit_prev = true;
-				yymarker = buf.getcurs();
+				let end = buf.getcurs();
 				buf.setcurs(t1);
-				while buf.getcurs() < yymarker {
-					if buf.read() == 0x2D || buf.read() == 0x20 {
+				while buf.getcurs() < end {
+					if matches!(buf.read(), b'-' | b' ') {
 						self.scratch_pad.write_text(" , ");
-					} else if self.is_number(buf.read()) {
+					} else if buf.read().is_ascii_digit() {
 						self.reset_ntw();
 						self.consume_digit(buf.read());
 						self.ntw(true, false);
@@ -1694,14 +1486,12 @@ impl engine {
 
 			/* ROUTINE FOR ORDINAL NUMBERS */
 			@t1 whole_num ordinal_tag {
-				// this will be a naive method.
-				// non-matching ordinal suffixes
-				// will be fixed automatically
+				// the suffix is not checked: "21th" reads twenty first
 				self.digit_prev = false;
-				yymarker = buf.getcurs();
+				let end = buf.getcurs();
 				buf.setcurs(t1);
 				self.reset_ntw();
-				while buf.getcurs() < yymarker {
+				while buf.getcurs() < end {
 					self.consume_digit(buf.read());
 					buf.advance();
 				}
@@ -1711,10 +1501,10 @@ impl engine {
 
 			/* ROUTINES FOR PROCESSING MOST NUMBERS */
 			@t1 plusminus? @t2 numspecial? @t3 whole_num @t4 decimal? @t5 {
-				yymarker = buf.getcurs();
+				let end = buf.getcurs();
 				if t1 != t2 {
 					buf.setcurs(t1);
-					if buf.read() == 0x2B {
+					if buf.read() == b'+' {
 						self.scratch_pad.write_text(" positive ");
 					} else if self.digit_prev {
 						self.scratch_pad.write_text(" through ");
@@ -1724,7 +1514,7 @@ impl engine {
 				}
 				if t2 != t3 {
 					buf.setcurs(t2);
-					if buf.read() == 0x23 {
+					if buf.read() == b'#' {
 						self.scratch_pad.write_text(" number ");
 					}
 				}
@@ -1737,7 +1527,7 @@ impl engine {
 				self.ntw(false, false);
 				if t2 != t3 {
 					buf.setcurs(t2);
-					if buf.read() == 0x24 {
+					if buf.read() == b'$' {
 						self.scratch_pad.write_text(" dollar");
 						if self.is_plural {
 							self.scratch_pad.write_text("s");
@@ -1770,7 +1560,7 @@ impl engine {
 					}
 				}
 				self.digit_prev = true;
-				buf.setcurs(yymarker);
+				buf.setcurs(end);
 				break;
 			}
 
@@ -1781,8 +1571,6 @@ impl engine {
 			}
 			/* LEFT OVER HASH RULE */
 			"#" {
-				// treat hash symbol not attached to number
-				// as "hash tag"
 				self.scratch_pad.write_text(" hash tag ");
 				break;
 			}
@@ -1808,7 +1596,7 @@ impl engine {
 			}
 			/* LEFT OVER PERIOD RULE */
 			"." letter {
-				// translate left over period to "dot" if letter is right
+				// a dot inside a name: "example.com"
 				buf.recede();
 				self.scratch_pad.write_text(" dot ");
 				break;
@@ -1825,7 +1613,7 @@ impl engine {
 			}
 			/* END OF TEXT */
 			[\x00] {
-				// end of stream. send signal to synthesizer that the text stream is done.
+				// end of text: tell the caller the stream is done
 				text_done = true;
 				break;
 			}

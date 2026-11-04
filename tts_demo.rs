@@ -8,8 +8,6 @@ use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 use tts_synth::{_vtm, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
 
-type Wav = hound::WavWriter<BufWriter<File>>;
-
 // mono at the synth's rate, as 16-bit integers or 32-bit floats
 fn wav_spec(pcm16: bool) -> hound::WavSpec {
 	let (bits, format) = if pcm16 { (16, hound::SampleFormat::Int) } else { (32, hound::SampleFormat::Float) };
@@ -33,30 +31,30 @@ fn parse_args() -> Result<Opts, String> {
 	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None, table: None };
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
-	while let Some(a) = args.next() {
-		if a == "--trace" {
+	while let Some(arg) = args.next() {
+		if arg == "--trace" {
 			opts.trace = true;
-		} else if a == "--16bit" {
+		} else if arg == "--16bit" {
 			opts.pcm16 = true;
-		} else if a == "--text" {
+		} else if arg == "--text" {
 			opts.text_only = true;
-		} else if a == "--seg-dump" {
+		} else if arg == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
-		} else if a == "--table" {
+		} else if arg == "--table" {
 			opts.table = Some(args.next().ok_or("--table needs a file name")?);
-		} else if a == "--phone" {
+		} else if arg == "--phone" {
 			let p = args.next().and_then(|v| v.parse().ok()).unwrap_or(0);
 			opts.phone = Some(phone_token(p).ok_or(format!("phone {} can't be said on its own", p))?);
-		} else if a == "--voice" {
+		} else if arg == "--voice" {
 			let n = args.next().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
 			if n >= _vtm::VOICES.len() { return Err(format!("voice must be between 0 and {}", _vtm::VOICES.len() - 1)); }
 			opts.voice = n;
-		} else if a == "--rate" {
+		} else if arg == "--rate" {
 			let r: f32 = args.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
 			if !(0.5..=2.0).contains(&r) { return Err("rate must be between 0.5 and 2.0".to_string()); }
 			opts.rate = r;
 		} else if !have_text {
-			opts.text = a;
+			opts.text = arg;
 			have_text = true;
 		}
 	}
@@ -66,7 +64,7 @@ fn parse_args() -> Result<Opts, String> {
 
 // the WAV file, the segment dump and the trace
 struct WavOut {
-	writer: Wav,
+	writer: hound::WavWriter<BufWriter<File>>,
 	dump:   Option<BufWriter<File>>,	// the playing segment index of every sample
 }
 
@@ -134,7 +132,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		} else {
 			sp.speak(&opts.text, &mut out).await?;
 		}
-		// if formant synth not done, let's finish up the synthesis
 		sp.finish(&mut out).await
 	})?;
 

@@ -1,6 +1,6 @@
 // known words and suffix tables for suffix matching
 
-// FNV-1a hashes of the CMUdict words the letter-to-sound tree says right, sorted
+// FNV-1a hashes of the words the letter-to-sound tree says right, sorted
 pub static KNOWN: [u32; 81701] = [
 	0x00026e24, 0x000335a8, 0x00034687, 0x00040be7, 0x0004c16b, 0x00054f03, 0x0005dcbb, 0x0006d1db, 0x0007d305, 0x000970a9,
 	0x000a01d8, 0x000accaa, 0x000b9fed, 0x000bae7e, 0x000c26bc, 0x000c6bb8, 0x000c8a64, 0x000dfd2b, 0x000edc46, 0x001040a0,
@@ -8175,8 +8175,7 @@ pub static KNOWN: [u32; 81701] = [
 	0xfffff2a7,
 ];
 
-// what a class's last phone makes of -s and -ed: 0 voiced, 1 t, 2 d, 3 voiceless, 4 voiceless
-// sibilant, 5 voiced sibilant
+// what a class's last phone makes of -s and -ed: 0 voiced, 1 t, 2 d, 3 voiceless, 4 voiceless sibilant, 5 voiced sibilant
 pub static LAST_KIND: [u8; 90] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 2, 0, 0, 0, 3, 0, 0, 0, 5, 0, 0, 0, 0, 5, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 4, 4, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0,
 ];
@@ -8193,7 +8192,7 @@ pub const PH_S: u8 = 72;
 pub const PH_T: u8 = 76;
 pub const PH_Z: u8 = 87;
 
-// words not in CMUdict and the classes suffix matching gives them, for the tests
+// words not in dictionary and the classes suffix matching gives them, for the tests
 #[cfg(test)]
 pub static SAMPLES: [(&str, &[u8]); 98] = [
 	("'bouts", &[39, 19, 76, 72]),

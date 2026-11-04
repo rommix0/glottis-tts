@@ -1,6 +1,6 @@
 // the code keeps the synthesis literature's names (F1, AV, m_sr, formant_tbl) over Rust's naming style
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
-// the synthesizer needs an allocator but no operating system; main.rs is the command line around it
+// the synthesizer needs an allocator but no operating system; tts_demo.rs is the command line around it
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
@@ -123,7 +123,7 @@ pub struct Speaker {
 	contour:   _f0::Contour,
 	next_seg:  usize,		// stream index for the next segment
 	started:   bool,
-	last:      u8,			// last phone loaded
+	last_phone: u8,
 }
 
 impl Speaker {
@@ -135,13 +135,13 @@ impl Speaker {
 			contour:  _f0::Contour::new(),
 			next_seg: 0,
 			started:  false,
-			last:     0,
+			last_phone: 0,
 		}
 	}
 
 	async fn play<O: SpeechSink>(&mut self, out: &mut O, phone: u8, dur_ms: f32, stressed: bool, seg: usize, word_start: bool) -> Result<(), O::Error> {
 		// feed one phone into the synthesizer and send out what it plays
-		self.last = phone;
+		self.last_phone = phone;
 		if self.synth.load(phone, libm::roundf(dur_ms) as i32, stressed, seg, word_start) {
 			while self.synth.is_running() {
 				let (s, f) = self.synth.position();
@@ -154,12 +154,12 @@ impl Speaker {
 
 	// play out what is still in the synthesizer
 	pub async fn finish<O: SpeechSink>(&mut self, out: &mut O) -> Result<(), O::Error> {
-		let mut finish_off = true;
+		let mut first = true;
 		while self.synth.is_not_last() {
 			let seg = self.take_seg();
-			if finish_off {
-				finish_off = false;
-				if self.last == PAU {
+			if first {
+				first = false;
+				if self.last_phone == PAU {
 					// the sentence already ended with its release and pause
 					self.play(out, PAU, 50.0, false, seg, true).await?;
 				} else {
@@ -210,7 +210,7 @@ impl Speaker {
 		}
 		self.contour.add_utterance(&utt, &stream);
 
-		let mut end_i = 0;
+		let mut ends = ends.into_iter();
 		for ph in &utt.phrases {
 			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			for i in segs.clone() {
@@ -223,8 +223,7 @@ impl Speaker {
 			}
 			if ph.end != Boundary::Unmarked {
 				// phrase-end release, then the pause
-				let (r, p) = ends[end_i];
-				end_i += 1;
+				let (r, p) = ends.next().unwrap();
 				let release = match utt.segs[segs.end - 1].phone {
 					11|36 => 49,			// is alveolar. use IXP release
 					_     => 48,			// otherwise, use AXP release
@@ -245,7 +244,7 @@ impl Speaker {
 	pub async fn speak<O: SpeechSink>(&mut self, text: &str, out: &mut O) -> Result<(), O::Error> {
 		let mut buf  = cbuf::new();					// text stream buffer
 		let mut wbuf = cbuf::new();					// word buffer
-		let mut dict_reader = dictreader::new();	// dictionary reader
+		let mut dict_reader = dictreader::new();
 
 		// read in text stream into input ring buffer
 		buf.write(0x20);
@@ -253,29 +252,21 @@ impl Speaker {
 		buf.write(0x20);
 		buf.write(0x00);
 
-		// initialize the text normalizer engine
 		let mut text_engine  = _text::engine::new();
 
 		// current sentence: phone tokens and the text of each word
 		let mut tokens: Vec<u8>      = Vec::new();
 		let mut texts:  Vec<String>  = Vec::new();
 
-		let mut pout: u8;		// phoneme out
-		let mut cc: u8;			// normalized text character
-		let mut cin: u8;		// read in character for dictionary searcher
-
-		// proceed with the text normalizer/LTS pipeline
 		while buf.is_not_empty() {
 			if text_engine.lex(&mut buf) { break; }
 			while text_engine.is_not_empty() {
-				cc = text_engine.read();
+				let cc = text_engine.read();		// normalized text character
 				if wbuf.is_not_empty() && cc == 0x20 {
-					// process word when whitespace is
-					// hit and word buffer is not empty
 					dict_reader.reset();
 					let mut word_text = String::new();
 					while wbuf.is_not_empty() {
-						cin = wbuf.read();
+						let cin = wbuf.read();		// read in character for dictionary searcher
 						wbuf.advance();
 						if cin == 0x20 { continue; }
 						dict_reader.readIn(cin);
@@ -283,8 +274,6 @@ impl Speaker {
 					}
 
 					if dict_reader.search() {
-						// get phoneme stream for word
-						// if found in the dictionary
 						if dict_reader.isFunctionWord() {
 							// function word boundary
 							tokens.push(95);
@@ -294,10 +283,9 @@ impl Speaker {
 						}
 						texts.push(word_text);
 
-						// retrieve the phoneme sequence from dictionary
-						// until null character 0xFF is hit
+						// the word's phones, up to the 0xFF end mark
 						loop {
-							pout = dict_reader.readOut();
+							let pout = dict_reader.readOut();		// phoneme out
 							if pout == 0xFF { break; }
 							tokens.push(pout);
 						}
@@ -307,11 +295,10 @@ impl Speaker {
 						texts.push(word_text);
 						tokens.extend(classes);
 					} else {
-						// if no dictionary match, then
-						// do letter-to-sound stuff here!
+						// not in the dictionary: letter to sound
 						let mut wb_written: bool = false;
 						let mut run: Vec<u8> = Vec::new();
-						for &b in word_text.as_bytes().iter().chain(core::iter::once(&0u8)) {
+						for b in word_text.bytes().chain([0u8]) {
 							let code = _lts::letter_code(b);
 							if code != 0 { run.push(code); continue; }
 
@@ -344,7 +331,6 @@ impl Speaker {
 						texts.clear();
 					}
 				} else {
-					// write to word buffer if not ready to parse yet
 					wbuf.write(cc);
 				}
 			}

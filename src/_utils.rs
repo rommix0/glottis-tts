@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 // ring buffer
 pub struct cbuf {
 	size:   isize,			// buffer size (a power of two; doubles when full)
-	buffer: Vec<u8>,		// buffer itself
+	buffer: Vec<u8>,		// growable buffer
 	head:   isize,			// producer
 	tail:   isize,			// consumer
 	prev:   u8				// previous character for trimming when writing text
@@ -18,10 +18,7 @@ impl cbuf {
 			prev:   0,
 		}
 	}
-	pub fn is_not_empty(&mut self) -> bool {
-		if self.head == self.tail { return false; }
-		true
-	}
+	pub fn is_not_empty(&self) -> bool { self.head != self.tail }
 	fn grow(&mut self) {
 		// double the buffer, keeping the queued bytes in order from the start; cursors saved before this are
 		// stale, so a buffer only grows while it is filled, before it is read with saved cursors
@@ -38,19 +35,6 @@ impl cbuf {
 		self.tail = 0;
 		self.head = n as isize;
 	}
-	fn enqueue(&mut self, x: u8) {
-		if (self.head + 1) & (self.size - 1) == self.tail { self.grow(); }
-		let nxt = (self.head + 1) & (self.size - 1);
-		self.buffer[self.head as usize] = x;
-		self.head = nxt;
-		//println!("enqueue: t: {}, h: {}", self.tail, self.head);
-	}
-	fn dequeue(&mut self) -> u8 {
-		let mut output: u8 = 0x20;
-		if self.is_not_empty() { output = self.buffer[self.tail as usize]; }
-		//println!("dequeue: t: {}, h: {}", self.tail, self.head);
-		output
-	}
 	pub fn recede(&mut self) {
 		self.tail = (self.tail - 1) & (self.size - 1);
 	}
@@ -61,469 +45,118 @@ impl cbuf {
 	}
 	pub fn getcurs(&mut self) -> usize  { self.tail as usize }
 	pub fn setcurs(&mut self, x: usize) { self.tail = x as isize; }
-	pub fn read(&mut self) -> u8 { self.dequeue() }
+	pub fn read(&self) -> u8 { if self.is_not_empty() { self.buffer[self.tail as usize] } else { 0x20 } }
 	pub fn write(&mut self, x: u8) {
-		self.enqueue(x);
+		if (self.head + 1) & (self.size - 1) == self.tail { self.grow(); }
+		self.buffer[self.head as usize] = x;
+		self.head = (self.head + 1) & (self.size - 1);
 		self.prev = x;
 	}
 	pub fn write_text(&mut self, txt: &str) {
 		for x in txt.bytes() {
-			if self.prev == 0x20 && x == 0x20 {
-				// pass
-			} else {
-				self.write(x);
-			}
+			if self.prev != 0x20 || x != 0x20 { self.write(x); }
 		}
 	}
 }
 
-// convert phoneme tokens and separate phoneme and stress
-pub fn PHNIDToPhoneme(x: u8) -> (u8, u8, u8, u8) {
-	let mut stress_a: u8 = 0;
-	let mut stress_b: u8 = 0;
-	let mut phone_b:  u8 = 0;
-	let phone_a: u8;
-	match x {
-		0 => {
-			// "aa
-			phone_a  = 1;
-			stress_a = 2;
-		},
-		1 => {
-			// "ae
-			phone_a  = 2;
-			stress_a = 2;
-		},
-		2 => {
-			// "ah
-			phone_a  = 3;
-			stress_a = 2;
-		},
-		3 => {
-			// "ao
-			phone_a  = 4;
-			stress_a = 2;
-		},
-		4 => {
-			// "aw
-			phone_a  = 5;
-			stress_a = 2;
-		},
-		5 => {
-			// "ay
-			phone_a  = 8;
-			stress_a = 2;
-		},
-		6 => {
-			// "eh
-			phone_a  = 13;
-			stress_a = 2;
-		},
-		7 => {
-			// "er
-			phone_a  = 14;
-			stress_a = 2;
-		},
-		8 => {
-			// "ey
-			phone_a  = 15;
-			stress_a = 2;
-		},
-		9 => {
-			// "ih
-			phone_a  = 19;
-			stress_a = 2;
-		},
-		10 => {
-			// "iy
-			phone_a  = 21;
-			stress_a = 2;
-		},
-		11 => {
-			// "ow
-			phone_a  = 29;
-			stress_a = 2;
-		},
-		12 => {
-			// "oy
-			phone_a  = 30;
-			stress_a = 2;
-		},
-		13 => {
-			// "uh
-			phone_a  = 38;
-			stress_a = 2;
-		},
-		14 => {
-			// "uw
-			phone_a  = 39;
-			stress_a = 2;
-		},
-		15 => {
-			// 'aa
-			phone_a  = 1;
-			stress_a = 1;
-		},
-		16 => {
-			// 'ae
-			phone_a  = 2;
-			stress_a = 1;
-		},
-		17 => {
-			// 'ah
-			phone_a  = 3;
-			stress_a = 1;
-		},
-		18 => {
-			// 'ao
-			phone_a  = 4;
-			stress_a = 1;
-		},
-		19 => {
-			// 'aw
-			phone_a  = 5;
-			stress_a = 1;
-		},
-		20 => {
-			// 'ay
-			phone_a  = 8;
-			stress_a = 1;
-		},
-		21 => {
-			// 'eh
-			phone_a  = 13;
-			stress_a = 1;
-		},
-		22 => {
-			// 'eh|m
-			phone_a  = 13;
-			phone_b  = 26;
-			stress_a = 1;
-		},
-		23 => {
-			// 'er
-			phone_a  = 14;
-			stress_a = 1;
-		},
-		24 => {
-			// 'ey
-			phone_a  = 15;
-			stress_a = 1;
-		},
-		25 => {
-			// 'ih
-			phone_a  = 19;
-			stress_a = 1;
-		},
-		26 => {
-			// 'iy
-			phone_a  = 21;
-			stress_a = 1;
-		},
-		27 => {
-			// 'ow
-			phone_a  = 29;
-			stress_a = 1;
-		},
-		28 => {
-			// 'oy
-			phone_a  = 30;
-			stress_a = 1;
-		},
-		29 => {
-			// 'uh
-			phone_a  = 38;
-			stress_a = 1;
-		},
-		30 => {
-			// 'uw
-			phone_a  = 39;
-			stress_a = 1;
-		},
-		32 => {
-			// aa
-			phone_a  = 1;
-		},
-		33 => {
-			// ae
-			phone_a  = 2;
-		},
-		34 => {
-			// ao
-			phone_a  = 4;
-		},
-		35 => {
-			// aw
-			phone_a  = 5;
-		},
-		36 => {
-			// ax
-			phone_a  = 6;
-		},
-		37 => {
-			// axr
-			phone_a  = 7;
-		},
-		38 => {
-			// ay
-			phone_a  = 8;
-		},
-		39 => {
-			// b
-			phone_a  = 9;
-		},
-		40 => {
-			// b|y
-			phone_a  = 9;
-			phone_b  = 42;
-		},
-		41 => {
-			// ch
-			phone_a  = 10;
-		},
-		42 => {
-			// d
-			phone_a  = 11;
-		},
-		43 => {
-			// dh
-			phone_a  = 12;
-		},
-		44 => {
-			// eh
-			phone_a  = 13;
-		},
-		45 => {
-			// ey
-			phone_a  = 15;
-		},
-		46 => {
-			// f
-			phone_a  = 16;
-		},
-		47 => {
-			// f|y
-			phone_a  = 16;
-			phone_b  = 42;
-		},
-		48 => {
-			// g
-			phone_a  = 17;
-		},
-		49 => {
-			// g|y
-			phone_a  = 17;
-			phone_b  = 42;
-		},
-		50 => {
-			// g|z
-			phone_a  = 17;
-			phone_b  = 43;
-		},
-		51 => {
-			// hh
-			phone_a  = 18;
-		},
-		52 => {
-			// hh|y
-			phone_a  = 18;
-			phone_b  = 42;
-		},
-		53 => {
-			// ix
-			phone_a  = 20;
-		},
-		54 => {
-			// iy
-			phone_a  = 21;
-		},
-		55 => {
-			// jh
-			phone_a  = 22;
-		},
-		56 => {
-			// k
-			phone_a  = 23;
-		},
-		57 => {
-			// k|s
-			phone_a  = 23;
-			phone_b  = 34;
-		},
-		58 => {
-			// k|y
-			phone_a  = 23;
-			phone_b  = 42;
-		},
-		59 => {
-			// l
-			phone_a  = 24;
-		},
-		60 => {
-			// lx
-			phone_a  = 25;
-		},
-		61 => {
-			// m
-			phone_a  = 26;
-		},
-		62 => {
-			// m|ax
-			phone_a  = 26;
-			phone_b  = 6;
-		},
-		63 => {
-			// m|y
-			phone_a  = 26;
-			phone_b  = 42;
-		},
-		64 => {
-			// n
-			phone_a  = 27;
-		},
-		65 => {
-			// ng
-			phone_a  = 28;
-		},
-		66 => {
-			// ow
-			phone_a  = 29;
-		},
-		67 => {
-			// oy
-			phone_a  = 30;
-		},
-		68 => {
-			// p
-			phone_a  = 31;
-		},
-		69 => {
-			// p|y
-			phone_a  = 31;
-			phone_b  = 42;
-		},
-		70 => {
-			// r
-			phone_a  = 32;
-		},
-		71 => {
-			// rx
-			phone_a  = 33;
-		},
-		72 => {
-			// s
-			phone_a  = 34;
-		},
-		73 => {
-			// sh
-			phone_a  = 35;
-		},
-		74 => {
-			// s|"iy
-			phone_a  = 34;
-			phone_b  = 21;
-			stress_b = 2;
-		},
-		75 => {
-			// s|'iy
-			phone_a  = 34;
-			phone_b  = 21;
-			stress_b = 1;
-		},
-		76 => {
-			// t
-			phone_a  = 36;
-		},
-		77 => {
-			// th
-			phone_a  = 37;
-		},
-		78 => {
-			// uh
-			phone_a  = 38;
-		},
-		79 => {
-			// uw
-			phone_a  = 39;
-		},
-		80 => {
-			// v
-			phone_a  = 40;
-		},
-		81 => {
-			// w
-			phone_a  = 41;
-		},
-		82 => {
-			// y
-			phone_a  = 42;
-		},
-		83 => {
-			// y|"uw
-			phone_a  = 42;
-			phone_b  = 39;
-			stress_b = 2;
-		},
-		84 => {
-			// y|'uw
-			phone_a  = 42;
-			phone_b  = 39;
-			stress_b = 1;
-		},
-		85 => {
-			// y|ax
-			phone_a  = 42;
-			phone_b  = 6;
-		},
-		86 => {
-			// y|uw
-			phone_a  = 42;
-			phone_b  = 39;
-		},
-		87 => {
-			// z
-			phone_a  = 43;
-		},
-		88 => {
-			// zh
-			phone_a  = 44;
-		},
-		89 => {
-			// z|ax
-			phone_a  = 43;
-			phone_b  = 6;
-		},
-		90 => {
-			// content word boundary
-			phone_a = 50;
-		},
-		91 => {
-            // comma
-			phone_a = 51;
-		},
-		92 => {
-            // period
-			phone_a = 52;
-		},
-		93 => {
-            // question mark
-			phone_a = 53;
-		},
-		94 => {
-            // exclamation point
-			phone_a = 54;
-		},
-		95 => {
-			// function word boundary
-			phone_a = 55;
-		},
-		_  => {
-			// _
-			stress_a = 0;
-			stress_b = 0;
-			phone_a  = 0;
-			phone_b  = 0;
-		},
+// a phone token as (phone, second phone, stress, second stress)
+pub fn PHNIDToPhoneme(token: u8) -> (u8, u8, u8, u8) {
+	match token {
+		0  => (1, 0, 2, 0),		// "aa
+		1  => (2, 0, 2, 0),		// "ae
+		2  => (3, 0, 2, 0),		// "ah
+		3  => (4, 0, 2, 0),		// "ao
+		4  => (5, 0, 2, 0),		// "aw
+		5  => (8, 0, 2, 0),		// "ay
+		6  => (13, 0, 2, 0),	// "eh
+		7  => (14, 0, 2, 0),	// "er
+		8  => (15, 0, 2, 0),	// "ey
+		9  => (19, 0, 2, 0),	// "ih
+		10 => (21, 0, 2, 0),	// "iy
+		11 => (29, 0, 2, 0),	// "ow
+		12 => (30, 0, 2, 0),	// "oy
+		13 => (38, 0, 2, 0),	// "uh
+		14 => (39, 0, 2, 0),	// "uw
+		15 => (1, 0, 1, 0),		// 'aa
+		16 => (2, 0, 1, 0),		// 'ae
+		17 => (3, 0, 1, 0),		// 'ah
+		18 => (4, 0, 1, 0),		// 'ao
+		19 => (5, 0, 1, 0),		// 'aw
+		20 => (8, 0, 1, 0),		// 'ay
+		21 => (13, 0, 1, 0),	// 'eh
+		22 => (13, 26, 1, 0),	// 'eh|m
+		23 => (14, 0, 1, 0),	// 'er
+		24 => (15, 0, 1, 0),	// 'ey
+		25 => (19, 0, 1, 0),	// 'ih
+		26 => (21, 0, 1, 0),	// 'iy
+		27 => (29, 0, 1, 0),	// 'ow
+		28 => (30, 0, 1, 0),	// 'oy
+		29 => (38, 0, 1, 0),	// 'uh
+		30 => (39, 0, 1, 0),	// 'uw
+		32 => (1, 0, 0, 0),		// aa
+		33 => (2, 0, 0, 0),		// ae
+		34 => (4, 0, 0, 0),		// ao
+		35 => (5, 0, 0, 0),		// aw
+		36 => (6, 0, 0, 0),		// ax
+		37 => (7, 0, 0, 0),		// axr
+		38 => (8, 0, 0, 0),		// ay
+		39 => (9, 0, 0, 0),		// b
+		40 => (9, 42, 0, 0),	// b|y
+		41 => (10, 0, 0, 0),	// ch
+		42 => (11, 0, 0, 0),	// d
+		43 => (12, 0, 0, 0),	// dh
+		44 => (13, 0, 0, 0),	// eh
+		45 => (15, 0, 0, 0),	// ey
+		46 => (16, 0, 0, 0),	// f
+		47 => (16, 42, 0, 0),	// f|y
+		48 => (17, 0, 0, 0),	// g
+		49 => (17, 42, 0, 0),	// g|y
+		50 => (17, 43, 0, 0),	// g|z
+		51 => (18, 0, 0, 0),	// hh
+		52 => (18, 42, 0, 0),	// hh|y
+		53 => (20, 0, 0, 0),	// ix
+		54 => (21, 0, 0, 0),	// iy
+		55 => (22, 0, 0, 0),	// jh
+		56 => (23, 0, 0, 0),	// k
+		57 => (23, 34, 0, 0),	// k|s
+		58 => (23, 42, 0, 0),	// k|y
+		59 => (24, 0, 0, 0),	// l
+		60 => (25, 0, 0, 0),	// lx
+		61 => (26, 0, 0, 0),	// m
+		62 => (26, 6, 0, 0),	// m|ax
+		63 => (26, 42, 0, 0),	// m|y
+		64 => (27, 0, 0, 0),	// n
+		65 => (28, 0, 0, 0),	// ng
+		66 => (29, 0, 0, 0),	// ow
+		67 => (30, 0, 0, 0),	// oy
+		68 => (31, 0, 0, 0),	// p
+		69 => (31, 42, 0, 0),	// p|y
+		70 => (32, 0, 0, 0),	// r
+		71 => (33, 0, 0, 0),	// rx
+		72 => (34, 0, 0, 0),	// s
+		73 => (35, 0, 0, 0),	// sh
+		74 => (34, 21, 0, 2),	// s|"iy
+		75 => (34, 21, 0, 1),	// s|'iy
+		76 => (36, 0, 0, 0),	// t
+		77 => (37, 0, 0, 0),	// th
+		78 => (38, 0, 0, 0),	// uh
+		79 => (39, 0, 0, 0),	// uw
+		80 => (40, 0, 0, 0),	// v
+		81 => (41, 0, 0, 0),	// w
+		82 => (42, 0, 0, 0),	// y
+		83 => (42, 39, 0, 2),	// y|"uw
+		84 => (42, 39, 0, 1),	// y|'uw
+		85 => (42, 6, 0, 0),	// y|ax
+		86 => (42, 39, 0, 0),	// y|uw
+		87 => (43, 0, 0, 0),	// z
+		88 => (44, 0, 0, 0),	// zh
+		89 => (43, 6, 0, 0),	// z|ax
+		90 => (50, 0, 0, 0),	// content word boundary
+		91 => (51, 0, 0, 0),	// comma
+		92 => (52, 0, 0, 0),	// period
+		93 => (53, 0, 0, 0),	// question mark
+		94 => (54, 0, 0, 0),	// exclamation point
+		95 => (55, 0, 0, 0),	// function word boundary
+		_  => (0, 0, 0, 0),		// otherwise
 	}
-	(phone_a, phone_b, stress_a, stress_b)
 }
