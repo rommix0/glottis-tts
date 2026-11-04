@@ -26,7 +26,8 @@ and short offsets on top of the targets:
 	  low start to a stressed vowel that begins a content word, reached
 	  just after the vowel's start when a sonorant comes before it
 
-the contour is evaluated per sample from the synthesizer's position.
+the contour is evaluated per sample from the synthesizer's position; between two targets the
+pitch moves evenly in time.
 
 */
 use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstruent, is_sonorant};
@@ -80,6 +81,7 @@ pub struct Target {
 	pub st:   f32,			// semitones from REF_HZ
 	pub base: f32,			// the baseline here (for tracing and tests)
 	pub kind: TargetKind,	// an End target holds its value until the next one
+	time: f32,				// ms on the contour's clock
 }
 
 // a short pitch offset, drawn on each segment it covers; age is the ms since the offset began
@@ -89,8 +91,7 @@ struct Bump { seg: usize, age0: f32, dur: f32, shape: Shape }
 enum Shape {
 	Decay { st: f32, ms: f32 },				// st at age 0, decaying with time constant ms
 	Fall  { st: f32, ms: f32 },				// 0 at age 0, falling to -st at ms, then held
-	Rise  { st: f32, ms: f32 },				// -st at age 0, back to 0 at ms
-	Vee   { st: f32, down: f32, up: f32 },	// 0 at age 0, -st at down, back to 0 up later
+	Vee   { st: f32, down: f32, up: f32 },	// 0 at age 0, -st at down, back to 0 up later (down 0: starts at -st)
 	Hump  { st: f32, ms: f32 },				// 0 at age 0, st halfway through ms, 0 again at ms
 }
 
@@ -100,7 +101,6 @@ impl Shape {
 		match self {
 			Shape::Decay { st, ms } => if age < BUMP_SPAN_MS { st * libm::expf(-age / ms) } else { 0.0 },
 			Shape::Fall  { st, ms } => -st * (age / ms).min(1.0),
-			Shape::Rise  { st, ms } => -st * (1.0 - age / ms).max(0.0),
 			Shape::Vee   { st, down, up } => if age < down { -st * age / down } else { -st * (1.0 - (age - down) / up).max(0.0) },
 			Shape::Hump  { st, ms } => if age < ms { st * libm::sinf(PI * age / ms) } else { 0.0 },
 		}
@@ -110,8 +110,11 @@ impl Shape {
 pub struct Contour {
 	targets: Vec<Target>,
 	bumps:   Vec<Bump>,
+	starts:  Vec<(usize, f32, f32)>,	// (stream index, start ms, ms) of every utterance segment, on the clock
+	clock:   f32,			// ms of utterance time added so far (pauses between utterances left out)
 	target_hint: usize,		// where the last hz_at found itself in targets
 	bump_hint:   usize,		// and in bumps
+	start_hint:  usize,		// and in starts
 }
 
 // the first item of v that before() says is not before the place sought, as partition_point gives; samples come in
@@ -124,7 +127,9 @@ fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
 }
 
 impl Contour {
-	pub fn new() -> Contour { Contour { targets: Vec::new(), bumps: Vec::new(), target_hint: 0, bump_hint: 0 } }
+	pub fn new() -> Contour {
+		Contour { targets: Vec::new(), bumps: Vec::new(), starts: Vec::new(), clock: 0.0, target_hint: 0, bump_hint: 0, start_hint: 0 }
+	}
 
 	pub fn targets_of(&self, seg: usize) -> impl Iterator<Item = &Target> {
 		self.targets.iter().filter(move |t| t.seg == seg)
@@ -149,9 +154,10 @@ impl Contour {
 			syls.iter().find(|s| s.stress == 1).or_else(|| syls.iter().find(|s| s.stress == 2)).and_then(|s| s.nucleus)
 		};
 
+		let clock = self.clock;
 		let mut placed: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
 		let mut push = |i: usize, frac: f32, st: f32, base: f32, kind: TargetKind| {
-			placed.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind }));
+			placed.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind, time: clock + time(i, frac) }));
 		};
 
 		let last_phrase = utt.phrases.len() - 1;
@@ -159,8 +165,8 @@ impl Contour {
 		let last_accent_seg = (0..utt.words.len()).rev().find_map(accent_of);
 		for (k, ph) in utt.phrases.iter().enumerate() {
 			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
-			let voiced: Vec<usize> = segs.clone().filter(|&i| is_voiced(utt.segs[i].phone)).collect();
-			let (Some(&first_v), Some(&last_v)) = (voiced.first(), voiced.last()) else { continue; };
+			let voiced = |i: &usize| is_voiced(utt.segs[*i].phone);
+			let (Some(first_v), Some(last_v)) = (segs.clone().find(voiced), segs.clone().rfind(voiced)) else { continue; };
 
 			let b0 = (-PHRASE_RESET_ST * k as f32).max(-PHRASE_RESET_MAX_ST);
 			let (ts, te) = (t0[segs.start], t0[segs.end]);
@@ -231,8 +237,10 @@ impl Contour {
 			}
 			kept.push((ph, t, tg));
 		}
+		// time order is stream order, and a later utterance has later stream indices, so targets and starts stay sorted
 		self.targets.extend(kept.into_iter().map(|(_, _, tg)| tg));
-		self.targets.sort_by(|a, b| (a.seg, a.frac).partial_cmp(&(b.seg, b.frac)).unwrap());
+		self.starts.extend(utt.segs.iter().enumerate().map(|(i, s)| (stream[i], clock + t0[i], s.dur_ms)));
+		self.clock += acc;
 
 		// short offsets: microprosody and glottal dips
 		const T: u8 = 36;
@@ -276,7 +284,7 @@ impl Contour {
 				let (span, shape) = if !after_pause {
 					(ONSET_LEAD_MS + ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS })
 				} else {
-					(ONSET_DIP_MS, Shape::Rise { st: ONSET_DIP_ST, ms: ONSET_DIP_MS })
+					(ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: 0.0, up: ONSET_DIP_MS })
 				};
 				let end = (i..n).find(|&j| t0[j] - t0[i] >= span || !same_phrase(i, j)).unwrap_or(n);
 				draw(i..end, t0[i], shape);
@@ -298,7 +306,6 @@ impl Contour {
 	}
 
 	pub fn hz_at(&mut self, seg: usize, frac: f32) -> f32 {
-		let pos = seg as f32 + frac;
 		// order by segment first, so the end of one segment comes before the start of the next
 		let j = find(&self.targets, &mut self.target_hint, |t| (t.seg, t.frac) <= (seg, frac));
 		let st = match j {
@@ -310,8 +317,12 @@ impl Contour {
 				if a.kind == TargetKind::End {
 					a.st
 				} else {
-					let (pa, pb) = (a.seg as f32 + a.frac, b.seg as f32 + b.frac);
-					let x = if pb > pa { (pos - pa) / (pb - pa) } else { 1.0 };
+					// between two targets inside a phrase every segment is an utterance segment, so it has a start time
+					let k = find(&self.starts, &mut self.start_hint, |s| s.0 < seg);
+					let x = match self.starts.get(k) {
+						Some(&(s, start, dur)) if s == seg && b.time > a.time => ((start + frac * dur - a.time) / (b.time - a.time)).clamp(0.0, 1.0),
+						_ => 1.0,
+					};
 					a.st + (b.st - a.st) * (1.0 - libm::cosf(PI * x)) / 2.0
 				}
 			},
@@ -355,6 +366,20 @@ mod tests {
 	}
 	fn st(hz: f32) -> f32 { 12.0 * (hz / REF_HZ).log2() }
 	fn last_voiced(u: &Utterance) -> usize { u.segs.len() - 1 }
+
+	#[test]
+	fn pitch_moves_evenly_in_time() {
+		// halfway in time between two targets the contour is halfway between them, whatever segments lie in between
+		let (u, mut c) = utt(&[BAA, DEE, GO, MA, NEE], &[(4, PERIOD)], "w");
+		let n = c.targets.len();
+		let (a, b) = (0..n - 1).map(|k| (&c.targets[k], &c.targets[k + 1])).find(|(a, b)| a.kind != TargetKind::End && b.seg > a.seg + 1).unwrap();
+		let (mid, half) = ((a.time + b.time) / 2.0, (a.st + b.st) / 2.0);
+		let mut t = 0.0;
+		let i = (0..u.segs.len()).find(|&i| { t += u.segs[i].dur_ms; t > mid }).unwrap();
+		let frac = 1.0 - (t - mid) / u.segs[i].dur_ms;
+		let got = st(c.hz_at(i, frac)) - c.bump_at(i, frac);
+		assert!((got - half).abs() < 0.05, "{} st halfway in time, want {}", got, half);
+	}
 
 	// b 'aa, d 'iy, g 'ow, m 'aa, n 'iy
 	const BAA: (bool, u8, u8) = (false, 39, 15);
