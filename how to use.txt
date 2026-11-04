@@ -1,1 +1,3 @@
+HOW TO RUN THE TTS DEMO:
+========================
 cargo run --release --example tts_demo -- "this is an example sentence."
