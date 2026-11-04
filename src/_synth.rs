@@ -276,7 +276,7 @@ fn stop_place(x: u8) -> usize { match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 } }
 #[derive(Debug)]
 struct Stop { closure: i32, burst: i32, asp: i32, }
 
-fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, word_start: bool) -> Stop {
+fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, word_start: bool, next_word_start: bool) -> Stop {
 	let pf = feats(phone);
 	if pf & 0x8000 != 0 {
 		// affricate: always released, its frication plays where a stop's burst would
@@ -284,8 +284,11 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		return Stop { closure: pdr - fric, burst: fric, asp: 0 };
 	}
 	let nf = feats(next);
-	// unreleased before another stop or a nasal
-	if nf & 0x50 != 0 { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
+	// unreleased before another stop or a nasal, and a word-final t after a vowel, r, n or l before a word starting
+	// with a consonant ("not that")
+	let final_t = phone == 36 && !word_start && (feats(prev) & 0x1 != 0 || matches!(prev, 33 | 27 | 24 | 25))
+		&& next_word_start && nf & 0x1 == 0 && !matches!(next, 0 | 48 | 49 | PAU);
+	if nf & 0x50 != 0 || final_t { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
 	let place = stop_place(phone);
 	let voiced = pf & 0x2 != 0;
 	let mut burst = samples(BURST_MS[voiced as usize][place]);
@@ -1242,7 +1245,7 @@ impl engine {
 			} else {
 				// plosive or affricate: closure, then burst or frication;
 				// a voiceless stop's aspiration is carried into the next phone
-				let stop = stop_timeline(self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c);
+				let stop = stop_timeline(self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c, self.pwi_r1);
 				self.marker_A = stop.closure;
 				self.marker_B = stop.closure + stop.burst;
 				self.burst_len = stop.burst;
@@ -1617,14 +1620,14 @@ mod tests {
 		for &p in &[31u8, 36, 23] {
 			for &d in &[60.0, 88.0, 101.0, 103.0, 150.0] {
 				let pdr = ms(d);
-				let t = stop_timeline(p, pdr, 1, 1, true, true);
+				let t = stop_timeline(p, pdr, 1, 1, true, true, false);
 				assert!((t.closure + t.burst + t.asp - pdr).abs() <= 1, "{} at {} ms: {:?}", p, d, t);
 				assert!(t.closure >= min_closure, "{} at {} ms: closure {}", p, d, t.closure);
 			}
 		}
 		// too short for the full release: burst and aspiration shrink together
-		let short = stop_timeline(23, ms(60.0), 1, 1, true, true);
-		let full = stop_timeline(23, ms(150.0), 1, 1, true, true);
+		let short = stop_timeline(23, ms(60.0), 1, 1, true, true, false);
+		let full = stop_timeline(23, ms(150.0), 1, 1, true, true, false);
 		assert!(short.burst < full.burst && short.asp < full.asp);
 		assert!((short.burst as f32 / short.asp as f32 - full.burst as f32 / full.asp as f32).abs() < 0.02);
 	}
@@ -1632,7 +1635,7 @@ mod tests {
 	#[test]
 	fn aspiration_by_context() {
 		let pdr = ms(101.0);
-		let t = |prev: u8, next: u8, stressed: bool, w: bool| stop_timeline(36, pdr, prev, next, stressed, w);
+		let t = |prev: u8, next: u8, stressed: bool, w: bool| stop_timeline(36, pdr, prev, next, stressed, w, false);
 		let base = t(1, 1, true, true);
 		assert!((base.asp - ms(55.0)).abs() <= 1);
 		assert_eq!(t(34, 1, true, false).asp, 0, "after s in the word");
@@ -1647,6 +1650,13 @@ mod tests {
 			// unreleased, and its closure merges with the next one
 			assert_eq!((s.closure, s.burst, s.asp), ((pdr as f32 * UNRELEASED_SHARE) as i32, 0, 0), "unreleased before {}", n);
 		}
+		// a word-final t before a consonant is unreleased ("not that"), but not before a vowel or at a phrase end
+		let unreleased = (pdr as f32 * UNRELEASED_SHARE) as i32;
+		assert_eq!(stop_timeline(36, pdr, 1, 12, true, false, true).burst, 0, "not that");
+		assert_eq!(stop_timeline(36, pdr, 1, 12, true, false, true).closure, unreleased);
+		assert!(stop_timeline(36, pdr, 1, 1, true, false, true).burst > 0, "before a vowel");
+		assert!(stop_timeline(36, pdr, 1, 49, false, false, true).burst > 0, "phrase-final");
+		assert!(stop_timeline(36, pdr, 34, 12, true, false, true).burst > 0, "after s");
 		// a shorter aspiration never stretches the closure
 		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (35, 1, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
 			assert_eq!(t(prev, next, st, w).closure, base.closure);
@@ -1792,7 +1802,7 @@ mod tests {
 		for &(p, d, fric) in &[(10u8, 100, 55.0), (22u8, 90, 40.0)] {
 			// released even before a nasal, with no aspiration
 			for &next in &[1u8, 27] {
-				let t = stop_timeline(p, ms(d as f32), 1, next, true, true);
+				let t = stop_timeline(p, ms(d as f32), 1, next, true, true, false);
 				assert!((t.burst - ms(fric)).abs() <= 1 && t.asp == 0 && t.closure + t.burst == ms(d as f32), "{} before {}: {:?}", p, next, t);
 			}
 			let (out, marks) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (p, d, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)]);
