@@ -490,7 +490,7 @@ mod tests {
 	}
 
 	#[test]
-	fn keeps_the_stop_before_a_syllabic_n() {
+	fn keeps_the_t_and_schwa_in_button() {
 		// b 'ah t ax n
 		let u = Utterance::build(&[CW, 39, 17, 76, 36, 64, PERIOD], &["button"]);
 		assert_eq!(phones(&u), vec![9, 3, 36, 6, 27]);

@@ -288,6 +288,11 @@ fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 fn fricative(p: u8) -> bool { matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44) }
 fn sibilant(f: u16) -> bool { f & 0x8200 == 0x200 }
 
+// a word-internal t before an unstressed schwa ("button"): softened by SCHWA_T_ASP and SCHWA_T_ASP_DB
+fn schwa_t(phone: u8, word_start: bool, next: u8, next_stressed: bool) -> bool {
+	phone == 36 && !word_start && matches!(next, 6 | 20) && !next_stressed
+}
+
 fn stop_place(x: u8) -> usize { match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 } }
 
 // a plosive's parts in samples: the closure and burst (an affricate's frication) play in its own segment,
@@ -324,10 +329,9 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 	}
 
 	// context only shortens the aspiration; the closure takes the time it gives up
-	let schwa_t = phone == 36 && !word_start && matches!(next, 6 | 20) && !next_stressed;
 	if nf & 0x1 != 0 {
 		if !next_stressed { asp = (asp as f32 * ASP_UNSTRESSED) as i32; }
-		if schwa_t { asp = (asp as f32 * SCHWA_T_ASP) as i32; }
+		if schwa_t(phone, word_start, next, next_stressed) { asp = (asp as f32 * SCHWA_T_ASP) as i32; }
 	} else if nf & 0x1C00 != 0 {
 		asp = (asp as f32 * ASP_BEFORE_SONORANT) as i32;
 	} else {
@@ -1335,7 +1339,7 @@ impl engine {
 						ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0
 					} else { 0.0 };
 					level -= front.max(ASP_FOLLOW * self.quiet_next_db());
-					if self.phn_c == 36 && !self.pwi_c && matches!(self.phn_r1, 6 | 20) && !self.pst_r1 { level -= SCHWA_T_ASP_DB; }
+					if schwa_t(self.phn_c, self.pwi_c, self.phn_r1, self.pst_r1) { level -= SCHWA_T_ASP_DB; }
 					self.asp_db_next = level.max(1.0);
 					self.asp_seg_next = self.seg_c;
 				}
