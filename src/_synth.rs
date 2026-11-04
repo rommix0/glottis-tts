@@ -87,7 +87,8 @@ const GLOTTAL_DIP_MS: f32 = 40.0;
 // nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before sharp noise
 const NASAL_GAP_MS: f32 = 25.0;
 
-// a nasal after an unstressed vowel is quieter, so it stays under that weaker vowel ("-ing", "-en")
+// a nasal after an unstressed vowel is quieter, so it stays under that weaker vowel ("-ing", "-en"); not one that
+// starts a word ("the moon")
 const NASAL_AFTER_UNSTRESSED_DB: f32 = 6.0;
 
 // a nasal's voicing and nasal coupling switch within this long at its closure and release
@@ -852,7 +853,7 @@ impl engine {
 			self.AF_src -= 3.0;
 		}
 
-		if self.pft_c & 0x10 != 0 && self.pft_l1 & 0x1 != 0 && !self.pst_l1 {
+		if self.pft_c & 0x10 != 0 && self.pft_l1 & 0x1 != 0 && !self.pst_l1 && !self.pwi_c {
 			self.AV_src -= NASAL_AFTER_UNSTRESSED_DB;
 		}
 	}
@@ -1828,13 +1829,22 @@ mod tests {
 
 	#[test]
 	fn nasal_is_softer_after_unstressed_vowel() {
-		// AA-N-AA: the N's voicing is NASAL_AFTER_UNSTRESSED_DB lower when the AA before it is unstressed
-		let av = |unstressed: &[usize]| {
-			let (out, _) = trace_regs_st(&[(PAU, 50, 0), (1, 150, 1), (27, 100, 2), (1, 150, 3), (48, 100, 4), (0, 50, 5)], unstressed);
-			out.iter().find(|x| x.0 == 27 && x.1 == ms(50.0)).unwrap().4
+		// AA-N-AA: the N's voicing is NASAL_AFTER_UNSTRESSED_DB lower when the AA before it is unstressed, unless the
+		// N starts a word ("the moon")
+		let av = |stressed: bool, word_start: bool| {
+			let mut e = engine::new();
+			let mut v = 0.0;
+			for &(p, d, st, w) in &[(PAU, 50, true, true), (1, 150, stressed, true), (27, 100, true, word_start), (1, 150, true, false), (48, 100, true, true), (0, 50, true, true)] {
+				if e.load(p, d, st, 0, w) {
+					while e.is_running() { e.sample(120.0); if e.phn_c == 27 && e.counter == ms(50.0) { v = db(e.AV_reg); } }
+				}
+			}
+			v
 		};
-		let (st, un) = (av(&[]), av(&[1]));
+		let (st, un) = (av(true, false), av(false, false));
 		assert!((st - un - NASAL_AFTER_UNSTRESSED_DB).abs() < 0.5, "after stressed {} unstressed {}", st, un);
+		let (st, un) = (av(true, true), av(false, true));
+		assert!((st - un).abs() < 0.5, "a word's first nasal: after stressed {} unstressed {}", st, un);
 	}
 
 	#[test]
