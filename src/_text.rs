@@ -32,6 +32,7 @@ pub struct engine {
 	digit_prev:  bool,
 	is_plural:   bool,
 	number:      u64,
+	last_year:   Option<bool>,	// whether the last four-digit number was read as a year, for the next in "X to Y"
 }
 impl engine {
 	pub fn new() -> engine {
@@ -40,6 +41,7 @@ impl engine {
 			digit_prev:  false,
 			is_plural:   false,
 			number:      0,
+			last_year:   None,
 		}
 	}
 	pub fn is_not_empty(&mut self) -> bool {
@@ -187,6 +189,11 @@ impl engine {
 		// a four-digit number after one of these words is a year ("in 2015 votes were cast")
 		const YEAR_AFTER: [&str; 15] = ["in", "since", "until", "till", "during", "circa", "year", "from", "by", "early", "late",
 			"mid", "spring", "summer", "winter"];
+		// a four-digit number after one of these words is a count, not a year ("over 1500", "scored 2015")
+		const COUNT_AFTER: [&str; 21] = ["about", "over", "under", "nearly", "almost", "approximately", "roughly", "exactly",
+			"only", "just", "than", "some", "total", "scored", "won", "lost", "paid", "cost", "costs", "earned", "sold"];
+		// a four-digit number after one of these words is read like the one before it ("1987 to 1990", "2015 to 1987")
+		const RANGE_AFTER: [&str; 4] = ["to", "and", "or", "through"];
 		// words ending in s that are not plural nouns
 		const NOT_PLURAL: [&str; 18] = ["was", "is", "has", "as", "its", "his", "hers", "ours", "yours", "theirs", "this", "thus",
 			"plus", "minus", "always", "perhaps", "besides", "unless"];
@@ -523,21 +530,39 @@ impl engine {
 					return true;
 				}
 			}
-			// a year: four plain digits from 1100 to 2099 unless a plural noun follows ("2015 votes"), or from 1001
-			// after a word that leads a year ("in 2015 votes were cast", "in 1066")
+			// a year: four plain digits from 1100 to 2099, or from 1001 after a word that leads a year ("in 2015 votes
+			// were cast", "in 1066"); not when a plural noun follows ("2015 votes"), after a count word ("over 1500"),
+			// or falling to the next number ("the vote was 2015 to 1987"); after "to", "and"... read like the one before
 			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
-			let cue = is_space(prev) && YEAR_AFTER.contains(&Self::prev_word(buf).to_ascii_lowercase().as_str());
-			let next: String = {
-				let mut k = n1;
+			let before = if is_space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
+			let cue = YEAR_AFTER.contains(&before.as_str());
+			// the word after a[from..] past spaces (none if no space comes first), and whether it is a plural noun
+			let word_after = |from: usize| {
+				let mut k = from;
 				while is_space(at(k)) { k += 1; }
 				let mut w = String::new();
-				if k > n1 { while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
-				w
+				if k > from { while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
+				(w, k)
 			};
-			let counted = PLURAL.contains(&next.as_str()) || (next.len() >= 3 && next.ends_with('s')
-				&& !next.ends_with("ss") && !next.ends_with("us") && !next.ends_with("is") && !NOT_PLURAL.contains(&next.as_str()));
+			let plural = |w: &str| PLURAL.contains(&w) || (w.len() >= 3 && w.ends_with('s')
+				&& !w.ends_with("ss") && !w.ends_with("us") && !w.ends_with("is") && !NOT_PLURAL.contains(&w));
+			let counted = plural(&word_after(n1).0);
+			// "X to Y": a count when Y is smaller or counts something ("2015 to 1987", "1300 to 1400 visitors")
+			let range_count = {
+				let (w, k) = word_after(n1);
+				let mut j = k;
+				while is_space(at(j)) { j += 1; }
+				let (v2, n2) = Self::digits(&a, j);
+				w == "to" && n2 == 4 && ends(j + 4) && (v2 < v1 || plural(&word_after(j + 4).0))
+			};
+			let in_range = (1100..=1999).contains(&v1) || (2010..=2099).contains(&v1);
 			let year = if cue { (1001..=1999).contains(&v1) || (2010..=2099).contains(&v1) }
-				else { !counted && ((1100..=1999).contains(&v1) || (2010..=2099).contains(&v1)) };
+				else if counted || range_count || COUNT_AFTER.contains(&before.as_str()) { false }
+				else if RANGE_AFTER.contains(&before.as_str()) && let Some(y) = self.last_year { y && in_range }
+				else { in_range };
+			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' {
+				self.last_year = Some(year);
+			}
 			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' && year {
 				let w = self.year_words(v1);
 				self.scratch_pad.write_text(&format!(" {} ", w));

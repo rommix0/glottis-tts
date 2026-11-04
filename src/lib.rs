@@ -623,6 +623,12 @@ mod tests {
 		says_all(&[("There were 2015 votes.", "two thousand fifteen votes"), ("In 2015 votes were cast", "twenty fifteen votes"),
 			("He was born in 1066.", "ten sixty six"), ("the 2020 election", "twenty twenty election"), ("1066 people came", "one thousand sixty six people"),
 			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"), ("1999 was good", "nineteen ninety nine was")]);
+		// counts: a falling or counted "X to Y", after a count word, and the second number of a range read like the first
+		says_all(&[("The vote was 2015 to 1987.", "two thousand fifteen to one thousand nine hundred eighty seven"),
+			("We had 1300 to 1400 visitors.", "one thousand three hundred to one thousand four hundred visitors"),
+			("It cost exactly 1250.", "exactly one thousand two hundred fifty"), ("Over 1500 came", "one thousand five hundred came"),
+			("From 1987 to 1990 he", "nineteen eighty seven to nineteen ninety"), ("In 1987 and 1988 it", "nineteen eighty seven and nineteen eighty eight"),
+			("1914 through 1918 were", "nineteen fourteen through nineteen eighteen")]);
 	}
 
 	#[test]
