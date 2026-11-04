@@ -80,8 +80,10 @@ const FRIC_SILENCE_MS: f32 = 70.0;
 const FRIC_DIP_DB: f32 = 10.0;
 const FRIC_DIP_MS: f32 = 30.0;
 
-// a stressed word-initial vowel after a vowel starts with a glottal catch: a voice dip centred on the join
+// a word-initial vowel after a vowel starts with a glottal catch: a voice dip centred on the join, lighter when
+// unstressed ("Nina and"); an unstressed one after an r-coloured vowel is linked by the r instead ("letter and")
 const GLOTTAL_DIP_DB: f32 = 24.0;
+const GLOTTAL_DIP_UNSTRESSED_DB: f32 = 12.0;
 const GLOTTAL_DIP_MS: f32 = 40.0;
 
 // nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before sharp noise
@@ -1345,10 +1347,11 @@ impl engine {
 				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
 				self.dip_db = FRIC_DIP_DB;
 			}
-			if self.pft_c & 0x1 != 0 && self.pst_c && self.pwi_c && self.pft_l1 & 0x1 != 0 && !quiet(self.phn_l1) {
+			if self.pft_c & 0x1 != 0 && self.pwi_c && self.pft_l1 & 0x1 != 0 && !quiet(self.phn_l1)
+				&& (self.pst_c || !matches!(self.phn_l1, 7 | 14)) {
 				self.dip_mid = 0;
 				self.dip_half = samples(GLOTTAL_DIP_MS / 2.0).min(-self.counter);
-				self.dip_db = GLOTTAL_DIP_DB;
+				self.dip_db = if self.pst_c { GLOTTAL_DIP_DB } else { GLOTTAL_DIP_UNSTRESSED_DB };
 			}
 			self.gap = if nasal(self.pft_l1) && fricative(self.phn_c) && self.pft_c & 0x2 == 0 { samples(NASAL_GAP_MS) } else { 0 };
 			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
@@ -2400,16 +2403,20 @@ mod tests {
 	}
 
 	#[test]
-	fn a_stressed_word_after_a_vowel_starts_with_a_catch() {
-		// AA-AA (the second starting a word): the voice dips GLOTTAL_DIP_DB at the join; an unstressed AA runs on
-		let av = |unstressed: &[usize]| {
-			let (out, _) = trace_regs_st(&[(PAU, 50, 0), (1, 150, 1), (1, 150, 2), (48, 100, 3), (0, 50, 4)], unstressed);
+	fn a_word_after_a_vowel_starts_with_a_catch() {
+		// V-AA (the AA starting a word): the voice dips GLOTTAL_DIP_DB at the join, GLOTTAL_DIP_UNSTRESSED_DB when the AA
+		// is unstressed; after AXR an unstressed AA runs on, linked by the r
+		let av = |first: u8, unstressed: &[usize]| {
+			let (out, _) = trace_regs_st(&[(PAU, 50, 0), (first, 150, 1), (1, 150, 2), (48, 100, 3), (0, 50, 4)], unstressed);
 			let at = |c: i32| out.iter().find(|x| x.5.0 == 2 && x.1 == c).unwrap().4;
 			(at(0), at(ms(40.0)))
 		};
-		let ((dip, full), (run_on, _)) = (av(&[]), av(&[2]));
+		let (dip, full) = av(1, &[]);
 		assert!((full - dip - GLOTTAL_DIP_DB).abs() < 1.0, "catch dips to {} from {}", dip, full);
-		assert!(run_on > full - 3.0, "unstressed AA dips to {}", run_on);
+		let (dip, full) = av(1, &[2]);
+		assert!((full - dip - GLOTTAL_DIP_UNSTRESSED_DB).abs() < 1.0, "unstressed catch dips to {} from {}", dip, full);
+		let (run_on, full) = av(7, &[2]);
+		assert!(run_on > full - 3.0, "unstressed AA after AXR dips to {} from {}", run_on, full);
 	}
 
 	#[test]
