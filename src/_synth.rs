@@ -734,7 +734,8 @@ impl engine {
 			if self.pft_l1 & 0x1C00 != 0 {
 				self.F3_A_src -= 150.0 * factor;
 			}
-			if self.pft_r1 & 0x1C00 != 0 && self.pft_r1 & 0x800 == 0 {
+			if self.pft_r1 & 0x1000 != 0 {
+				// before w and y; an l keeps its F3 high, an r has its own rule
 				self.F3_B_src -= 150.0 * factor;
 			}
 
@@ -2300,6 +2301,13 @@ mod tests {
 				assert!((tb - rb - RHOTIC_F3).abs() < 5.0, "vowel {} ends at F3 {} before r, {} before t", v, rb, tb);
 			}
 		}
+	}
+
+	#[test]
+	fn vowel_f3_does_not_dip_before_l() {
+		// the vowel ends at the same F3 before l as before t ("feel")
+		let f3 = |c2: u8| loaded(&[(PAU, 50, false), (16, 100, false), (21, 150, true), (c2, 80, false), (6, 100, false)], 21).F3_B_src;
+		for l in [24u8, 25] { assert!((f3(l) - f3(36)).abs() < 1.0, "iy ends at F3 {} before {}, {} before t", f3(l), l, f3(36)); }
 	}
 
 	#[test]
