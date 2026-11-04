@@ -351,6 +351,7 @@ pub struct engine {
 	dip_mid: i32,			// counter value at the middle of a dip (between two fricatives, or a glottal catch)
 	dip_half: i32,			// samples either side of it the dip takes (0: no dip)
 	dip_db: f32,			// and how deep it goes (dB)
+	devoice_len: i32,		// samples over which a word-final voiced fricative loses its voice (0: it keeps it)
 	gap: i32,				// samples of closure at the start of a fricative after a nasal (0: none)
 	ab_at: i32,				// counter value where the formants start moving from the A to the B targets
 	marker_B: i32,
@@ -506,6 +507,7 @@ impl engine {
 			dip_mid: 0,
 			dip_half: 0,
 			dip_db: 0.0,
+			devoice_len: 0,
 			gap: 0,
 			marker_B:  0,
 			marker_BA: 0,
@@ -1082,6 +1084,7 @@ impl engine {
 		self.AF_reg = fade(lerp_gain(self.AF_reg_src, self.AF_reg_trg, y), self.master_fade * g_af);
 		self.AH_reg = fade(lerp_gain(self.AH_reg_src, self.AH_reg_trg, y), self.master_fade * g_ah);
 
+		if self.devoice_len > 0 && now >= 0 { g_av *= (1.0 - now as f32 / self.devoice_len as f32).clamp(0.0, 1.0); }
 		let yv = if self.voice_len > 0 { lin2smooth(((now - self.voice_start) as f32 / self.voice_len as f32).clamp(0.0, 1.0)) } else { y };
 		self.AV_reg = fade(lerp_gain(self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
 
@@ -1384,6 +1387,9 @@ impl engine {
 				self.dip_half = samples(GLOTTAL_DIP_MS / 2.0).min(-self.counter);
 				self.dip_db = if self.pst_c { GLOTTAL_DIP_DB } else { GLOTTAL_DIP_UNSTRESSED_DB };
 			}
+			// a word-final voiced fricative before a voiceless obstruent devoices ("thieves fished")
+			self.devoice_len = if fricative(self.phn_c) && self.pft_c & 0x2 != 0 && self.pwi_r1 && self.pft_r1 & 0x2 == 0
+				&& (fricative(self.phn_r1) || self.pft_r1 & 0x40 != 0) { self.pdr_c } else { 0 };
 			self.gap = if nasal(self.pft_l1) && fricative(self.phn_c) && self.pft_c & 0x2 == 0 { samples(NASAL_GAP_MS) } else { 0 };
 			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
 				// a fricative fades in and out across its boundary, as far as the carried-over region allows
@@ -1972,6 +1978,24 @@ mod tests {
 		// a short z after an unstressed vowel takes the short and unstressed cuts before m, not before f ("thieves fished")
 		let af = |r: u8| loaded(&[(PAU, 50, false), (6, 100, false), (43, 70, false), (r, 70, false), (1, 150, true)], 43).AF_src;
 		assert_eq!(af(16) - af(26), 6.0, "z before f {} dB, before m {} dB", af(16), af(26));
+	}
+
+	#[test]
+	fn word_final_voiced_fricative_devoices_before_a_voiceless_one() {
+		// IY-Z | F-AA ("these fish"): the z's voice fades out across it; before a vowel, or inside a word, it keeps it
+		let av = |next: u8, next_word: bool| {
+			let mut e = engine::new();
+			let mut v = 0.0;
+			for &(p, d, w) in &[(PAU, 50, true), (21, 150, true), (43, 90, false), (next, 100, next_word), (1, 150, false), (48, 100, true), (0, 50, true)] {
+				if e.load(p, d, true, 0, w) {
+					while e.is_running() { e.sample(120.0); if e.phn_c == 43 && e.counter == ms(55.0) { v = db(e.AV_reg); } }
+				}
+			}
+			v
+		};
+		let (devoiced, in_word, vowel) = (av(16, true), av(16, false), av(1, true));
+		assert!(devoiced < in_word - 6.0, "z before a word's f: voice {} dB, inside a word {} dB", devoiced, in_word);
+		assert!((vowel - in_word).abs() < 3.0, "z before a vowel {} dB, inside a word {} dB", vowel, in_word);
 	}
 
 	#[test]
