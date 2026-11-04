@@ -287,11 +287,12 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		return Stop { closure: pdr - fric, burst: fric, asp: 0 };
 	}
 	let nf = feats(next);
-	// unreleased before another stop or a nasal, and a word-final t after a vowel, r, n or l before a word starting
-	// with a consonant ("not that")
+	// unreleased before another stop or a nasal, before a word starting with th or dh ("keep the"), and a word-final
+	// t after a vowel, r, n or l before a word starting with a consonant ("not that")
 	let final_t = phone == 36 && !word_start && (feats(prev) & 0x1 != 0 || matches!(prev, 33 | 27 | 24 | 25))
 		&& next_word_start && nf & 0x1 == 0 && !matches!(next, 0 | 48 | 49 | PAU);
-	if nf & 0x50 != 0 || final_t { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
+	let before_dental = next_word_start && matches!(next, 37 | 12);
+	if nf & 0x50 != 0 || final_t || before_dental { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
 	let place = stop_place(phone);
 	let voiced = pf & 0x2 != 0;
 	let mut burst = samples(BURST_MS[voiced as usize][place]);
@@ -1672,7 +1673,11 @@ mod tests {
 		assert_eq!(stop_timeline(36, pdr, 1, 12, true, false, true).closure, unreleased);
 		assert!(stop_timeline(36, pdr, 1, 1, true, false, true).burst > 0, "before a vowel");
 		assert!(stop_timeline(36, pdr, 1, 49, false, false, true).burst > 0, "phrase-final");
-		assert!(stop_timeline(36, pdr, 34, 12, true, false, true).burst > 0, "after s");
+		// any stop before a word starting with th or dh is unreleased ("keep the"); before another fricative it is not
+		assert_eq!(stop_timeline(31, pdr, 21, 12, true, false, true).burst, 0, "keep the");
+		assert_eq!(stop_timeline(23, pdr, 15, 37, true, false, true).burst, 0, "take thick");
+		assert!(stop_timeline(31, pdr, 21, 34, true, false, true).burst > 0, "keep sitting");
+		assert!(stop_timeline(31, pdr, 21, 12, true, false, false).burst > 0, "inside a word");
 		// a shorter aspiration gives its time to the closure: the stop keeps its length
 		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (35, 1, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
 			let s = t(prev, next, st, w);
