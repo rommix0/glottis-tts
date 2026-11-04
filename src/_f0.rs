@@ -107,11 +107,16 @@ impl Shape {
 	}
 }
 
+// ms of speech after which the contour's clock is moved back (an f32 then still counts in steps of about 0.06 ms)
+const CLOCK_LIMIT_MS: f32 = 600_000.0;
+
 pub struct Contour {
 	targets: Vec<Target>,
 	bumps:   Vec<Bump>,
 	starts:  Vec<(usize, f32, f32)>,	// (stream index, start ms, ms) of every utterance segment, on the clock
 	clock:   f32,			// ms of utterance time added so far (pauses between utterances left out)
+	prev_seg: usize,		// stream index and clock time where the previous utterance starts
+	prev_ms:  f32,
 	target_hint: usize,		// where the last hz_at found itself in targets
 	bump_hint:   usize,		// and in bumps
 	start_hint:  usize,		// and in starts
@@ -128,7 +133,7 @@ fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
 
 impl Contour {
 	pub fn new() -> Contour {
-		Contour { targets: Vec::new(), bumps: Vec::new(), starts: Vec::new(), clock: 0.0, target_hint: 0, bump_hint: 0, start_hint: 0 }
+		Contour { targets: Vec::new(), bumps: Vec::new(), starts: Vec::new(), clock: 0.0, prev_seg: 0, prev_ms: 0.0, target_hint: 0, bump_hint: 0, start_hint: 0 }
 	}
 
 	pub fn targets_of(&self, seg: usize) -> impl Iterator<Item = &Target> {
@@ -138,6 +143,20 @@ impl Contour {
 	pub fn add_utterance(&mut self, utt: &Utterance, stream: &[usize]) {
 		// stream[i] is the stream index of utt.segs[i]
 		if utt.segs.is_empty() { return; }
+
+		// the synthesizer is at most a phone or two behind, so nothing before the previous utterance is asked for
+		// again: drop it; past CLOCK_LIMIT_MS move the clock back to where that utterance starts, so an f32 still
+		// counts it finely
+		let keep = self.prev_seg;
+		let back = if self.clock > CLOCK_LIMIT_MS { self.prev_ms } else { 0.0 };
+		self.targets.drain(..self.targets.partition_point(|t| t.seg < keep));
+		self.bumps.drain(..self.bumps.partition_point(|b| b.seg < keep));
+		self.starts.drain(..self.starts.partition_point(|s| s.0 < keep));
+		for t in &mut self.targets { t.time -= back; }
+		for s in &mut self.starts { s.1 -= back; }
+		self.clock -= back;
+		(self.target_hint, self.bump_hint, self.start_hint) = (0, 0, 0);
+		(self.prev_seg, self.prev_ms) = (stream[0], self.clock);
 
 		// start time of each segment (ms) within the utterance
 		let mut t0: Vec<f32> = Vec::with_capacity(utt.segs.len() + 1);
@@ -366,6 +385,28 @@ mod tests {
 	}
 	fn st(hz: f32) -> f32 { 12.0 * (hz / REF_HZ).log2() }
 	fn last_voiced(u: &Utterance) -> usize { u.segs.len() - 1 }
+
+	#[test]
+	fn contour_stays_small_over_a_long_stream() {
+		// sentence after sentence, only the last two are kept and the clock is moved back past CLOCK_LIMIT_MS; the
+		// newest sentence's pitch is the same as on a fresh contour
+		let (u, mut fresh) = utt(&[BAA, DEE, GO, MA, NEE], &[(4, PERIOD)], "w");
+		let n = u.segs.len();
+		let ms: f32 = u.segs.iter().map(|s| s.dur_ms).sum();
+		let mut c = Contour::new();
+		let mut k = 0;
+		while (k as f32) * ms < 3.0 * CLOCK_LIMIT_MS {
+			let stream: Vec<usize> = (k * n..(k + 1) * n).collect();
+			c.add_utterance(&u, &stream);
+			assert!(c.starts.len() <= 2 * n && c.targets.len() <= 2 * fresh.targets.len(), "{} starts after {} sentences", c.starts.len(), k + 1);
+			k += 1;
+		}
+		assert!(c.clock < CLOCK_LIMIT_MS + 3.0 * ms, "clock at {} ms after {} ms of speech", c.clock, k as f32 * ms);
+		for i in 0..n {
+			let (a, b) = (fresh.hz_at(i, 0.5), c.hz_at((k - 1) * n + i, 0.5));
+			assert!((a - b).abs() < 0.01, "segment {}: {} Hz on a fresh contour, {} after {} sentences", i, a, b, k);
+		}
+	}
 
 	#[test]
 	fn pitch_moves_evenly_in_time() {
