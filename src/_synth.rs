@@ -32,7 +32,7 @@ const min_closure: i32 = thirty_ms;
 
 // plosive release by place (labial, alveolar, velar)
 // the burst falls BURST_DECAY_DB over its length
-const BURST_MS: [[f32; 3]; 2] = [[5.0, 15.0, 25.0], [5.0, 10.0, 20.0]];		// voiceless, voiced
+const BURST_MS: [[f32; 3]; 2] = [[10.0, 15.0, 25.0], [10.0, 10.0, 20.0]];		// voiceless, voiced
 const ASP_MS: [f32; 3] = [50.0, 55.0, 50.0];
 const BURST_DECAY_DB: f32 = 12.0;
 
@@ -59,7 +59,7 @@ const RELEASE_REF: f32 = 600.0 * 1500.0;
 const ASP_FOLLOW: f32 = 0.5;
 
 // lip release (AH for p, b): noise in front of the tract, so F2 and F3 stay under these, eased over LIP_RAMP_MS
-const LABIAL_BURST_AH: [f32; 2] = [24.0, 30.0];
+const LABIAL_BURST_AH: [f32; 2] = [30.0, 36.0];
 const LABIAL_BURST_F2: f32 = 1100.0;
 const LABIAL_BURST_F3: f32 = 2300.0;
 const LIP_RAMP_MS: f32 = 5.0;
