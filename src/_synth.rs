@@ -774,8 +774,9 @@ impl engine {
 			// VOWEL RHOTICIZATION
 			if self.pft_r1 & 0x800 != 0 {
 				// the vowel takes on r-coloring as it moves into the r, not from its start, by the same amount
-				// stressed or not
+				// stressed or not; its F2 does not rise away from the r ("tour")
 				self.F3_B_src -= RHOTIC_F3;
+				self.F2_B_src = self.F2_B_src.min(self.F2_A_src);
 			}
 
 			// WIDEN BANDWIDTH AFTER UNVOICED PLOSIVE
@@ -2299,6 +2300,18 @@ mod tests {
 				assert!((tb - rb - RHOTIC_F3).abs() < 5.0, "vowel {} ends at F3 {} before r, {} before t", v, rb, tb);
 			}
 		}
+	}
+
+	#[test]
+	fn vowel_f2_does_not_rise_before_r() {
+		// uh glides up in F2 before t, not before r
+		let f2 = |c2: u8| {
+			let e = loaded(&[(PAU, 50, false), (36, 100, false), (38, 150, true), (c2, 80, false), (6, 100, false)], 38);
+			(e.F2_A_src, e.F2_B_src)
+		};
+		let ((ra, rb), (ta, tb)) = (f2(33), f2(36));
+		assert!(tb > ta, "uh before t ends at F2 {} from {}", tb, ta);
+		assert!(rb <= ra, "uh before r ends at F2 {} from {}", rb, ra);
 	}
 
 	// per sample (phone, F3, AV, the phone's own F3 A target) while rendering (phone, ms, stressed)
