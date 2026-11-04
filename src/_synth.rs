@@ -303,8 +303,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		burst = (burst as f32 * k) as i32;
 		asp = (asp as f32 * k) as i32;
 	}
-	let closure = pdr - burst - asp;
-	// context only shortens the aspiration, and with it the stop
+	// context only shortens the aspiration; the closure takes the time it gives up
 	if nf & 0x1 != 0 {
 		if !next_stressed { asp = (asp as f32 * ASP_UNSTRESSED) as i32; }
 	} else if nf & 0x1C00 != 0 {
@@ -314,7 +313,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		asp = 0;
 	}
 	if feats(prev) & 0x200 != 0 && !word_start { asp = 0; }
-	Stop { closure, burst, asp }
+	Stop { closure: pdr - burst - asp, burst, asp }
 }
 
 pub struct engine {
@@ -1674,9 +1673,10 @@ mod tests {
 		assert!(stop_timeline(36, pdr, 1, 1, true, false, true).burst > 0, "before a vowel");
 		assert!(stop_timeline(36, pdr, 1, 49, false, false, true).burst > 0, "phrase-final");
 		assert!(stop_timeline(36, pdr, 34, 12, true, false, true).burst > 0, "after s");
-		// a shorter aspiration never stretches the closure
+		// a shorter aspiration gives its time to the closure: the stop keeps its length
 		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (35, 1, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
-			assert_eq!(t(prev, next, st, w).closure, base.closure);
+			let s = t(prev, next, st, w);
+			assert_eq!(s.closure, base.closure + base.asp - s.asp);
 		}
 	}
 
