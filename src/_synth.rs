@@ -139,8 +139,8 @@ const NASAL_VOWEL_K: f32 = 0.3;
 const NASAL_ANTIC_MS: f32 = 80.0;
 const NASAL_CARRY_MS: f32 = 40.0;
 
-// aspiration (AH by place) and its share before an unstressed vowel or a sonorant (none after a same-word sibilant)
-const ASP_DB: [f32; 3] = [17.5, 15.5, 15.5];
+// aspiration (AH) and its share before an unstressed vowel or a sonorant (none after a same-word sibilant)
+const ASP_DB: f32 = 15.5;
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.8;
 
@@ -1300,7 +1300,7 @@ impl engine {
 			if self.stop_on {
 				self.marker_BA = stop_asp;
 				if stop_asp > 0 {
-					let mut level = ASP_DB[stop_place(self.phn_c)];
+					let mut level = ASP_DB;
 					// softer before a front, close vowel, or one quiet above F2
 					let front = if self.pft_r1 & 0x1 != 0 {
 						let [f1, f2, _] = self.next_vowel_formants();
@@ -2197,7 +2197,7 @@ mod tests {
 		let want = ASP_FRONT_DB_PER_KHZ * (gap(21) - ASP_FRONT_FROM_HZ) / 1000.0;
 		assert!(want > 3.0);
 		assert!(((asp_before(1) - asp_before(21)) - want).abs() < 0.3, "cut {} before iy, want {}", asp_before(1) - asp_before(21), want);
-		assert_eq!(asp_before(1), ASP_DB[1], "aspiration before aa changed");
+		assert_eq!(asp_before(1), ASP_DB, "aspiration before aa changed");
 		// and before a vowel quiet above F2, by ASP_FOLLOW of how much quieter it is than an open vowel
 		let f = |v: u8, i: usize| formant_tbl[v as usize * 31 + i] as f32;
 		let want = ASP_FOLLOW * -40.0 * (f(39, 5) * f(39, 6) / RELEASE_REF).log10();
@@ -2251,7 +2251,7 @@ mod tests {
 			t.iter().filter(|x| x.0 == 18 && x.1 == ms(60.0)).last().unwrap().3
 		};
 		let (iy, uw) = (mid(21), mid(39));
-		assert!(uw <= ASP_DB[0] + 1.0, "h before uw at {} dB", uw);
+		assert!(uw <= ASP_DB + 1.0, "h before uw at {} dB", uw);
 		assert!(uw - iy > 5.0, "h before iy {} vs uw {}", iy, uw);
 	}
 
