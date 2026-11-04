@@ -139,6 +139,19 @@ impl engine {
 		w.reverse();
 		String::from_utf8(w).unwrap_or_default()
 	}
+	fn number_before_prev_word(buf: &mut cbuf) -> bool {
+		// whether a four-digit number comes right before the word before the cursor ("1987 to")
+		let start = buf.getcurs();
+		buf.recede();
+		while buf.read() == b' ' { buf.recede(); }
+		for _ in 0..32 { if !buf.read().is_ascii_alphabetic() { break; } buf.recede(); }
+		while buf.read() == b' ' { buf.recede(); }
+		let mut n = 0;
+		while buf.read().is_ascii_digit() && n < 5 { n += 1; buf.recede(); }
+		let found = n == 4 && !buf.read().is_ascii_alphanumeric();
+		buf.setcurs(start);
+		found
+	}
 	fn is_word(w: &str) -> bool {
 		// the dictionary has it, or it is a CMUdict word the letter-to-sound tree says right
 		if crate::_morph::known(w) { return true; }
@@ -545,10 +558,10 @@ impl engine {
 			};
 			let plural = |w: &str| PLURAL.contains(&w) || (w.len() >= 3 && w.ends_with('s')
 				&& !w.ends_with("ss") && !w.ends_with("us") && !w.ends_with("is") && !NOT_PLURAL.contains(&w));
-			let counted = plural(&word_after(n1).0);
+			let (w, k) = word_after(n1);
+			let counted = plural(&w);
 			// "X to Y": a count when Y is smaller or counts something ("2015 to 1987", "1300 to 1400 visitors")
 			let range_count = {
-				let (w, k) = word_after(n1);
 				let mut j = k;
 				while is_space(at(j)) { j += 1; }
 				let (v2, n2) = Self::digits(&a, j);
@@ -557,7 +570,7 @@ impl engine {
 			let in_range = (1100..=1999).contains(&v1) || (2010..=2099).contains(&v1);
 			let year = if cue { (1001..=1999).contains(&v1) || (2010..=2099).contains(&v1) }
 				else if counted || range_count || COUNT_AFTER.contains(&before.as_str()) { false }
-				else if RANGE_AFTER.contains(&before.as_str()) && let Some(y) = self.last_year { y && in_range }
+				else if RANGE_AFTER.contains(&before.as_str()) && Self::number_before_prev_word(buf) && let Some(y) = self.last_year { y && in_range }
 				else { in_range };
 			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' {
 				self.last_year = Some(year);

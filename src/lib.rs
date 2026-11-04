@@ -1,6 +1,4 @@
-// the code keeps the synthesis literature's names (F1, AV, m_sr, formant_tbl) over Rust's naming style
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
-// the synthesizer needs an allocator but no operating system; tts_demo.rs is the command line around it
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
@@ -27,7 +25,7 @@ use _utils::cbuf;
 use _dread::dictreader;
 use _utt::{Utterance, Boundary, PAU};
 
-// samples per second
+// master samples rate
 pub const SAMPLE_RATE: u32 = _vtm::m_sr;
 
 // where the application takes the speech, one signed 16-bit sample at a time; it may wait
@@ -628,7 +626,9 @@ mod tests {
 			("We had 1300 to 1400 visitors.", "one thousand three hundred to one thousand four hundred visitors"),
 			("It cost exactly 1250.", "exactly one thousand two hundred fifty"), ("Over 1500 came", "one thousand five hundred came"),
 			("From 1987 to 1990 he", "nineteen eighty seven to nineteen ninety"), ("In 1987 and 1988 it", "nineteen eighty seven and nineteen eighty eight"),
-			("1914 through 1918 were", "nineteen fourteen through nineteen eighteen")]);
+			("1914 through 1918 were", "nineteen fourteen through nineteen eighteen"),
+			// only right after the first number, not from an earlier sentence
+			("Over 1500 came. Tom and 1600 came.", "tom and sixteen hundred came")]);
 	}
 
 	#[test]

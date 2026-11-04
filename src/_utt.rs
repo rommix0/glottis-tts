@@ -96,10 +96,11 @@ const BREAK_BEFORE: [&str; 23] = [
 	"although", "though", "unless", "whereas", "until", "if", "when", "whether",
 	"since", "that", "which", "who", "whom", "whose", "where"
 ];
-// ... else before a preposition ("to" is too often an infinitive's or a compound's, "text to speech")
-const PREPOSITIONS: [&str; 31] = [
+// ... else before a preposition
+// "to", "into", and "onto" are all infinitive "to" words, and are not included here.
+const PREPOSITIONS: [&str; 29] = [
 	"in", "on", "at", "by", "near", "over", "under", "after",
-	"before", "with", "without", "from", "into", "onto", "through", "during",
+	"before", "with", "without", "from", "through", "during",
 	"across", "about", "against", "along", "among", "around", "behind", "below",
 	"beside", "between", "beyond", "toward", "towards", "upon", "within"
 ];

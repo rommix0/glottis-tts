@@ -2,7 +2,7 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-11/03/2026          |
+| DATE:   8/11/2026-11/3/2026          |
 ---------------------------------------*/
 
 use crate::_vtm::{vtm, Voice, DB_GAIN};
@@ -178,14 +178,14 @@ fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 // velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 
-// consonant F2 next to a vowel, by place: (slope, offset) of F2 = offset + slope * the vowel's F2
-fn locus(x: u8) -> Option<(f32, f32)> {
+// consonant F2 next to a vowel, by place: (slope, offset, floor) of F2 = offset + slope * max(the vowel's F2, floor)
+fn locus(x: u8) -> Option<(f32, f32, f32)> {
 	match x {
-		9 | 31 | 26 | 16 | 40       => Some((0.8, 300.0)),		// labial: b p m f v
-		37 | 12                     => Some((0.5, 900.0)),		// dental: th dh
-		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0)),		// alveolar: d t n s z dx
-		35 | 44 | 10 | 22           => Some((0.3, 1500.0)),		// postalveolar: sh zh ch jh
-		17 | 23 | 28                => Some((0.5, 1100.0)),		// velar: g k ng
+		9 | 31 | 26 | 16 | 40       => Some((0.8, 300.0, 0.0)),					// labial: b p m f v
+		37 | 12                     => Some((0.5, 900.0, 0.0)),					// dental: th dh
+		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0, ALVEOLAR_F2_FLOOR)),	// alveolar: d t n s z dx
+		35 | 44 | 10 | 22           => Some((0.3, 1500.0, 0.0)),				// postalveolar: sh zh ch jh
+		17 | 23 | 28                => Some((0.5, 1100.0, 0.0)),				// velar: g k ng
 		_                           => None,
 	}
 }
@@ -287,6 +287,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		return Stop { closure: pdr - fric, burst: fric, asp: 0 };
 	}
 	let nf = feats(next);
+
 	// unreleased before another stop or a nasal, before a word starting with th or dh ("keep the"), and a word-final
 	// t after a vowel, r, n or l before a word starting with a consonant ("not that")
 	let final_t = phone == 36 && !word_start && (feats(prev) & 0x1 != 0 || matches!(prev, 33 | 27 | 24 | 25))
@@ -297,6 +298,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 	let voiced = pf & 0x2 != 0;
 	let mut burst = samples(BURST_MS[voiced as usize][place]);
 	let mut asp = if voiced { 0 } else { samples(ASP_MS[place]) };
+
 	// too short for the whole release: burst and aspiration shrink together
 	let room = (pdr - min_closure).max(0);
 	if burst + asp > room {
@@ -304,6 +306,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		burst = (burst as f32 * k) as i32;
 		asp = (asp as f32 * k) as i32;
 	}
+
 	// context only shortens the aspiration; the closure takes the time it gives up
 	if nf & 0x1 != 0 {
 		if !next_stressed { asp = (asp as f32 * ASP_UNSTRESSED) as i32; }
@@ -313,6 +316,7 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 		// obstruent, phrase-final release or pause: burst only
 		asp = 0;
 	}
+
 	if feats(prev) & 0x200 != 0 && !word_start { asp = 0; }
 	Stop { closure: pdr - burst - asp, burst, asp }
 }
@@ -785,8 +789,7 @@ impl engine {
 			// the diphthongs aw, ay and oy keep theirs
 			if !matches!(self.phn_c, 5 | 8 | 30) && self.pft_r1 & 0x1 == 0 && !matches!(self.phn_r1, 0 | 18 | 48 | 49 | PAU) {
 				let next_f2 = match locus(self.phn_r1) {
-					Some((k, o)) if matches!(self.phn_r1, 11 | 36 | 27 | 34 | 43 | 47) => o + k * self.F2_B_src.max(ALVEOLAR_F2_FLOOR),
-					Some((k, o)) => o + k * self.F2_B_src,
+					Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
 					None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
 				};
 				if (self.F2_B_src - self.F2_A_src) * (next_f2 - self.F2_B_src) < 0.0 {
@@ -903,19 +906,17 @@ impl engine {
 			}
 			return;
 		}
-		let Some((f2_slope, f2_offset)) = locus(self.phn_c) else { return };
+		let Some((f2_slope, f2_offset, floor)) = locus(self.phn_c) else { return };
 		let [next_f1, next_f2, _] = self.next_vowel_formants();
 		if next_vowel {
 			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
 			(self.F1_A_src, self.F1_B_src) = (f1, f1);
 		}
-		let alveolar = matches!(self.phn_c, 11 | 36 | 27 | 34 | 43 | 47);
-		let pull = |v: f32| if alveolar { v.max(ALVEOLAR_F2_FLOOR) } else { v };
 		let left  = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
 		// a side with no vowel holds the other side's value
-		if let Some(v) = left.or(right) { self.F2_A_src = f2_offset + f2_slope * pull(v); }
-		if let Some(v) = right.or(left) { self.F2_B_src = f2_offset + f2_slope * pull(v); }
+		if let Some(v) = left.or(right) { self.F2_A_src = f2_offset + f2_slope * v.max(floor); }
+		if let Some(v) = right.or(left) { self.F2_B_src = f2_offset + f2_slope * v.max(floor); }
 		if self.pft_c & 0x100 != 0 {
 			// velars: F3 comes down toward F2 by front vowels
 			let (f3_slope, f3_offset) = VELAR_F3;
