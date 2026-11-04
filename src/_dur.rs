@@ -49,19 +49,19 @@ pub fn phone_dur(p: u8) -> PhoneDur {
 		8  => PhoneDur { inherent: 152.0, min:  68.0 },	// ay
 		9  => PhoneDur { inherent:  78.0, min:  45.0 },	// b
 		10 => PhoneDur { inherent:  95.0, min:  43.0 },	// ch
-		11 => PhoneDur { inherent:  75.0, min:  53.0 },	// d
+		11 => PhoneDur { inherent:  75.0, min:  34.0 },	// d
 		12 => PhoneDur { inherent:  66.0, min:  30.0 },	// dh
 		13 => PhoneDur { inherent: 108.0, min:  49.0 },	// eh
 		14 => PhoneDur { inherent: 121.0, min:  54.0 },	// er
 		15 => PhoneDur { inherent: 119.0, min:  54.0 },	// ey
 		16 => PhoneDur { inherent:  97.0, min:  44.0 },	// f
-		17 => PhoneDur { inherent:  78.0, min:  70.0 },	// g
+		17 => PhoneDur { inherent:  78.0, min:  35.0 },	// g
 		18 => PhoneDur { inherent:  81.0, min:  36.0 },	// hh
 		19 => PhoneDur { inherent: 105.0, min:  47.0 },	// ih
 		20 => PhoneDur { inherent:  89.0, min:  40.0 },	// ix
 		21 => PhoneDur { inherent: 112.0, min:  50.0 },	// iy
 		22 => PhoneDur { inherent:  85.0, min:  38.0 },	// jh
-		23 => PhoneDur { inherent: 103.0, min: 103.0 },	// k
+		23 => PhoneDur { inherent: 103.0, min:  46.0 },	// k
 		24 => PhoneDur { inherent:  94.0, min:  42.0 },	// l
 		25 => PhoneDur { inherent: 104.0, min:  47.0 },	// lx
 		26 => PhoneDur { inherent:  77.0, min:  35.0 },	// m
@@ -69,12 +69,12 @@ pub fn phone_dur(p: u8) -> PhoneDur {
 		28 => PhoneDur { inherent:  89.0, min:  40.0 },	// ng
 		29 => PhoneDur { inherent: 119.0, min:  54.0 },	// ow
 		30 => PhoneDur { inherent: 156.0, min:  70.0 },	// oy
-		31 => PhoneDur { inherent:  88.0, min:  88.0 },	// p
+		31 => PhoneDur { inherent:  88.0, min:  40.0 },	// p
 		32 => PhoneDur { inherent:  86.0, min:  39.0 },	// r
 		33 => PhoneDur { inherent:  99.0, min:  45.0 },	// rx
 		34 => PhoneDur { inherent:  94.0, min:  42.0 },	// s
 		35 => PhoneDur { inherent:  91.0, min:  41.0 },	// sh
-		36 => PhoneDur { inherent: 101.0, min: 101.0 },	// t
+		36 => PhoneDur { inherent: 101.0, min:  45.0 },	// t
 		37 => PhoneDur { inherent:  90.0, min:  40.0 },	// th
 		38 => PhoneDur { inherent: 110.0, min:  50.0 },	// uh
 		39 => PhoneDur { inherent: 118.0, min:  53.0 },	// uw
@@ -178,8 +178,8 @@ mod tests {
 			assert!(b.segs[i].dur_ms >= pd.min);
 			assert!((stretch(&b, i) * 1.5 - stretch(&a, i)).abs() < 0.01, "{}: {} ms at rate 1.5, {} at 1", i, b.segs[i].dur_ms, a.segs[i].dur_ms);
 		}
-		// k and t are all min: the rate leaves them alone
-		assert_eq!(b.segs[0].dur_ms, a.segs[0].dur_ms);
+		// stops shrink with the rate like everything else
+		assert!(b.segs[0].dur_ms < a.segs[0].dur_ms);
 		assert!(b.segs[1].dur_ms < a.segs[1].dur_ms);
 		// pauses shrink by the rate too
 		assert_eq!(pause_after(Boundary::Comma, 2.0), COMMA_PAUSE_MS / 2.0);
