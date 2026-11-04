@@ -2093,10 +2093,12 @@ mod tests {
 
 	#[test]
 	fn labial_burst_leaves_no_transient() {
-		// the vowel after a lip release peaks no higher than after a tongue release
+		// the release and the vowel's first 40 ms peak no higher after the lips than after the tongue
 		let peak = |c: u8| {
 			let mut m = 0.0f32;
-			drive(&[(PAU, 50, true), (c, 90, true), (8, 250, true), (48, 100, true), (0, 50, true)], |_, y| m = m.max(y.abs()));
+			drive(&[(PAU, 50, true), (c, 90, true), (8, 250, true), (48, 100, true), (0, 50, true)], |e, y| {
+				if e.phn_c == c || (e.phn_c == 8 && e.counter < ms(40.0)) { m = m.max(y.abs()); }
+			});
 			m
 		};
 		let (b, d) = (peak(9), peak(11));
