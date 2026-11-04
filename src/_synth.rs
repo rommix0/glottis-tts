@@ -2096,6 +2096,22 @@ mod tests {
 	}
 
 	#[test]
+	fn th_hiss_is_flat_like_f() {
+		// th's noise is shaped like f's, with no strong low resonance of its own: around 1.7 kHz against 5.5 kHz it is
+		// within 10 dB of f (its formants differ; a 1.7 kHz resonance of its own put it 20 dB over)
+		let mid = |c: u8| {
+			let mut x = Vec::new();
+			drive(&[(PAU, 50, true), (1, 150, true), (c, 150, true), (1, 150, true), (48, 100, true), (0, 50, true)], |e, y| {
+				if e.phn_c == c && e.counter > ms(50.0) && e.counter < ms(100.0) { x.push(y); }
+			});
+			x
+		};
+		let tilt = |x: &[f32]| band_db(x, 1700.0) - band_db(x, 5500.0);
+		let (th, f) = (tilt(&mid(37)), tilt(&mid(16)));
+		assert!(th < f + 10.0, "th 1.7 kHz over 5.5 kHz by {} dB, f by {}", th, f);
+	}
+
+	#[test]
 	fn labial_burst_is_vocal_tract_noise() {
 		for &c in &[31u8, 9] {
 			let (x, amps) = burst_of(c, 1);
