@@ -86,8 +86,10 @@ const GLOTTAL_DIP_DB: f32 = 24.0;
 const GLOTTAL_DIP_UNSTRESSED_DB: f32 = 12.0;
 const GLOTTAL_DIP_MS: f32 = 40.0;
 
-// nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before sharp noise
+// nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before the noise, which
+// then rises over NASAL_GAP_RISE_MS
 const NASAL_GAP_MS: f32 = 25.0;
+const NASAL_GAP_RISE_MS: f32 = 20.0;
 
 // a nasal after an unstressed vowel is quieter, so it stays under that weaker vowel ("-ing", "-en"); not one that
 // starts a word ("the moon")
@@ -1054,7 +1056,7 @@ impl engine {
 			(g_af, g_ah, g_av) = (g, g, g);
 		}
 		if self.gap > 0 && now >= 0 {
-			let k = ((now - self.gap) as f32 / two_ms as f32).clamp(0.0, 1.0);
+			let k = ((now - self.gap) as f32 / samples(NASAL_GAP_RISE_MS) as f32).clamp(0.0, 1.0);
 			(g_af, g_ah) = (k, k);
 		}
 		if self.asp_db > 0.0 && now < 0 {
@@ -1952,6 +1954,9 @@ mod tests {
 			if closed {
 				for c in 0..gap { assert_eq!(af(c), 0.0, "noise {} ms into the closure", c as f32 / ms(1.0) as f32); }
 				assert!(af(gap + ms(3.0)) > 0.0, "no noise after the closure");
+				// and it rises over NASAL_GAP_RISE_MS, not at once: 5 ms in it is still well under full
+				let (early, full) = (af(gap + ms(5.0)), af(gap + ms(NASAL_GAP_RISE_MS + 5.0)));
+				assert!(early < full - 6.0, "noise at {} 5 ms after the closure, {} once risen", early, full);
 			} else {
 				assert!(af(gap / 2) > 0.0, "N-Z has a closure");
 			}
