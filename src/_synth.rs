@@ -285,6 +285,9 @@ fn feats(x: u8) -> u16 {
 
 fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
+fn fricative(p: u8) -> bool { matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44) }
+fn sibilant(f: u16) -> bool { f & 0x8200 == 0x200 }
+
 fn stop_place(x: u8) -> usize { match x { 31 | 9 => 0, 36 | 11 => 1, _ => 2 } }
 
 // a plosive's parts in samples: the closure and burst (an affricate's frication) play in its own segment,
@@ -850,9 +853,11 @@ impl engine {
 			}
 		}
 
+		// a sibilant next to another fricative keeps its level, so the other doesn't drown it ("thieves fished")
+		let sib_cluster = sibilant(self.pft_c) && (fricative(self.phn_l1) || fricative(self.phn_r1));
 		// frication level (affricates keep the table's)
 		if self.pft_c & 0x8000 == 0 {
-			if self.pft_c & 0x41 == 0 && self.pdr_c < eighty_ms && self.pft_l1 & 0x40 == 0 {
+			if self.pft_c & 0x41 == 0 && self.pdr_c < eighty_ms && self.pft_l1 & 0x40 == 0 && !sib_cluster {
 				// short fricatives don't reach AF target (less than 80 ms), lower AF
 				// after a stop the noise starts at full level
 				self.AF_src -= 3.0;
@@ -868,7 +873,7 @@ impl engine {
 			self.AF_src -= 3.0;
 		}
 
-		if !self.pst_l1 && !self.pst_r1 && self.pft_c & 0x1 == 0 {
+		if !self.pst_l1 && !self.pst_r1 && self.pft_c & 0x1 == 0 && !sib_cluster {
 			// unstressed consonant has lower AF
 			self.AF_src -= 3.0;
 		}
@@ -1356,9 +1361,7 @@ impl engine {
 			}
 			self.amp_start = 0;
 			self.voice_len = 0;
-			fn sibilant(f: u16) -> bool { f & 0x8200 == 0x200 }
 			fn sonorant(f: u16) -> bool { f & 0x1 != 0 || f & 0x1C10 != 0 }
-			fn fricative(p: u8) -> bool { matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44) }
 			fn quiet(p: u8) -> bool { p == PAU || p == 0 || p == 48 || p == 49 }
 			self.dip_half = 0;
 			// h is breath noise too: without the dip a fricative runs into it as one hiss
@@ -1962,6 +1965,13 @@ mod tests {
 				assert!(dip > around - 0.5, "S-S dips to {} ({})", dip, around);
 			}
 		}
+	}
+
+	#[test]
+	fn sibilant_next_to_a_fricative_keeps_its_level() {
+		// a short z after an unstressed vowel takes the short and unstressed cuts before m, not before f ("thieves fished")
+		let af = |r: u8| loaded(&[(PAU, 50, false), (6, 100, false), (43, 70, false), (r, 70, false), (1, 150, true)], 43).AF_src;
+		assert_eq!(af(16) - af(26), 6.0, "z before f {} dB, before m {} dB", af(16), af(26));
 	}
 
 	#[test]
