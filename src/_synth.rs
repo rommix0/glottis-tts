@@ -86,6 +86,10 @@ const GLOTTAL_DIP_DB: f32 = 24.0;
 const GLOTTAL_DIP_UNSTRESSED_DB: f32 = 12.0;
 const GLOTTAL_DIP_MS: f32 = 40.0;
 
+// two different nasals in a row dip at the switch, so they don't run together into one hum ("thin men")
+const NASAL_DIP_DB: f32 = 4.0;
+const NASAL_DIP_MS: f32 = 30.0;
+
 // nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before the noise, which
 // then rises over NASAL_GAP_RISE_MS
 const NASAL_GAP_MS: f32 = 25.0;
@@ -1364,6 +1368,13 @@ impl engine {
 				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
 				self.dip_db = FRIC_DIP_DB;
 			}
+			if nasal(self.pft_c) && nasal(self.pft_l1) && self.phn_c != self.phn_l1 {
+				// centred on the join, or starting at this phone's first sample when less of the last one carries over
+				let half = samples(NASAL_DIP_MS / 2.0);
+				self.dip_mid = (self.counter + half).max(0);
+				self.dip_half = half;
+				self.dip_db = NASAL_DIP_DB;
+			}
 			if self.pft_c & 0x1 != 0 && self.pwi_c && self.pft_l1 & 0x1 != 0 && !quiet(self.phn_l1)
 				&& (self.pst_c || !matches!(self.phn_l1, 7 | 14)) {
 				self.dip_mid = 0;
@@ -1949,6 +1960,21 @@ mod tests {
 					"S-SH dips to {} ({} before, {} after)", dip, before, after);
 			} else {
 				assert!(dip > around - 0.5, "S-S dips to {} ({})", dip, around);
+			}
+		}
+	}
+
+	#[test]
+	fn different_nasals_dip_between() {
+		// N-M dips NASAL_DIP_DB at the switch so the two don't run together into one hum; N-N runs on as one
+		for &(b, dips) in &[(26u8, true), (27, false)] {
+			let (out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (27, 100, 2), (b, 100, 3), (1, 150, 4), (48, 100, 5), (0, 50, 6)]);
+			let low = out.iter().filter(|x| x.5.0 == 3 && x.1 < ms(40.0)).map(|x| x.4).fold(f32::MAX, f32::min);
+			let full = out.iter().find(|x| x.5.0 == 3 && x.1 == ms(60.0)).unwrap().4;
+			if dips {
+				assert!((full - low - NASAL_DIP_DB).abs() < 1.0, "N-M dips to {} from {}", low, full);
+			} else {
+				assert!(full - low < 0.5, "N-N dips to {} from {}", low, full);
 			}
 		}
 	}
