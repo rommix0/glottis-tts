@@ -1900,16 +1900,21 @@ mod tests {
 
 	#[test]
 	fn different_fricatives_dip_between() {
-		// S-SH dips at the switch so the two don't run together into one hiss; S-S runs on as one
+		// S-SH dips at the switch so the two don't run together into one hiss; S-S runs on as one. The dip is
+		// measured against the frication either side of it, which glides from one fricative's level to the other's
 		for &(b, dips) in &[(35u8, true), (34, false)] {
 			let (out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (34, 120, 2), (b, 120, 3), (1, 150, 4), (48, 100, 5), (0, 50, 6)]);
-			let af = |seg: usize, c: i32| out.iter().find(|x| x.5.0 == seg && x.1 == c).unwrap().2;
-			let low = af(2, ms(60.0)).min(af(3, ms(60.0)));
-			let dip = out.iter().filter(|x| x.5.0 == 3 && x.1 < ms(30.0)).map(|x| x.2).fold(f32::MAX, f32::min);
+			let k = (0..out.len()).filter(|&i| out[i].5.0 == 3 && out[i].1 < ms(30.0))
+				.min_by(|&i, &j| out[i].2.partial_cmp(&out[j].2).unwrap()).unwrap();
+			let w = ms(20.0) as usize;
+			let (dip, before, after) = (out[k].2, out[k - w].2, out[k + w].2);
+			let around = (before + after) / 2.0;
 			if dips {
-				assert!(dip < low - FRIC_DIP_DB + 1.0, "S-SH dips to {} (lower fricative {})", dip, low);
+				// FRIC_DIP_DB below the glide, and a dip: well below both sides
+				assert!(dip < around - FRIC_DIP_DB + 1.0 && dip < before.min(after) - FRIC_DIP_DB / 2.0,
+					"S-SH dips to {} ({} before, {} after)", dip, before, after);
 			} else {
-				assert!(dip > low - 0.5, "S-S dips to {} ({})", dip, low);
+				assert!(dip > around - 0.5, "S-S dips to {} ({})", dip, around);
 			}
 		}
 	}
@@ -2067,11 +2072,11 @@ mod tests {
 
 	#[test]
 	fn velar_burst_follows_the_vowel() {
+		// the burst peaks near the velar F2: high before iy, mid before aa
+		let peak = |x: &[f32]| (20..=70).map(|k| k as f32 * 50.0).max_by(|&a, &b| band_db(x, a).partial_cmp(&band_db(x, b)).unwrap()).unwrap();
 		for &c in &[23u8, 17] {
-			let (front, _) = burst_of(c, 21);
-			let (back, _) = burst_of(c, 1);
-			assert!(band_db(&front, 2400.0) > band_db(&front, 1400.0) + 3.0, "{} before iy: no high peak", c);
-			assert!(band_db(&back, 1400.0) > band_db(&back, 2400.0) + 3.0, "{} before aa: no low peak", c);
+			let (front, back) = (peak(&burst_of(c, 21).0), peak(&burst_of(c, 1).0));
+			assert!(front > 2200.0 && back < 2000.0 && front > back + 500.0, "{} peaks at {} Hz before iy, {} before aa", c, front, back);
 		}
 	}
 
