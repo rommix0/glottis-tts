@@ -58,8 +58,8 @@ const CONTINUATION_RISE_ST: f32 = 3.0;
 const MINOR_RISE_ST:        f32 = 1.5;		// at a minor break inside a long phrase
 const VOICELESS_BUMP_ST:    f32 = 0.6;		// microprosody after a voiceless obstruent, decaying over ..._MS
 const VOICELESS_BUMP_MS:    f32 = 50.0;
-const VOICED_BUMP_ST:       f32 = -0.6;		// ... and lowered after a voiced one
-const VOICED_BUMP_MS:       f32 = 30.0;
+const VOICED_DIP_ST:        f32 = 0.6;		// ... and lowered through a voiced one, deepest at its end,
+const VOICED_DIP_UP_MS:     f32 = 90.0;		// back up over this long
 const BUMP_SPAN_MS:         f32 = 200.0;	// a bump is drawn over this long at most
 const T_DIP_ST:             f32 = 1.5;		// fall into a pre-glottalized word-final t, over T_DIP_MS before it
 const T_DIP_MS:             f32 = 40.0;
@@ -250,15 +250,17 @@ impl Contour {
 			let after_pause = i == 0 || !same_phrase(i - 1, i);
 			let (p, prev) = (phone(i), if after_pause { PAU } else { phone(i - 1) });
 
-			// a sonorant or vowel after an obstruent (not a flap): raised, decaying until the next obstruent or the phrase end
+			// a sonorant or vowel after an obstruent (not a flap), until the next obstruent or the phrase end: after a
+			// voiceless one raised and decaying; a voiced one lowers F0 through itself, back up in the next sound
 			if !after_pause && is_sonorant(p) && is_obstruent(prev) && prev != FLAP {
-				let shape = if is_voiced(prev) {
-					Shape::Decay { st: VOICED_BUMP_ST, ms: VOICED_BUMP_MS }
+				let voiced = is_voiced(prev);
+				let span = if voiced { VOICED_DIP_UP_MS } else { BUMP_SPAN_MS };
+				let end = (i..n).find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= span).unwrap_or(n);
+				if voiced {
+					draw(i - 1..end, t0[i - 1], Shape::Vee { st: VOICED_DIP_ST, down: t0[i] - t0[i - 1], up: VOICED_DIP_UP_MS });
 				} else {
-					Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS }
-				};
-				let end = (i..n).find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= BUMP_SPAN_MS).unwrap_or(n);
-				draw(i..end, t0[i], shape);
+					draw(i..end, t0[i], Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS });
+				}
 			}
 
 			// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays low through it
@@ -553,9 +555,11 @@ mod tests {
 		let (_, mut c) = offsets(&[CW, S, L, OW1, PERIOD]);
 		assert!((c.bump_at(1, 0.0) - VOICELESS_BUMP_ST).abs() < 0.01);
 		assert!(c.bump_at(2, 0.0) > 0.0 && c.bump_at(2, 0.0) < c.bump_at(1, 0.0));
-		// a voiced obstruent raises it less
+		// a voiced obstruent lowers it, from nothing at its start (no step in the voice) to deepest at its end
 		let (_, mut c) = offsets(&[CW, D, OW1, PERIOD]);
-		assert!((c.bump_at(1, 0.0) - VOICED_BUMP_ST).abs() < 0.01);
+		assert_eq!(c.bump_at(0, 0.0), 0.0);
+		assert!((c.bump_at(0, 0.5) + VOICED_DIP_ST / 2.0).abs() < 0.01);
+		assert!((c.bump_at(1, 0.0) + VOICED_DIP_ST).abs() < 0.01);
 		// a nasal does nothing
 		let (u, mut c) = offsets(&[CW, M, OW1, PERIOD]);
 		assert!((0..u.segs.len()).all(|i| c.bump_at(i, 0.0) == 0.0));
