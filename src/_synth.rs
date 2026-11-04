@@ -240,9 +240,9 @@ fn feats(x: u8) -> u16 {
 	match x {
 		47                     => 0x0022,		// dx (alveolar flap)
 		40                     => 0x0002,		// v
-		1|2|3|4|5|6|7|14|29|38 => 0x0003,		// aa, ae, ah, ao, aw, ax, axr, er, ow
+		1|2|3|4|5|6|7|14|29    => 0x0003,		// aa, ae, ah, ao, aw, ax, axr, er, ow
 		13|15|19|20|21         => 0x0007,		// eh, ey, ih, ix, iy
-		39                     => 0x000B,		// uh, uw
+		38|39                  => 0x000B,		// uh, uw
 		27                     => 0x0032,		// n
 		36                     => 0x0060,		// t
 		11                     => 0x0062,		// d
@@ -745,10 +745,7 @@ impl engine {
 				self.F2_B_src += 110.0 * factor;
 			}
 
-			// WIDEN BANDWIDTH
-			if self.pft_r1 & 0x3 == 0x3 {
-				self.B1_B_src *= 2.5 * factor;
-			}
+			// WIDEN BANDWIDTH AFTER A NASAL
 			if self.pft_l1 & 0x10 != 0 {
 				self.B1_A_src += 70.0 * factor;
 				self.B1_B_src += 70.0 * factor;
@@ -2210,12 +2207,14 @@ mod tests {
 	}
 
 	#[test]
-	fn alveolars_front_uw() {
-		// d, l and r all front uw; b does not
-		let (_, a_b, b_b) = vowel_targets(9, 39, 9);
-		for &(l, r) in &[(11u8, 11u8), (24, 25), (32, 33)] {
-			let (_, a, b) = vowel_targets(l, 39, r);
-			assert!(a > a_b + 100.0 && b > b_b + 100.0, "uw not fronted next to {}/{}: {} {} vs {} {}", l, r, a, b, a_b, b_b);
+	fn alveolars_front_uw_and_uh() {
+		// d, l and r all front uw and uh (the vowel's mean F2: before lx uh holds rather than glides); b does not
+		for v in [39u8, 38] {
+			let (_, a_b, b_b) = vowel_targets(9, v, 9);
+			for &(l, r) in &[(11u8, 11u8), (24, 25), (32, 33)] {
+				let (_, a, b) = vowel_targets(l, v, r);
+				assert!(a > a_b + 100.0 && a + b > a_b + b_b + 200.0, "{} not fronted next to {}/{}: {} {} vs {} {}", v, l, r, a, b, a_b, b_b);
+			}
 		}
 	}
 
