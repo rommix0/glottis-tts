@@ -34,6 +34,7 @@ const BEFORE_VOICELESS_OBS:   f32 = 0.9;
 const CLUSTER_CONSONANT:      f32 = 0.8;
 const WORD_INITIAL_CONSONANT: f32 = 1.1;
 const TENSE_VOWEL:            f32 = 1.4;		// long (tense) vowels and diphthongs: aa ae ao aw ay er ey iy ow oy uw
+const SYLLABIC_L_SCHWA:       f32 = 0.5;		// the schwa of a syllabic (dark) l ("example") is mostly the l
 const GLIDE_THROUGH:          f32 = 0.3;		// a w or y a vowel glides through into the next one ("follower")
 
 pub fn phone_dur(p: u8) -> PhoneDur {
@@ -129,6 +130,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			if matches!(p, 1 | 2 | 4 | 5 | 8 | 14 | 15 | 21 | 29 | 30 | 39) { apply("tense", TENSE_VOWEL); }
 			let n = word.syls.len();
 			if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
+			if same_word(i + 1) && utt.segs[i + 1].phone == 25 && matches!(p, 6 | 20) { apply("syllabic-l", SYLLABIC_L_SCHWA); }
 			if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
 				if is_voiced(utt.segs[i + 1].phone) { apply("before-voiced", BEFORE_VOICED_OBS); } else { apply("before-voiceless", BEFORE_VOICELESS_OBS); }
 			}

@@ -179,6 +179,7 @@ impl Utterance {
 		}
 		u.break_long_phrases();
 		u.flap();
+		u.dark_l();
 		u.kind = match u.phrases.last().map(|p| p.end) {
 			Some(Boundary::Exclaim) => Kind::Exclamation,
 			Some(Boundary::Question) => {
@@ -238,6 +239,17 @@ impl Utterance {
 				vowel(next.phone) && self.words[next.word].phrase == w.phrase && self.words[next.word].segs.start == i + 1
 			};
 			if flaps { self.segs[i].phone = DX; }
+		}
+	}
+	fn dark_l(&mut self) {
+		// a syllabic l (ax l / ix l with no vowel after it in its word: "example", "bottles") is a dark l, like
+		// the l ending "feel"; the clear l made the schwa ring as a vowel of its own
+		const L: u8 = 24; const LX: u8 = 25;
+		for i in 1..self.segs.len() {
+			let w = self.segs[i].word;
+			if self.segs[i].phone != L || !matches!(self.segs[i - 1].phone, 6 | 20) || self.segs[i - 1].word != w { continue; }
+			let vowel_after = self.segs[i + 1..].iter().take_while(|s| s.word == w).any(|s| is_vowel(s.phone));
+			if !vowel_after { self.segs[i].phone = LX; }
 		}
 	}
 	fn close_word(&mut self) {
@@ -319,7 +331,14 @@ mod tests {
 		let u = Utterance::build(&[CW, 16, 68, 36, 59, PERIOD], &["apple"]);
 		assert_eq!(u.syls.len(), 2);
 		assert_eq!(syl_phones(&u, 0), vec![2]);
-		assert_eq!(syl_phones(&u, 1), vec![31, 6, 24]);
+		assert_eq!(syl_phones(&u, 1), vec![31, 6, 25]);
+	}
+
+	#[test]
+	fn syllabic_l_is_dark() {
+		// 'ae p ax l: the syllabic l is dark; 'ae p ax l ax: an l before a vowel stays clear
+		assert_eq!(phones(&Utterance::build(&[CW, 16, 68, 36, 59, PERIOD], &["apple"]))[3], 25);
+		assert_eq!(phones(&Utterance::build(&[CW, 16, 68, 36, 59, 36, PERIOD], &["apple"]))[3], 24);
 	}
 
 	#[test]
