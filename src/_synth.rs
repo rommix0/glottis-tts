@@ -832,7 +832,8 @@ impl engine {
 				if self.pft_l1 & 0x20 != 0 {
 					self.F2_A_src += 250.0 * factor;
 				}
-				if self.pft_r1 & 0x20 != 0 {
+				// not into a dark l, which pulls F2 down: the vowel went up and back down ("full")
+				if self.pft_r1 & 0x20 != 0 && self.phn_r1 != 25 {
 					self.F2_B_src += 250.0 * factor;
 				}
 			}
@@ -2352,13 +2353,16 @@ mod tests {
 
 	#[test]
 	fn alveolars_front_uw_and_uh() {
-		// d, l and r all front uw and uh (the vowel's mean F2: before lx uh holds rather than glides); b does not
+		// d, l and r all front uw and uh; b does not, and neither does a dark l after the vowel, which would make
+		// F2 rise and fall back into it ("full")
 		for v in [39u8, 38] {
 			let (_, a_b, b_b) = vowel_targets(9, v, 9);
-			for &(l, r) in &[(11u8, 11u8), (24, 25), (32, 33)] {
+			for &(l, r) in &[(11u8, 11u8), (24, 24), (32, 33)] {
 				let (_, a, b) = vowel_targets(l, v, r);
 				assert!(a > a_b + 100.0 && a + b > a_b + b_b + 200.0, "{} not fronted next to {}/{}: {} {} vs {} {}", v, l, r, a, b, a_b, b_b);
 			}
+			let (_, a, b) = vowel_targets(16, v, 25);
+			assert!(b <= a, "{} rises into lx: {} -> {}", v, a, b);
 		}
 	}
 
