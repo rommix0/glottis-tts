@@ -43,7 +43,7 @@ const AFFRIC_DECAY_DB: f32 = 6.0;
 // plosive burst trims (not affricates): overall, before an unstressed vowel, next to a sibilant
 const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
-const BURST_SIBILANT_DB: f32 = -6.0;
+const BURST_SIBILANT_DB: f32 = 0.0;
 
 // share of each formant move spent easing in and out: one starting or stopping at full speed clicks
 const TRACK_EASE: f32 = 0.1;
@@ -768,7 +768,8 @@ impl engine {
 				self.F3_A_src -= 100.0 * factor;
 			}
 			if self.pft_r1 & 0x100 != 0 {
-				self.F2_B_src += 80.0 * factor;
+				// a back vowel's F2 stays put before a velar
+				if self.F2_B_src > 1500.0 { self.F2_B_src += 80.0 * factor; }
 				self.F3_B_src -= 100.0 * factor;
 			}
 
@@ -1325,7 +1326,8 @@ impl engine {
 				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
 				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
 				let sibilant = (self.pft_l1 | self.pft_r1) & 0x200 != 0;
-				let follow = -RELEASE_FOLLOW * self.quiet_next_db();
+				// a voiced stop before a liquid or glide keeps its release ("gloves", "bridge")
+				let follow = if self.pft_c & 0x2 != 0 && self.pft_r1 & 0x1 == 0 { 0.0 } else { -RELEASE_FOLLOW * self.quiet_next_db() };
 				let gain_db = if self.stop_affric { 0.0 } else {
 					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
 				};
@@ -1748,6 +1750,20 @@ mod tests {
 			let s = t(prev, next, st, w);
 			assert_eq!(s.closure, base.closure + base.asp - s.asp);
 		}
+	}
+
+	#[test]
+	fn back_vowels_keep_their_f2_before_a_velar() {
+		let f2 = |v: u8, c: u8| loaded(&[(PAU, 50, false), (18, 80, false), (v, 200, true), (c, 80, false), (6, 100, false)], v).F2_B_src;
+		assert!((f2(1, 23) - f2(1, 18)).abs() < 1.0, "aa ends at F2 {} before k, {} before h", f2(1, 23), f2(1, 18));
+		assert!(f2(21, 23) > f2(21, 18) + 10.0, "iy ends at F2 {} before k, {} before h", f2(21, 23), f2(21, 18));
+	}
+
+	#[test]
+	fn a_voiced_stop_keeps_its_release_before_a_liquid() {
+		let gain = |s: u8, n: u8| loaded(&[(PAU, 50, false), (6, 100, false), (s, 80, false), (n, 200, true), (6, 100, false)], s).burst_gain;
+		assert!((gain(17, 24) - gain(17, 1)).abs() < 1e-4, "g: {} before l, {} before aa", gain(17, 24), gain(17, 1));
+		assert!(gain(23, 24) < gain(23, 1) * 0.9, "k: {} before l, {} before aa", gain(23, 24), gain(23, 1));
 	}
 
 	#[test]
