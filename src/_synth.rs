@@ -108,6 +108,15 @@ const BACK_TRANSITION_MS: f32 = 80.0;
 // a vowel's F3 drops this much at its end before an r
 const RHOTIC_F3: f32 = 200.0;
 
+// where a vowel sits before an r: phone, then F1 and F2 at its start and at its end
+const BEFORE_R: [(u8, f32, f32, f32, f32); 5] = [
+	(13, 420.0, 2060.0, 470.0, 1900.0),	// eh
+	(1,  610.0, 1000.0, 640.0, 1000.0),	// aa
+	(4,  548.0,  808.0, 545.0,  808.0),	// ao
+	(38, 310.0,  930.0, 370.0,  890.0),	// uh
+	(39, 310.0,  930.0, 370.0,  890.0),	// uw
+];
+
 // breath noise, and the extra breath and Rd as the voice dies at a phrase end, reached BREATH_RAMP_MS into the release
 const BREATH_DB: f32 = 6.0;
 const BREATH_END_DB: f32 = 12.0;
@@ -743,6 +752,14 @@ impl engine {
 			// STRESS COLORING FOR VOWEL
 			let factor: f32 = if self.pst_c { 0.75 } else { 1.25 };
 
+			// VOWEL BEFORE R
+			// sits higher, and for the back vowels further back ("air", "four", "tour")
+			if self.pft_r1 & 0x800 != 0 {
+				if let Some(&(_, f1a, f2a, f1b, f2b)) = BEFORE_R.iter().find(|v| v.0 == self.phn_c) {
+					(self.F1_A_src, self.F2_A_src, self.F1_B_src, self.F2_B_src) = (f1a, f2a, f1b, f2b);
+				}
+			}
+
 			// VELAR PINCHING RULE
 			if self.pft_l1 & 0x100 != 0 {
 				self.F2_A_src += 80.0 * factor;
@@ -810,8 +827,8 @@ impl engine {
 
 			// GLIDE TOWARD THE NEXT CONSONANT
 			// a vowel's own F2 glide does not head away from where the next consonant takes F2 ("cat", "pick");
-			// the diphthongs aw, ay and oy keep theirs
-			if !matches!(self.phn_c, 5 | 8 | 30) && self.pft_r1 & 0x1 == 0 && !matches!(self.phn_r1, 0 | 18 | 48 | 49 | PAU) {
+			// the diphthongs aw, ay, ow and oy keep theirs
+			if !matches!(self.phn_c, 5 | 8 | 29 | 30) &&self.pft_r1 & 0x1 == 0 && !matches!(self.phn_r1, 0 | 18 | 48 | 49 | PAU) {
 				let next_f2 = match locus(self.phn_r1) {
 					Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
 					None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
@@ -828,7 +845,8 @@ impl engine {
 			}
 
 			// BACK VOWEL ALVEOLARIZATION
-			if self.pft_c == 0x000B {
+			// not before an r, where the vowel has its own place
+			if self.pft_c == 0x000B && self.pft_r1 & 0x800 == 0 {
 				if self.pft_l1 & 0x20 != 0 {
 					self.F2_A_src += 250.0 * factor;
 				}
@@ -2353,11 +2371,11 @@ mod tests {
 
 	#[test]
 	fn alveolars_front_uw_and_uh() {
-		// d, l and r all front uw and uh; b does not, and neither does a dark l after the vowel, which would make
-		// F2 rise and fall back into it ("full")
+		// d, l and an r before the vowel front uw and uh; b does not, and neither does a dark l after the vowel, which
+		// would make F2 rise and fall back into it ("full")
 		for v in [39u8, 38] {
 			let (_, a_b, b_b) = vowel_targets(9, v, 9);
-			for &(l, r) in &[(11u8, 11u8), (24, 24), (32, 33)] {
+			for &(l, r) in &[(11u8, 11u8), (24, 24), (32, 11)] {
 				let (_, a, b) = vowel_targets(l, v, r);
 				assert!(a > a_b + 100.0 && a + b > a_b + b_b + 200.0, "{} not fronted next to {}/{}: {} {} vs {} {}", v, l, r, a, b, a_b, b_b);
 			}
@@ -2486,6 +2504,17 @@ mod tests {
 		// the vowel ends at the same F3 before l as before t ("feel")
 		let f3 = |c2: u8| loaded(&[(PAU, 50, false), (16, 100, false), (21, 150, true), (c2, 80, false), (6, 100, false)], 21).F3_B_src;
 		for l in [24u8, 25] { assert!((f3(l) - f3(36)).abs() < 1.0, "iy ends at F3 {} before {}, {} before t", f3(l), l, f3(36)); }
+	}
+
+	#[test]
+	fn vowels_have_their_own_place_before_r() {
+		// eh higher and further front, the back vowels higher and further back; uw is not fronted by the t or the r
+		let (eh_r, eh_t) = (vowel_targets(9, 13, 33), vowel_targets(9, 13, 36));
+		assert!(eh_r.0 < eh_t.0 - 80.0 && eh_r.1 > eh_t.1 + 150.0, "eh before r {:?}, before t {:?}", eh_r, eh_t);
+		let (ao_r, ao_t) = (vowel_targets(9, 4, 33), vowel_targets(9, 4, 36));
+		assert!(ao_r.0 < ao_t.0 - 80.0 && ao_r.1 < ao_t.1 - 100.0, "ao before r {:?}, before t {:?}", ao_r, ao_t);
+		let (_, a, b) = vowel_targets(36, 38, 33);
+		assert!(a < 1100.0 && b < 1100.0, "uh in tour glides {} -> {}", a, b);
 	}
 
 	#[test]
@@ -2642,7 +2671,7 @@ mod tests {
 	fn a_short_liquid_or_glide_arrives_early() {
 		// l, r, w and y are heard by where their formants go, so even a short one is mostly there by its middle
 		for &c in &[24u8, 32, 41, 42] {
-			let out = trace_moves(&[(PAU, 50, false), (1, 140, true), (c, 40, false), (1, 140, false), (48, 80, false), (0, 50, false)]);
+			let out = trace_moves(&[(PAU, 50, false), (2, 140, true), (c, 40, false), (2, 140, false), (48, 80, false), (0, 50, false)]);
 			let start = out.iter().find(|x| x.0 == c).unwrap().3;
 			let own: Vec<_> = out.iter().filter(|x| x.0 == c && x.1 >= 0).collect();
 			let (mid, end) = (own[own.len() / 2].3, own[own.len() - 1].3);
