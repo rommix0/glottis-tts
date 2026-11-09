@@ -4,7 +4,7 @@ DURATION RULES
 
 each segment's duration is
 
-	dur = min + (inherent - min) * product_of_rule_factors / rate
+	dur = min + (inherent - min) * product_of_rule_factors / (rate * TEMPO)
 
 so only the stretchable part above the minimum is scaled.
 
@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 
 pub struct PhoneDur { pub inherent: f32, pub min: f32 }
 
+const TEMPO: f32 = 1.12;					// the pace at rate 1
 pub const START_PAUSE_MS: f32 = 50.0;		// silence before the first phone of the input
 pub const RELEASE_MS:     f32 = 80.0;		// phrase-end release phone (AXP/IXP)
 const COMMA_PAUSE_MS:     f32 = 220.0;
@@ -95,7 +96,7 @@ pub fn pause_after(end: Boundary, rate: f32) -> f32 {
 		Boundary::Minor => MINOR_PAUSE_MS,
 		_ => SENTENCE_PAUSE_MS
 	};
-	ms / rate
+	ms / (rate * TEMPO)
 }
 
 pub fn assign(utt: &mut Utterance, rate: f32) {
@@ -144,7 +145,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 		if word.function { apply("function-word", FUNCTION_WORD); }
 
 		let pd = phone_dur(p);
-		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / rate;
+		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / (rate * TEMPO);
 		utt.segs[i].rules = rules;
 	}
 }
@@ -184,7 +185,7 @@ mod tests {
 		assert!(b.segs[0].dur_ms < a.segs[0].dur_ms);
 		assert!(b.segs[1].dur_ms < a.segs[1].dur_ms);
 		// pauses shrink by the rate too
-		assert_eq!(pause_after(Boundary::Comma, 2.0), COMMA_PAUSE_MS / 2.0);
+		assert_eq!(pause_after(Boundary::Comma, 2.0), COMMA_PAUSE_MS / (2.0 * TEMPO));
 	}
 
 	#[test]
@@ -204,7 +205,7 @@ mod tests {
 		assign(&mut u, 1.0);
 		assert!(u.segs[1].rules.contains(&"phrase-final"));
 		assert!(!u.segs[1].rules.contains(&"sentence-final"));
-		assert_eq!(pause_after(Boundary::Minor, 1.0), MINOR_PAUSE_MS);
+		assert_eq!(pause_after(Boundary::Minor, 1.0), MINOR_PAUSE_MS / TEMPO);
 	}
 
 	#[test]
@@ -238,7 +239,7 @@ mod tests {
 
 	#[test]
 	fn pause_values() {
-		assert_eq!(pause_after(Boundary::Comma, 1.0), 220.0);
-		assert_eq!(pause_after(Boundary::Period, 2.0), 225.0);
+		assert_eq!(pause_after(Boundary::Comma, 1.0), 220.0 / TEMPO);
+		assert_eq!(pause_after(Boundary::Period, 2.0), 450.0 / (2.0 * TEMPO));
 	}
 }

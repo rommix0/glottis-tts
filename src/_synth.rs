@@ -191,7 +191,7 @@ const VOICE_BAR_RD: f32 = 1.0;
 const ramp_share: f32 = 0.6;
 
 // vowel reduction: how far a vowel of d ms gets from neutral toward its target (0..1)
-const tau_vwl: f32 = 40.0;
+const tau_vwl: f32 = 60.0;
 fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 
 // velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
@@ -202,7 +202,8 @@ const NG_PINCH_HZ: f32 = 300.0;
 // consonant F2 next to a vowel, by place: (slope, offset, floor) of F2 = offset + slope * max(the vowel's F2, floor)
 fn locus(x: u8) -> Option<(f32, f32, f32)> {
 	match x {
-		9 | 31 | 26 | 16 | 40       => Some((0.8, 300.0, 0.0)),					// labial: b p m f v
+		9 | 31 | 26                 => Some((0.9, 0.0, 0.0)),					// bilabial: b p m
+		16 | 40                     => Some((0.8, 300.0, 0.0)),					// labiodental: f v
 		37 | 12                     => Some((0.5, 900.0, 0.0)),					// dental: th dh
 		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0, ALVEOLAR_F2_FLOOR)),	// alveolar: d t n s z dx
 		35 | 44 | 10 | 22           => Some((0.3, 1500.0, 0.0)),				// postalveolar: sh zh ch jh
@@ -318,16 +319,17 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 	}
 	let nf = feats(next);
 
-	// unreleased before another stop or a nasal, before a word starting with th or dh ("keep the"), and a word-final
-	// t after a vowel, r, n or l before a word starting with a consonant ("not that")
+	// unreleased before another stop or a nasal, a t, d, k or g before a word starting with th or dh ("get the"), and a
+	// word-final t after a vowel, r, n or l before a word starting with a consonant ("not that")
 	let final_t = phone == 36 && !word_start && (feats(prev) & 0x1 != 0 || matches!(prev, 33 | 27 | 24 | 25))
 		&& next_word_start && nf & 0x1 == 0 && !matches!(next, 0 | 48 | 49 | PAU);
 	let before_dental = next_word_start && matches!(next, 37 | 12);
-	if nf & 0x50 != 0 || final_t || before_dental { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
+	if nf & 0x50 != 0 || final_t || (before_dental && stop_place(phone) != 0) { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
 	let place = stop_place(phone);
 	let voiced = pf & 0x2 != 0;
 	let mut burst = samples(BURST_MS[voiced as usize][place]);
-	let mut asp = if voiced { 0 } else { samples(ASP_MS[place]) };
+	// a lip stop before th or dh keeps its release, without aspiration ("keep the")
+	let mut asp = if voiced || before_dental { 0 } else { samples(ASP_MS[place]) };
 
 	// too short for the whole release: burst and aspiration shrink together
 	let room = (pdr - min_closure).max(0);
@@ -1597,9 +1599,9 @@ mod tests {
 
 	#[test]
 	fn reduce_k_grows() {
-		assert!((reduce_k(40.0) - 0.632).abs() < 0.001);
-		assert!((reduce_k(60.0) - 0.777).abs() < 0.001);
-		assert!((reduce_k(130.0) - 0.961).abs() < 0.001);
+		assert!((reduce_k(60.0) - 0.632).abs() < 0.001);
+		assert!((reduce_k(90.0) - 0.777).abs() < 0.001);
+		assert!((reduce_k(195.0) - 0.961).abs() < 0.001);
 		assert!(reduce_k(50.0) < reduce_k(51.0));
 	}
 
@@ -1735,8 +1737,9 @@ mod tests {
 		assert_eq!(stop_timeline(36, pdr, 1, 12, true, false, true).closure, unreleased);
 		assert!(stop_timeline(36, pdr, 1, 1, true, false, true).burst > 0, "before a vowel");
 		assert!(stop_timeline(36, pdr, 1, 49, false, false, true).burst > 0, "phrase-final");
-		// any stop before a word starting with th or dh is unreleased ("keep the"); before another fricative it is not
-		assert_eq!(stop_timeline(31, pdr, 21, 12, true, false, true).burst, 0, "keep the");
+		// a lip stop before a word starting with th or dh is released without aspiration; t, d, k and g are unreleased
+		let keep_the = stop_timeline(31, pdr, 21, 12, true, false, true);
+		assert!(keep_the.burst > 0 && keep_the.asp == 0, "keep the: {:?}", keep_the);
 		assert_eq!(stop_timeline(23, pdr, 15, 37, true, false, true).burst, 0, "take thick");
 		assert!(stop_timeline(31, pdr, 21, 34, true, false, true).burst > 0, "keep sitting");
 		assert!(stop_timeline(31, pdr, 21, 12, true, false, false).burst > 0, "inside a word");
@@ -1744,6 +1747,14 @@ mod tests {
 		for &(prev, next, st, w) in &[(34u8, 1u8, true, false), (35, 1, true, false), (1, 1, false, true), (1, 24, true, true), (1, 34, true, true), (1, 48, false, true)] {
 			let s = t(prev, next, st, w);
 			assert_eq!(s.closure, base.closure + base.asp - s.asp);
+		}
+	}
+
+	#[test]
+	fn f2_falls_toward_a_lip_consonant() {
+		for p in [9u8, 31, 26] {
+			let (slope, offset, _) = locus(p).unwrap();
+			for v in [900.0, 1250.0, 2300.0] { assert!(offset + slope * v < v, "phone {} next to F2 {}", p, v); }
 		}
 	}
 
@@ -2484,7 +2495,7 @@ mod tests {
 				let ((ra, rb), (ta, tb)) = (f3(v, 33, st), f3(v, 36, st));
 				assert!((ra - ta).abs() < 1.0, "vowel {} starts at F3 {} before r, {} before t", v, ra, ta);
 				// reduction toward the neutral vowel scales the shift a little
-				assert!((tb - rb - RHOTIC_F3).abs() < 5.0, "vowel {} ends at F3 {} before r, {} before t", v, rb, tb);
+				assert!((tb - rb - RHOTIC_F3 * reduce_k(200.0)).abs() < 1.0, "vowel {} ends at F3 {} before r, {} before t", v, rb, tb);
 			}
 		}
 	}
