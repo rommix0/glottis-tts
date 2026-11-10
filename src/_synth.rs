@@ -2,7 +2,7 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-11/9/2026          |
+| DATE:   8/11/2026-11/10/2026          |
 ---------------------------------------*/
 
 use crate::_vtm::{vtm, Voice, DB_GAIN};
