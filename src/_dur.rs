@@ -17,17 +17,17 @@ pub struct PhoneDur { pub inherent: f32, pub min: f32 }
 const TEMPO: f32 = 1.12;					// the pace at rate 1
 pub const START_PAUSE_MS: f32 = 50.0;		// silence before the first phone of the input
 pub const RELEASE_MS:     f32 = 80.0;		// phrase-end release phone (AXP/IXP)
-const COMMA_PAUSE_MS:     f32 = 220.0;
+const COMMA_PAUSE_MS:     f32 = 160.0;
 const SENTENCE_PAUSE_MS:  f32 = 450.0;
 const MINOR_PAUSE_MS:     f32 = 100.0;		// a minor break inside a long phrase
 
 // rule factors, tuned by ear
 const PHRASE_FINAL_VOWEL:     f32 = 1.4;
 const PHRASE_FINAL_CODA:      f32 = 1.3;
-const SENTENCE_FINAL:         f32 = 1.1;
+const SENTENCE_FINAL:         f32 = 1.7;
 const UNSTRESSED_VOWEL:       f32 = 0.7;
 const SECONDARY_VOWEL:        f32 = 0.85;
-const FUNCTION_WORD:          f32 = 0.85;
+const FUNCTION_WORD:          f32 = 0.75;
 const POLYSYLLABIC:           f32 = 0.9;
 const POLYSYLLABIC_FLOOR:     f32 = 0.7;
 const BEFORE_VOICED_OBS:      f32 = 1.15;
@@ -194,7 +194,7 @@ mod tests {
 		let mut u = build(&[CW, 56, 16, 76, CW, 56, 16, 76, PERIOD]);
 		assign(&mut u, 1.0);
 		let ratio = stretch(&u, 4) / stretch(&u, 1);
-		assert!((ratio - 1.4 * 1.1).abs() < 0.01, "ratio {}", ratio);
+		assert!((ratio - PHRASE_FINAL_VOWEL * SENTENCE_FINAL).abs() < 0.01, "ratio {}", ratio);
 	}
 
 	#[test]
@@ -239,7 +239,7 @@ mod tests {
 
 	#[test]
 	fn pause_values() {
-		assert_eq!(pause_after(Boundary::Comma, 1.0), 220.0 / TEMPO);
+		assert_eq!(pause_after(Boundary::Comma, 1.0), 160.0 / TEMPO);
 		assert_eq!(pause_after(Boundary::Period, 2.0), 450.0 / (2.0 * TEMPO));
 	}
 }
