@@ -855,11 +855,6 @@ impl engine {
 
 		} else {
 			// F2 and the velars' F3 are left to loci(), which places them from the neighbouring vowels
-			// NASAL ADJUSTMENT AFTER FRONT VOWEL (ng's F3 is its pinch)
-			if matches!(self.phn_c, 26 | 27) && self.pft_l1 & 0x5 == 0x5 {
-				self.F3_A_src -= 100.0;
-				self.F3_B_src -= 100.0;
-			}
 			// BEFORE A FRONT VOWEL: w moves up toward it; a sibilant's F3 (which A3 follows) rises
 			if self.pft_r1 & 0x5 == 0x5 {
 				if self.phn_c == 41 {
@@ -871,23 +866,33 @@ impl engine {
 					self.F3_B_src += 175.0;
 				}
 			}
-			// NASAL BANDWIDTH ADJUSTMENT
+			// NASALS (m, n, ng)
 			if self.pft_c & 0x10 != 0 {
+				// after a front vowel, a lower F3 (ng's F3 is its pinch)
+				if self.phn_c != 28 && self.pft_l1 & 0x5 == 0x5 {
+					self.F3_A_src -= 100.0;
+					self.F3_B_src -= 100.0;
+				}
+				// a wider B1
 				self.B1_A_src += 107.0;
 				self.B1_B_src += 107.0;
+				// quieter after an unstressed vowel, unless the nasal starts the word
+				if self.pft_l1 & 0x1 != 0 && !self.pst_l1 && !self.pwi_c {
+					self.AV_src -= NASAL_AFTER_UNSTRESSED_DB;
+				}
 			}
 		}
 
 		// a sibilant next to another fricative keeps its level, so the other doesn't drown it ("thieves fished")
 		let sib_cluster = sibilant(self.pft_c) && (fricative(self.phn_l1) || fricative(self.phn_r1));
-		// frication level (affricates keep the table's)
-		if self.pft_c & 0x8000 == 0 {
-			if self.pft_c & 0x41 == 0 && self.pdr_c < eighty_ms && self.pft_l1 & 0x40 == 0 && !sib_cluster {
+		// frication level: not for vowels, stops or affricates (which keep the table's)
+		if self.pft_c & 0x41 == 0 {
+			if self.pdr_c < eighty_ms && self.pft_l1 & 0x40 == 0 && !sib_cluster {
 				// short fricatives don't reach AF target (less than 80 ms), lower AF
 				// after a stop the noise starts at full level
 				self.AF_src -= 3.0;
 			}
-			if self.pft_l1 & 0x1 == 1 && self.pft_c & 0x41 == 0 && self.pft_r1 & 0x1 == 1 {
+			if self.pft_l1 & 0x1 == 1 && self.pft_r1 & 0x1 == 1 {
 				// fricatives are stronger between two vowels
 				self.AF_src += 3.0;
 			}
@@ -901,10 +906,6 @@ impl engine {
 		if !self.pst_l1 && !self.pst_r1 && self.pft_c & 0x1 == 0 && !sib_cluster {
 			// unstressed consonant has lower AF
 			self.AF_src -= 3.0;
-		}
-
-		if self.pft_c & 0x10 != 0 && self.pft_l1 & 0x1 != 0 && !self.pst_l1 && !self.pwi_c {
-			self.AV_src -= NASAL_AFTER_UNSTRESSED_DB;
 		}
 	}
 	fn reduce(&mut self) {
