@@ -304,19 +304,28 @@ def heldout(aligned):
 
 def write_tree(tab, samples, path):
     def table(name, ty, vals):
-        rows = [', '.join(str(v) for v in vals[i:i + 24]) + ',' for i in range(0, len(vals), 24)]
+        per = 8 if ty.startswith('[') else 24
+        rows = [', '.join(str(v) for v in vals[i:i + per]) + ',' for i in range(0, len(vals), per)]
         return [f'pub static {name}: [{ty}; {len(vals)}] = ['] + ['\t' + r for r in rows] + ['];', '']
     lines = ['// letter-to-sound trees', '',
              f'pub const START: u8 = {START};', f'pub const SILENT: u8 = {SILENT};',
              f'pub const SECOND: usize = {tab.roots[1]};\t// where the second tree starts', '']
     lines += table('PRIMARY', 'bool', ['true' if p else 'false' for p in PRIMARY])
     lines += table('DEMOTE', 'u8', DEMOTE)
-    lines += ['// per node: the feature it splits on (255 for a leaf: 0-8 the letters l4..r4, 9-10 the classes given',
-              '// two and one letters back, 11-19 whether l4..r4 are vowels, 20-21 the first tree\'s classes one and two',
-              '// letters on), the threshold, the right child (the left one is the next node); per leaf: the class,',
-              '// how likely (0-255) some primary-stressed class is, and the likeliest primary-stressed class']
-    lines += table('FEATURE', 'u8', tab.feat) + table('THRESHOLD', 'u8', tab.thr) + table('RIGHT', 'u32', tab.right)
-    lines += table('CLASS', 'u8', tab.cls) + table('PRIMARY_P', 'u8', tab.prim) + table('BEST_PRIMARY', 'u8', tab.best)
+    nodes = []
+    for i in range(tab.n):
+        if tab.feat[i] == 255:
+            nodes.append((255, tab.cls[i], tab.prim[i], tab.best[i]))
+        else:
+            off = tab.right[i] - i
+            assert 0 < off < 65536
+            nodes.append((tab.feat[i], tab.thr[i], off & 255, off >> 8))
+    lines += ['// 4 bytes per node. A split: the feature it splits on (0-8 the letters l4..r4, 9-10 the classes given two',
+              '// and one letters back, 11-19 whether l4..r4 are vowels, 20-21 the first tree\'s classes one and two',
+              '// letters on), the threshold, and how far on the right child is (u16, low byte first; the left child is',
+              '// the next node). A leaf: 255, the class, how likely (0-255) some primary-stressed class is, and the',
+              '// likeliest primary-stressed class.']
+    lines += table('NODES', '[u8; 4]', ['[' + ', '.join(map(str, n)) + ']' for n in nodes])
     lines += ['// words and the classes the trained tree gives them, for the tests', '#[cfg(test)]',
               f'pub static SAMPLES: [(&str, &[u8]); {len(samples)}] = [']
     lines += ['\t(' + json.dumps(w) + ', &[' + ', '.join(str(c) for c in ids) + ']),' for w, ids in samples]

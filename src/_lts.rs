@@ -19,13 +19,14 @@ pub fn letter_code(x: u8) -> u8 {
 
 fn is_vowel(code: u8) -> bool { (2..=6).contains(&code) }
 
-fn leaf(root: usize, f: &[u8; FEATURES]) -> usize {
-	// a node's left child is the node after it
+// the leaf's [255, class, primary likelihood, likeliest primary class]; a node's left child is the node after it
+fn leaf(root: usize, f: &[u8; FEATURES]) -> [u8; 4] {
 	let mut i = root;
-	while FEATURE[i] != 255 {
-		i = if f[FEATURE[i] as usize] <= THRESHOLD[i] { i + 1 } else { RIGHT[i] as usize };
+	loop {
+		let [feature, threshold, lo, hi] = NODES[i];
+		if feature == 255 { return NODES[i]; }
+		i += if f[feature as usize] <= threshold { 1 } else { u16::from_le_bytes([lo, hi]) as usize };
 	}
-	i
 }
 
 // the letters around x, the classes given before it, which of those letters are vowels and (second tree) the first
@@ -54,18 +55,18 @@ pub fn word(codes: &[u8]) -> Vec<u8> {
 	let mut ahead = Vec::with_capacity(n);
 	let mut hist = [START, START];
 	for x in 0..n {
-		let c = CLASS[leaf(0, &features(codes, x, hist, None))];
+		let c = leaf(0, &features(codes, x, hist, None))[1];
 		ahead.push(c);
 		hist = [hist[1], c];
 	}
 	let (mut cls, mut prim, mut best) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
 	let mut hist = [START, START];
 	for x in 0..n {
-		let i = leaf(SECOND, &features(codes, x, hist, Some(&ahead)));
-		cls.push(CLASS[i]);
-		prim.push(PRIMARY_P[i]);
-		best.push(BEST_PRIMARY[i]);
-		hist = [hist[1], CLASS[i]];
+		let [_, c, p, b] = leaf(SECOND, &features(codes, x, hist, Some(&ahead)));
+		cls.push(c);
+		prim.push(p);
+		best.push(b);
+		hist = [hist[1], c];
 	}
 
 	// exactly one primary stress: extra ones become secondary, or the likeliest letter takes it
