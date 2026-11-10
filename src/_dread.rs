@@ -8,17 +8,13 @@ dictionary format:
 
 + entry format:
 
-    0xFD: end of letter partition
-        - when no match is made, and this is read back, no entry has been
-          found. use LTS mode.
-    0xFE: end of word mode
-        - check if strcmp was 0 the whole time. if not, skip this entry
-          and read to 0xFF without retrieving anything
-    0xFF: end of entry
+    1st byte   -> how many letters the word shares with the entry before it (0-31),
+                  plus 0x20 for a function word
+    then       -> the rest of the word's letters, ASCII, the last one with 0x80 set
+    then       -> the phonemes, the last one with 0x80 set
 
-    1st byte    -> content/function (function is 0x1, content is 0x0)
-    2nd to 0xFE -> ASCII word
-    .. to 0xFF  -> phonemes
+    0xFF in place of the 1st byte ends the letter partition: no entry has
+    been found, use LTS mode.
 
 */
 
@@ -27,6 +23,7 @@ use crate::_dict::getLetterOffset;
 
 pub struct dictreader {
 	pos:      usize,		// read position in dictdat
+	done:     bool,			// the found word's last phone has been read out
 	word:     [u8; 32],		// the word to look up
 	wordlen:  u8,
 	funcword: bool,
@@ -36,6 +33,7 @@ impl dictreader {
 	pub fn new() -> dictreader {
 		dictreader {
 			pos:      0,
+			done:     true,
 			word:     [0; 32],
 			wordlen:  0,
 			funcword: false,
@@ -57,43 +55,42 @@ impl dictreader {
 		}
 	}
 	pub fn readOut(&mut self) -> u8 {
-		// read out phoneme stream of found word
+		// read out phoneme stream of found word, then 0xFF
+		if self.done { return 0xFF; }
 		let x = dictdat[self.pos];
-		if x != 0xFF { self.pos += 1; }
-		x
+		self.pos += 1;
+		self.done = x & 0x80 != 0;
+		x & 0x7F
 	}
 	pub fn search(&mut self) -> bool {
-		// a naive scan through the word's letter partition; on a match pos is at its phones
+		// a naive scan through the word's letter partition, rebuilding each entry's word from the one before;
+		// an entry matches the word as given or in lowercase. On a match pos is at its phones
 		if !self.is_valid { return false; }
-		self.pos = getLetterOffset(self.word[0].to_ascii_lowercase());
+		let n = self.wordlen as usize;
+		let lower = self.word.map(|c| c.to_ascii_lowercase());
+		let mut entry = [0u8; 32];
+		let mut pos = getLetterOffset(lower[0]);
 		loop {
-			if dictdat[self.pos] == 0xFD { return false; }
-			self.funcword = dictdat[self.pos] == 1;
-			self.pos += 1;
-			let entry = self.pos;
-			for lowercase in [false, true] {
-				let mut matched = true;
-				let mut length: u8 = 0;
-				let mut i = 0;
-				self.pos = entry;
-				loop {
-					let mut x = self.word[i];
-					let y = dictdat[self.pos];
-					if lowercase { x = x.to_ascii_lowercase(); }
-					i += 1;
-					self.pos += 1;
-					if y == 0xFE { break; }
-					length += 1;
-					if x != y { matched = false; }
-				}
-				if matched && length == self.wordlen { return true; }
+			let head = dictdat[pos];
+			if head == 0xFF { return false; }
+			pos += 1;
+			let mut len = (head & 0x1F) as usize;
+			loop {
+				let c = dictdat[pos];
+				pos += 1;
+				entry[len] = c & 0x7F;
+				len += 1;
+				if c & 0x80 != 0 { break; }
+			}
+			if len == n && (entry[..n] == self.word[..n] || entry[..n] == lower[..n]) {
+				self.funcword = head & 0x20 != 0;
+				self.pos = pos;
+				self.done = false;
+				return true;
 			}
 			// skip this entry's phones
-			loop {
-				let y = dictdat[self.pos];
-				self.pos += 1;
-				if y == 0xFF { break; }
-			}
+			while dictdat[pos] & 0x80 == 0 { pos += 1; }
+			pos += 1;
 		}
 	}
 }

@@ -341,16 +341,24 @@ def write_dict(entries, path):
             continue
         seen.add(g)
         parts.setdefault(ord(g[0].lower()), []).append((g, p, fw))
+    # an entry: how many letters it shares with the word before (0-31) + 0x20 for a function word, the rest of its
+    # letters, then its phones, the last of each with 0x80 set; 0xFF ends a letter's partition
     data, jump = bytearray(), {}
     for letter in sorted(parts):
         jump[letter] = len(data)
+        prev = ()
         for g, p, fw in parts[letter]:
-            data.append(1 if fw else 0)
-            data.extend(ord(c) for c in g)
-            data.append(0xFE)
-            data.extend(PHONE_ID[q] for q in p)
-            data.append(0xFF)
-        data.append(0xFD)
+            word = [ord(c) for c in g]
+            ids = [PHONE_ID[q] for q in p]
+            assert len(word) < 32 and ids and max(word + ids) < 0x80, g
+            k = 0
+            while k < len(word) - 1 and k < len(prev) and word[k] == prev[k]:
+                k += 1
+            data.append(k | (0x20 if fw else 0))
+            data.extend(word[k:-1] + [word[-1] | 0x80])
+            data.extend(ids[:-1] + [ids[-1] | 0x80])
+            prev = word
+        data.append(0xFF)
     lines = ['// EXCEPTIONS DICTIONARY and LETTERS JUMP TABLE', '',
              'pub fn getLetterOffset(x: u8) -> usize {', '\tmatch x {']
     lines += [f'\t\t{k:<3} => {v},' for k, v in jump.items() if 97 <= k <= 122]
