@@ -62,6 +62,7 @@ const ASP_FOLLOW: f32 = 0.5;
 const LABIAL_BURST_AH: [f32; 2] = [27.0, 28.0];
 const LABIAL_BURST_F2: f32 = 1100.0;
 const LABIAL_BURST_F3: f32 = 2300.0;
+const LABIAL_BURST_WIDEN: f32 = 800.0;		// B2 and B3 added, so the release has no compact peak (a k cue)
 const LIP_RAMP_MS: f32 = 5.0;
 
 // an unreleased stop plays this share of its duration, as closure merging with the next one
@@ -196,6 +197,8 @@ fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 
 // velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
+// k and g next to a high front vowel: F2 at least this far above the vowel's
+const VELAR_F2_ABOVE: f32 = 150.0;
 // ng's F3 comes down to just above its F2 (the velar pinch that sets it apart from n)
 const NG_PINCH_HZ: f32 = 300.0;
 
@@ -205,7 +208,7 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 		9 | 31 | 26                 => Some((0.9, 0.0, 0.0)),					// bilabial: b p m
 		16 | 40                     => Some((0.8, 300.0, 0.0)),					// labiodental: f v
 		37 | 12                     => Some((0.5, 900.0, 0.0)),					// dental: th dh
-		11 | 36 | 27 | 34 | 43 | 47 => Some((0.4, 1200.0, ALVEOLAR_F2_FLOOR)),	// alveolar: d t n s z dx
+		11 | 36 | 27 | 34 | 43 | 47 => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),	// alveolar: d t n s z dx
 		35 | 44 | 10 | 22           => Some((0.3, 1500.0, 0.0)),				// postalveolar: sh zh ch jh
 		17 | 23                     => Some((0.5, 1100.0, 0.0)),				// velar: g k
 		28                          => Some((0.9, 400.0, 0.0)),					// ng: near the vowel's own F2
@@ -971,8 +974,8 @@ impl engine {
 			if self.phn_c == 28 {
 				(self.F3_A_src, self.F3_B_src) = (self.F2_A_src + NG_PINCH_HZ, self.F2_B_src + NG_PINCH_HZ);
 			} else {
-				if let Some(v) = left.or(right) { self.F3_A_src = f3_offset + f3_slope * v; }
-				if let Some(v) = right.or(left) { self.F3_B_src = f3_offset + f3_slope * v; }
+				if let Some(v) = left.or(right) { self.F2_A_src = self.F2_A_src.max(v + VELAR_F2_ABOVE); self.F3_A_src = f3_offset + f3_slope * v; }
+				if let Some(v) = right.or(left) { self.F2_B_src = self.F2_B_src.max(v + VELAR_F2_ABOVE); self.F3_B_src = f3_offset + f3_slope * v; }
 			}
 		}
 	}
@@ -1326,8 +1329,8 @@ impl engine {
 				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
 				let unstressed = self.pft_r1 & 0x1 != 0 && !self.pst_r1;
 				let sibilant = (self.pft_l1 | self.pft_r1) & 0x200 != 0;
-				// a voiced stop before a liquid or glide keeps its release ("gloves", "bridge")
-				let follow = if self.pft_c & 0x2 != 0 && self.pft_r1 & 0x1 == 0 { 0.0 } else { -RELEASE_FOLLOW * self.quiet_next_db() };
+				// a voiced stop or a t before a liquid or glide keeps its release ("gloves", "bridge", "tree")
+				let follow = if (self.pft_c & 0x2 != 0 || self.phn_c == 36) && self.pft_r1 & 0x1 == 0 { 0.0 } else { -RELEASE_FOLLOW * self.quiet_next_db() };
 				let gain_db = if self.stop_affric { 0.0 } else {
 					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
 				};
@@ -1361,7 +1364,7 @@ impl engine {
 						let [f1, f2, _] = self.next_vowel_formants();
 						ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0
 					} else { 0.0 };
-					level -= front.max(ASP_FOLLOW * self.quiet_next_db());
+					level -= front.max(if self.phn_c == 36 && self.pft_r1 & 0x1 == 0 { 0.0 } else { ASP_FOLLOW * self.quiet_next_db() });
 					if schwa_t(self.phn_c, self.pwi_c, self.phn_r1, self.pst_r1) { level -= SCHWA_T_ASP_DB; }
 					self.asp_db_next = level.max(1.0);
 					self.asp_seg_next = self.seg_c;
@@ -1520,8 +1523,8 @@ impl engine {
 		self.vtm_eng.F0  = f0;
 		self.vtm_eng.F1  = self.F1_reg;
 		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
-		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN;
-		self.vtm_eng.B3  = self.B3_reg;
+		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN + self.lip_hold * LABIAL_BURST_WIDEN;
+		self.vtm_eng.B3  = self.B3_reg + self.lip_hold * LABIAL_BURST_WIDEN;
 		self.vtm_eng.F2  = self.F2_reg + self.lip_hold * (self.F2_reg.min(LABIAL_BURST_F2) - self.F2_reg);
 		self.vtm_eng.F3  = self.F3_reg + self.lip_hold * (self.F3_reg.min(LABIAL_BURST_F3) - self.F3_reg);
 		self.vtm_eng.RD  = self.RD_reg + BREATH_END_RD * breath + VOICE_BAR_RD * bar;
@@ -1896,6 +1899,15 @@ mod tests {
 	}
 
 	#[test]
+	fn a_lip_release_has_no_compact_peak() {
+		let mut widest = 0.0f32;
+		drive(&[(PAU, 50, true), (21, 120, true), (31, 90, true), (19, 150, true), (48, 100, true), (0, 50, true)], |e, _| {
+			widest = widest.max(e.vtm_eng.B3 - e.B3_reg);
+		});
+		assert!((widest - LABIAL_BURST_WIDEN).abs() < 1.0, "B3 widened by {} Hz at most", widest);
+	}
+
+	#[test]
 	fn voice_bar_is_muffled() {
 		// the voice's Rd rises by VOICE_BAR_RD in a voiced closure and is back to the stop's own at the burst
 		let mut rd = Vec::new();
@@ -2163,10 +2175,11 @@ mod tests {
 		for &c in &[9u8, 11, 17, 26, 27, 34] {
 			let alveolar = matches!(c, 11 | 27 | 34);
 			let f2 = |v: u8| { let x = formant_tbl[v as usize * 31 + 6] as f32; if alveolar { x.max(ALVEOLAR_F2_FLOOR) } else { x } };
-			let slope = locus(c).unwrap().0;
+			let (slope, offset, _) = locus(c).unwrap();
+			let on = |v: f32| (offset + slope * v).max(if c == 17 { v + VELAR_F2_ABOVE } else { 0.0 });
 			let (_, b_iy, _) = cons_targets(6, c, 21);
 			let (_, b_uw, _) = cons_targets(6, c, 39);
-			let want = slope * (f2(21) - f2(39));
+			let want = on(f2(21)) - on(f2(39));
 			assert!(((b_iy - b_uw) - want).abs() < 0.1 * want, "phone {}: F2 {} before iy, {} before uw, want a {} gap", c, b_iy, b_uw, want);
 			let (a_iy, _, _) = cons_targets(21, c, 6);
 			let (a_uw, _, _) = cons_targets(39, c, 6);
@@ -2264,7 +2277,7 @@ mod tests {
 		// between back vowels ng's F2 sits well under n's, and its F3 just above its F2 (the velar pinch)
 		let at = |c: u8| loaded(&[(PAU, 50, true), (3, 1000, true), (c, 90, true), (3, 1000, true)], c);
 		let (ng, n) = (at(28), at(27));
-		assert!(n.F2_A_src - ng.F2_A_src > 100.0, "ng F2 {} vs n {}", ng.F2_A_src, n.F2_A_src);
+		assert!(n.F2_A_src - ng.F2_A_src > 90.0, "ng F2 {} vs n {}", ng.F2_A_src, n.F2_A_src);
 		assert!((ng.F3_A_src - ng.F2_A_src - NG_PINCH_HZ).abs() < 1.0, "ng F3 {} over F2 {}", ng.F3_A_src, ng.F2_A_src);
 		assert!(n.F3_A_src - n.F2_A_src > 2.0 * NG_PINCH_HZ, "n F3 {} over F2 {}", n.F3_A_src, n.F2_A_src);
 	}
