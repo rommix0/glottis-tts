@@ -854,8 +854,8 @@ impl engine {
 
 		} else {
 			// F2 and the velars' F3 are left to loci(), which places them from the neighbouring vowels
-			// NASAL ADJUSTMENT AFTER FRONT VOWEL
-			if self.pft_c & 0x10 != 0 && self.pft_l1 & 0x5 == 0x5 {
+			// NASAL ADJUSTMENT AFTER FRONT VOWEL (ng's F3 is its pinch)
+			if matches!(self.phn_c, 26 | 27) && self.pft_l1 & 0x5 == 0x5 {
 				self.F3_A_src -= 100.0;
 				self.F3_B_src -= 100.0;
 			}
