@@ -1532,7 +1532,7 @@ afshar	'ae f sh axr
 afshar's	'ae f sh axr z
 aft	'ae f t
 after	'ae f t axr
-afterall	'ae f t axr "aa lx
+afterall	'ae f t axr "ao lx
 afterburner	'ae f t axr b "er n axr
 afterburners	'ae f t axr b "er n axr z
 aftereffect	'ae f t axr ax f "eh k t
@@ -1985,8 +1985,8 @@ airlines	'eh rx l "ay n z
 airlines'	'eh rx l "ay n z
 airlink	'eh rx l "ih ng k
 airlinks	'eh rx l "ih ng k s
-airlock	'eh rx l "ao k
-airlocks	'eh rx l "ao k s
+airlock	'eh rx l "aa k
+airlocks	'eh rx l "aa k s
 airmail	'eh rx m "ey lx
 airman	'eh rx m ax n
 airman's	'eh rx m ax n z
@@ -2695,7 +2695,7 @@ allison	'ae lx ax s ax n
 allison's	'ae lx ix s ax n z
 allister	'ao lx ix s t axr
 alliston	'ae lx ix s t aa n
-alliteration	ax l 'ih t axr "ey sh ax n
+alliteration	ax l "ih t axr 'ey sh ax n
 alliterative	ax l 'ih t axr ax t ix v
 allman	'ao lx m ax n
 allmendinger	'ae lx m eh n d ix ng axr
@@ -2956,7 +2956,7 @@ alternated	'ao lx t axr n "ey t ix d
 alternately	'ao lx t axr n ax t l iy
 alternates	'ao lx t axr n "ey t s
 alternating	'ao lx t axr n "ey t ix ng
-alternation	'ao lx t axr n "ey sh ax n
+alternation	"ao lx t axr n 'ey sh ax n
 alternative	ao lx t 'er n ax t ix v
 alternatively	ao lx t 'er n ax t ix v l iy
 alternatives	ao lx t 'er n ax t ix v z
@@ -6553,7 +6553,7 @@ avemco	ax v 'eh m k ow
 avemco's	ax v 'eh m k ow z
 aven	aa v 'ey n
 avena	aa v 'ey n ax
-avenall	aa v ey n 'aa lx
+avenall	aa v ey n 'ao lx
 avendano	aa v eh n d 'aa n ow
 avenel	aa v ey n 'eh lx
 avenell	aa v ey n 'ey lx
@@ -6873,7 +6873,7 @@ babbler	b 'ae b l axr
 babblers	b 'ae b l axr z
 babbling	b 'ae b ax l ix ng
 babbs	b 'ae b z
-babcock	b 'ae b k ao k
+babcock	b 'ae b k aa k
 babe	b 'ey b
 babel	b 'ae b ax l
 baber	b 'ey b axr
@@ -7011,7 +7011,7 @@ backlight	b 'ae k l "ay t
 backlights	b 'ae k l "ay t s
 backlist	b 'ae k l "ih s t
 backlisted	b 'ae k l "ih s t ix d
-backlog	b 'ae k l "aa g
+backlog	b 'ae k l "ao g
 backlogged	b 'ae k l "aa g d
 backlogs	b 'ae k l "ao g z
 backlund	b 'ae k l ax n d
@@ -8737,15 +8737,15 @@ beabout	b ax b 'uw t
 beach	b 'iy ch
 beach's	b 'iy ch ax z
 beacham	b ax sh 'ae m
-beachball	b 'iy ch b "aa lx
-beachballs	b 'iy ch b "aa lx z
+beachball	b 'iy ch b "ao lx
+beachballs	b 'iy ch b "ao lx z
 beachcomber	b 'iy ch k "ow m axr
 beachcombers	b 'iy ch k "ow m axr z
 beached	b 'iy ch t
 beachem	b 'iy k ix m
 beacher	b 'iy ch axr
 beaches	b 'iy ch ax z
-beachfront	b 'iy ch f r aa n t
+beachfront	b 'iy ch f r "ah n t
 beachfronts	b 'iy ch f r aa n t s
 beachhead	b 'iy ch hh "eh d
 beachheads	b 'iy ch hh "eh d z
@@ -9115,7 +9115,7 @@ beepers	b 'iy p axr z
 beeping	b 'iy p ix ng
 beeps	b 'iy p s
 beer	b 'ih rx
-beer's	b 'iy rx z
+beer's	b 'ih rx z
 beerbower	b 'ih rx b ow axr
 beerman	b 'ih rx m ax n
 beers	b 'ih rx z
@@ -9867,7 +9867,7 @@ berendzen	b 'eh rx ix n d z ax n
 berens	b 'ih rx ax n z
 berenson	b 'eh rx ix n s ax n
 berent	b 'eh rx ax n t
-beres	b 'iy rx z
+beres	b 'ih rx z
 beresford	b 'ih rx z f axr d
 beret	b 'eh rx ax t
 berets	b 'eh rx ax t s
@@ -10573,7 +10573,7 @@ biennial	b ay 'eh n iy ax l
 bienstock	b 'iy n s t "aa k
 bienvenu	b ax n v 'eh n uw
 bienvenue	b ax n v 'ey n w eh
-bier	b 'iy rx
+bier	b 'ih rx
 bierbarror	b 'ih rx b "aa rx axr
 bierbauer	b 'ih rx b aw axr
 bierbauer's	b 'ih rx b aw axr z
@@ -10590,7 +10590,7 @@ bierman	b 'ih rx m ax n
 biermann	b 'ih rx m ax n
 biernacki	b ix r n 'aa t s k iy
 biernat	b ix r n 'ae t
-biers	b 'iy rx z
+biers	b 'ih rx z
 bierwirth	b 'ih rx w axr th
 biery	b 'ih rx iy
 bies	b 'ay z
@@ -11762,7 +11762,7 @@ bludgeoned	b l 'ah jh ax n d
 bludgeoning	b l 'ah jh ax n ix ng
 blue	b l 'uw
 blue's	b l 'uw z
-bluebeard	b l 'uw b "iy rx d
+bluebeard	b l 'uw b "ih rx d
 bluebell	b l 'uw b "eh lx
 bluebells	b l 'uw b "eh lx z
 blueberries	b l 'uw b "eh rx iy z
@@ -12114,7 +12114,7 @@ boffa	b 'aa f ax
 boffo	b 'ao f ow
 bofors	b 'ow f axr z
 bofors's	b 'ow f axr z ix z
-bog	b 'aa g
+bog	b 'ao g
 bogacki	b ax g 'aa t s k iy
 bogacz	b 'aa g ax ch
 bogan	b 'ow g ax n
@@ -12139,7 +12139,7 @@ bogeyed	b 'ow g iy d
 bogeyman	b 'ow g iy m "ae n
 bogeymen	b 'ow g iy m "ih n
 boggan	b 'aa g ax n
-bogged	b 'aa g d
+bogged	b 'ao g d
 boggess	b 'aa g ix s
 bogging	b 'ao g ix ng
 boggio	b 'ow jh iy ow
@@ -12158,7 +12158,7 @@ bogner	b 'aa g n axr
 bogor	b 'ow g "ao rx
 bogosian	b ax g 'aa zh ix n
 bogota	b "ow g ax t 'aa
-bogs	b 'aa g z
+bogs	b 'ao g z
 bogucki	b ax g 'ah t s k iy
 bogue	b 'ow g
 bogus	b 'ow g ax s
@@ -12525,7 +12525,7 @@ bonobos	b aa n 'aa b ow z
 bonomo	b 'aa n ax m ow
 bons	b 'aa n s
 bonsai	b aa n s 'ay
-bonsall	b ow n s 'aa lx
+bonsall	b ow n s 'ao lx
 bonser	b 'aa n s axr
 bonsignore	b ow n s iy g n 'ao rx iy
 bonta	b 'aa n t ax
@@ -12902,13 +12902,13 @@ boso	b 'ow s ow
 bosom	b 'uh z ax m
 bosqi	b 'aa s k iy
 bosquez	b ow s k w 'eh z
-boss	b 'aa s
+boss	b 'ao s
 boss'	b 'ao s
 boss's	b 'ao s ix z
 bossard	b ax s 'aa rx d
 bossart	b ax s 'aa rx t
 bosse	b 'aa s
-bossed	b 'aa s t
+bossed	b 'ao s t
 bossen	b 'aa s ax n
 bosserman	b 'ao s axr m ax n
 bossert	b 'aa s axr t
@@ -12924,7 +12924,7 @@ bossler	b 'aa s ax l axr
 bossman	b 'ao s m ax n
 bosso	b 'ow s ow
 bossy	b 'ao s iy
-bost	b 'aa s t
+bost	b 'ao s t
 bostelman	b 'aa s t ax l m ax n
 boster	b 'aa s t axr
 bostian	b 'aa s ch ix n
@@ -12932,7 +12932,7 @@ bostic	b 'aa s t ix k
 bostick	b 'ow s t ix k
 bostock	b 'ow s t "aa k
 boston	b 'aa s t ax n
-boston's	b 'ao s t ax n z
+boston's	b 'aa s t ax n z
 bostonian	b "ao s t 'ow n iy ax n
 bostonians	b 'aa s t ow n iy ax n z
 bostra	b 'aa s t r ax
@@ -13040,7 +13040,7 @@ bougher	b 'aw axr
 boughman	b 'aw m ax n
 boughner	b 'aw n axr
 boughs	b 'aw z
-bought	b 'aa t
+bought	b 'ao t
 boughten	b 'ao t ax n
 boughter	b 'ao t axr
 boughton	b 'aw t ax n
@@ -14562,7 +14562,7 @@ brosseau	b r ax s 'ow
 brosser	b r 'aa s axr
 brossette	b r ax s 'eh t
 brossman	b r 'ao s m ax n
-brost	b r 'aa s t
+brost	b r 'ao s t
 brostrom	b r 'aa s t r ax m
 brosz	b r 'aa sh
 broten	b r 'ow t ax n
@@ -14823,7 +14823,7 @@ brut	b r 'uw t
 brutal	b r 'uw t ax l
 brutalities	b r uw t 'ae lx ax t iy z
 brutality	b r uw t 'ae lx ax t iy
-brutalization	b r 'uw t ax l ax z "ey sh ax n
+brutalization	b r "uw t ax l ax z 'ey sh ax n
 brutalize	b r 'uw t ax l "ay z
 brutalized	b r 'uw t ax l "ay z d
 brutalizes	b r 'uw t ax l "ay z ix z
@@ -14896,8 +14896,8 @@ buc	b 'ah k
 bucaro	b uw k 'aa rx ow
 bucase	b y 'uw k "ey s
 buccal	b y 'uw k ax l
-buccaneer	b "ah k ax n 'iy rx
-buccaneers	b "ah k ax n 'iy rx z
+buccaneer	b "ah k ax n 'ih rx
+buccaneers	b "ah k ax n 'ih rx z
 buccellato	b uw ch eh lx 'aa t ow
 buccheri	b uw k 'eh rx iy
 bucci	b 'uw ch iy
@@ -18151,7 +18151,7 @@ catto	k 'ae t ow
 cattolica	k ax t 'ow lx ix k ax
 catton	k 'ae t ax n
 catty	k 'ae t iy
-catwalk	k 'ae t w "aa k
+catwalk	k 'ae t w "ao k
 catwoman	k 'ae t w "uh m ax n
 cau	k 'aw
 cauble	k 'ao b ax l
@@ -18172,7 +18172,7 @@ caughey	k 'ao iy
 caughlin	k 'ao lx ix n
 caughman	k 'ao m ax n
 caughron	k 'ao rx ax n
-caught	k 'aa t
+caught	k 'ao t
 caul	k 'aa lx
 caulder	k 'ao lx d axr
 cauldron	k 'aa lx d r ax n
@@ -18208,8 +18208,8 @@ cauthorn	k 'ao th axr n
 caution	k 'aa sh ax n
 cautionary	k 'ao sh ax n "eh rx iy
 cautioned	k 'aa sh ax n d
-cautioning	k 'ao sh ax n ix ng
-cautions	k 'ao sh ax n z
+cautioning	k 'aa sh ax n ix ng
+cautions	k 'aa sh ax n z
 cautious	k 'ao sh ax s
 cautiously	k 'ao sh ax s l iy
 cautiousness	k 'ao sh ax s n ax s
@@ -18775,7 +18775,7 @@ chalfant	ch 'ae f ax n t
 chalfin	ch 'ae lx f ix n
 chalice	ch 'ae lx ix s
 chalifoux	sh 'ae lx ix f uw
-chalk	ch 'aa k
+chalk	ch 'ao k
 chalked	ch 'ao k t
 chalker	ch 'ao k axr
 chalking	ch 'ao k ix ng
@@ -19395,7 +19395,7 @@ cherrystone	ch 'eh rx iy s t "ow n
 cherrystones	ch 'eh rx iy s t "ow n z
 chert	ch 'er t
 chertkow	ch 'er t k aw
-chertoff	ch 'er t aa f
+chertoff	ch 'er t ao f
 cherts	ch 'er t s
 cherub	ch 'eh rx ax b
 cherubic	ch axr 'uw b ix k
@@ -19688,7 +19688,7 @@ chipping	ch 'ih p ix ng
 chipps	ch 'ih p s
 chippy	ch 'ih p iy
 chips	ch 'ih p s
-chipsoft	ch 'ih p s "ao f t
+chipsoft	ch 'ih p s "aa f t
 chiquita	k ix k w 'iy t ax
 chirac	sh ix r 'ae k
 chirac's	sh ix r 'ae k s
@@ -20266,7 +20266,7 @@ circulate	s 'er k y ax l "ey t
 circulated	s 'er k y ax l "ey t ix d
 circulates	s 'er k y ax l "ey t s
 circulating	s 'er k y ax l "ey t ix ng
-circulation	s 'er k y ax l "ey sh ax n
+circulation	s "er k y ax l 'ey sh ax n
 circulations	s "er k y ax l 'ey sh ax n z
 circulatory	s 'er k y ax l ax t "ao rx iy
 circumcise	s 'er k ax m s "ay z
@@ -20672,7 +20672,7 @@ clearer	k l 'ih rx axr
 clearest	k l 'ih rx ix s t
 clearing	k l 'ih rx ix ng
 clearinghouse	k l 'ih rx ix ng hh "aw s
-clearinghouses	k l 'iy rx ix ng hh "aw s ix z
+clearinghouses	k l 'ih rx ix ng hh "aw s ix z
 clearly	k l 'ih rx l iy
 clearman	k l 'ih rx m ax n
 clearness	k l 'ih rx n ax s
@@ -20909,10 +20909,10 @@ clodoveo	k l ow d 'ow v iy ow
 cloe	k l 'ow
 cloer	k l 'ow axr
 cloey	k l 'ow iy
-clog	k l 'aa g
+clog	k l 'ao g
 clogged	k l 'ao g d
-clogging	k l 'aa g ix ng
-clogs	k l 'aa g z
+clogging	k l 'ao g ix ng
+clogs	k l 'ao g z
 clogston	k l 'aa g s t ax n
 cloherty	k l 'aa hh axr t iy
 clohessy	k l 'aa hh ix s iy
@@ -21340,7 +21340,7 @@ coffee's	k 'aa f iy z
 coffeehouse	k 'ao f iy hh "aw s
 coffeehouses	k 'ao f iy hh "aw s ix z
 coffeen	k ax f 'iy n
-coffees	k 'ao f iy z
+coffees	k 'aa f iy z
 coffel	k 'aa f ax l
 coffelt	k 'aa f ix l t
 coffer	k 'ao f axr
@@ -21533,7 +21533,7 @@ colen	k 'ow lx ax n
 coler	k 'ow lx axr
 coleridge	k 'ow lx r ix jh
 coles	k 'ow lx z
-coleslaw	k 'ow lx s l "aa
+coleslaw	k 'ow lx s l "ao
 coleson	k 'aa lx ix s ax n
 colestipol	k 'ow lx s t "ih p "aa lx
 colestock	k 'ow lx s t "aa k
@@ -21838,9 +21838,9 @@ comanche	k ax m 'ae n ch iy
 comanches	k ax m 'ae n ch iy z
 comandante	k "ow m ax n d 'aa n t ey
 comandantes	k "ow m ax n d 'aa n t eh z
-comandeer	k aa m ax n d 'iy rx
-comandeered	k aa m ax n d 'iy rx d
-comandeers	k aa m ax n d 'iy rx z
+comandeer	k aa m ax n d 'ih rx
+comandeered	k aa m ax n d 'ih rx d
+comandeers	k aa m ax n d 'ih rx z
 comarco	k ow m 'aa rx k ow
 comas	k 'ow m ax z
 comatose	k 'ow m ax t "ow s
@@ -23395,7 +23395,7 @@ convoke	k aa n v 'ow k
 convoked	k aa n v 'ow k t
 convolute	k 'aa n v ax l "uw t
 convoluted	k 'aa n v ax l "uw t ax d
-convolution	k 'aa n v ax l "uw sh ax n
+convolution	k "aa n v ax l 'uw sh ax n
 convoy	k 'aa n v "oy
 convoys	k 'aa n v "oy z
 convulsant	k ax v 'ah lx s ax n t
@@ -24065,7 +24065,7 @@ cossey	k 'aa s iy
 cossiga	k "ao s 'iy g ax
 cossin	k 'aa s ix n
 cossman	k 'ao s m ax n
-cost	k 'aa s t
+cost	k 'ao s t
 costa	k 'ao s t aa
 costabile	k 'ao s t ax b "ay lx
 costain	k "ow s t 'ey n
@@ -24081,7 +24081,7 @@ costas	k 'ao s t ax z
 costco	k 'ao s t k ow
 costcutting	k 'ao s t k "ah t ix ng
 coste	k 'ow s t
-costed	k 'aa s t ix d
+costed	k 'ao s t ix d
 costeira	k "ow s t iy 'eh rx ax
 costella	k "ao s t 'eh lx ax
 costello	k "ao s t 'eh lx ow
@@ -24097,12 +24097,12 @@ costley	k 'aa s t l iy
 costlier	k 'ao s t l iy axr
 costliest	k 'ao s t l iy ix s t
 costlow	k 'ao s t l "ow
-costly	k 'aa s t l iy
+costly	k 'ao s t l iy
 costner	k 'aa s t n axr
 costner's	k 'aa s t n axr z
 coston	k 'aa s t ax n
 costra	k 'aa s t r ax
-costs	k 'aa s t s
+costs	k 'ao s t s
 costume	k aa s t 'uw m
 costumed	k 'ao s t "uw m d
 costumer	k 'aa s t uw m axr
@@ -25270,8 +25270,8 @@ crossroads	k r 'ao s r "ow d z
 crosstalk	k r 'ao s t 'ao k
 crosstown	k r 'ao s t "aw n
 crossville	k r 'aa s v ix l
-crosswalk	k r 'aa s w "aa k
-crosswalks	k r 'aa s w "aa k s
+crosswalk	k r 'aa s w "ao k
+crosswalks	k r 'aa s w "ao k s
 crosswhite	k r 'aa s w ay t
 crosswise	k r 'ao s w "ay z
 crossword	k r 'ao s w "er d
@@ -27113,7 +27113,7 @@ deathbed	d 'eh th b "eh d
 deatherage	d 'eh th axr ix jh
 deathly	d 'eh th l iy
 deaths	d 'eh th s
-deathshot	d 'eh th sh ao t
+deathshot	d 'eh th sh aa t
 deathwatch	d 'eh th w "aa ch
 deatley	d 'iy t l iy
 deaton	d 'iy t ax n
@@ -27352,7 +27352,7 @@ decimals	d 'eh s ax m ax l z
 decimate	d 'eh s ax m "ey t
 decimated	d 'eh s ax m "ey t ix d
 decimating	d 'eh s ax m "ey t ix ng
-decimation	d 'eh s ax m "ey sh ax n
+decimation	d "eh s ax m 'ey sh ax n
 decipher	d ix s 'ay f axr
 deciphered	d ix s 'ay f axr d
 deciphering	d ax s 'ay f axr ix ng
@@ -27840,7 +27840,7 @@ deininger	d 'ay n ix ng axr
 deinstitutionalization	d "iy "ih n s t ix t "uw sh ax n ax l ax z 'ey sh ax n
 deinstitutionalize	d "iy "ih n s t ix t "uw sh ax n ax l "ay z
 deion	d 'iy y aa n
-deirdre	d 'iy rx d r ax
+deirdre	d 'ih rx d r ax
 deis	d 'iy z
 deisher	d 'iy ix sh axr
 deism	d 'iy ix z ax m
@@ -29111,7 +29111,7 @@ destined	d 'eh s t ix n d
 destinies	d 'eh s t ax n iy z
 destiny	d 'eh s t ax n iy
 destitute	d 'eh s t ax t "uw t
-destitution	d 'eh s t ax t "uw sh ax n
+destitution	d "eh s t ax t 'uw sh ax n
 destroy	d ix s t r 'oy
 destroyed	d ix s t r 'oy d
 destroyer	d ix s t r 'oy axr
@@ -29168,7 +29168,7 @@ deteriorate	d ix t 'ih rx iy axr "ey t
 deteriorated	d ix t 'ih rx iy axr "ey t ix d
 deteriorates	d ix t 'ih rx iy axr "ey t s
 deteriorating	d ix t 'ih rx iy axr "ey t ix ng
-deterioration	d ix t 'ih rx iy axr "ey sh ax n
+deterioration	d ix t "ih rx iy axr 'ey sh ax n
 determan	d 'iy t axr m ax n
 determent	d ix t 'er m ax n t
 determinable	d ix t 'er m ax n ax b ax l
@@ -29278,7 +29278,7 @@ dev	d 'eh v
 deva	d 'ey v ax
 deval	d ix v 'aa lx
 deval's	d ix v 'aa lx z
-devall	d ey v 'aa lx
+devall	d ey v 'ao lx
 devalle	d ix v 'ae lx
 devaluate	d ix v 'ae lx y uw "ey t
 devaluated	d ix v 'ae lx y uw "ey t ix d
@@ -29762,12 +29762,12 @@ dienes	d 'iy n eh z
 dienst	d 'iy n s t
 diep	d 'iy p
 dier	d 'iy axr
-diercks	d 'iy rx k s
+diercks	d 'ih rx k s
 dieringer	d 'ih rx ix n jh axr
-dierker	d 'iy rx k axr
-dierkes	d 'iy rx k s
+dierker	d 'ih rx k axr
+dierkes	d 'ih rx k s
 dierking	d 'ay axr k ix ng
-dierks	d 'iy rx k s
+dierks	d 'ih rx k s
 dierolf	d 'ih rx ow lx f
 diers	d 'iy axr z
 diery	d 'ih rx iy
@@ -31274,7 +31274,7 @@ dogma	d 'aa g m ax
 dogmatic	d aa g m 'ae t ix k
 dogmatically	d aa g m 'ae t ix k l iy
 dogmatism	d 'aa g m ax t "ih z ax m
-dogs	d 'aa g z
+dogs	d 'ao g z
 dogs'	d 'ao g z
 dogwood	d 'ao g w "uh d
 dogwoods	d 'ao g w "uh d z
@@ -31778,7 +31778,7 @@ dossett	d 'aa s ix t
 dossey	d 'aa s iy
 dossier	d "ao s y 'ey
 dossiers	d "ao s y 'ey z
-dost	d 'aa s t
+dost	d 'ao s t
 dostal	d 'aa s t ax l
 doster	d 'aa s t axr
 dostie	d 'aa s t iy
@@ -32375,7 +32375,7 @@ drops	d r 'aa p s
 dropsy	d r 'aa p s iy
 droser	d r 'ow z axr
 dross	d r 'ao s
-drost	d r 'aa s t
+drost	d r 'ao s t
 droste	d r 'ow s t
 drotar	d r 'ow t axr
 drought	d r 'aw t
@@ -32476,7 +32476,7 @@ drypers	d r 'ay p axr z
 drypoint	d r 'ay p "oy n t
 drysdale	d r 'ay z d "ey lx
 dryser	d r 'ay s axr
-drywall	d r 'ay w "aa lx
+drywall	d r 'ay w "ao lx
 drzewiecki	jh uw 'iy t s k iy
 dsouza	d ax s 'uw z ax
 dss	d 'iy 'eh s 'eh s
@@ -33259,10 +33259,10 @@ eamon	'iy m ax n
 eanes	'iy n z
 eap	'iy 'ey p 'iy
 eappen	'iy p ax n
-ear	'iy rx
+ear	'ih rx
 eardley	'ih rx d l iy
 eared	'ih rx d
-earful	'iy rx f "ah lx
+earful	'ih rx f "ah lx
 earfull	'ih rx f "ah lx
 eargle	'ih rx g ax l
 earhart	'ih rx hh aa rx t
@@ -34022,10 +34022,10 @@ eighmey	'ey m iy
 eighmy	'ey g m iy
 eight	'ey t
 eight's	'ey t s
-eighteen	ey t 'iy n
-eighteen's	ey t 'iy n z
-eighteens	ey t 'iy n z
-eighteenth	ey t 'iy n th
+eighteen	"ey t 'iy n
+eighteen's	"ey t 'iy n z
+eighteens	"ey t 'iy n z
+eighteenth	"ey t 'iy n th
 eightfold	'ey t f "ow lx d
 eighth	'ey t th
 eighths	'ey t th s
@@ -35105,9 +35105,9 @@ endangerment	eh n d 'ey n jh axr m ax n t
 endangers	eh n d 'ey n jh axr z
 endara	'eh n d 'aa rx ax
 ende	'eh n d
-endear	eh n d 'iy rx
-endeared	eh n d 'iy rx d
-endearing	eh n d 'iy rx ix ng
+endear	eh n d 'ih rx
+endeared	eh n d 'ih rx d
+endearing	eh n d 'ih rx ix ng
 endearment	ix n d 'ih rx m ax n t
 endeavor	ix n d 'eh v axr
 endeavor's	ix n d 'eh v axr z
@@ -35278,8 +35278,8 @@ engine	'eh n jh ax n
 engine's	'eh n jh ax n z
 engined	'eh n jh ax n d
 engineer	'eh n jh ax n 'ih rx
-engineer's	"eh n jh ax n 'iy rx z
-engineered	"eh n jh ax n 'iy rx d
+engineer's	"eh n jh ax n 'ih rx z
+engineered	"eh n jh ax n 'ih rx d
 engineering	'eh n jh ax n 'ih rx ix ng
 engineers	'eh n jh ax n 'ih rx z
 engineers'	'eh n jh ax n 'ih rx z
@@ -36885,7 +36885,7 @@ excommunication	"eh k s k ax m y "uw n ax k 'ey sh ax n
 excoriate	eh k s k 'ao rx iy "ey t
 excoriated	eh k s k 'ao rx iy "ey t ix d
 excoriating	eh k s k 'ao rx iy "ey t ix ng
-excoriation	eh k s k 'ao rx iy "ey sh ax n
+excoriation	eh k s k "ao rx iy 'ey sh ax n
 excrement	'eh k s k r ax m ax n t
 excrete	ix k s k r 'iy t
 excreted	ix k s k r 'iy t ix d
@@ -37714,7 +37714,7 @@ fallert	f 'ae lx axr t
 fallibility	f "ae lx ix b 'ih lx ix t iy
 fallible	f 'ae lx ax b ax l
 fallin	f 'ae lx ix n
-falling	f 'aa lx ix ng
+falling	f 'ao lx ix ng
 fallis	f 'ae lx ix s
 fallish	f 'aa lx ix sh
 falloff	f 'ao lx "ao f
@@ -37743,7 +37743,7 @@ falsone	f 'ao lx s ax n
 falstaff	f 'ao lx s t "ae f
 falstaff's	f 'ao lx s t "ae f s
 falter	f 'ao lx t axr
-faltered	f 'aa lx t axr d
+faltered	f 'ao lx t axr d
 faltering	f 'ao lx t axr ix ng
 falters	f 'ao lx t axr z
 falvey	f 'ae lx v iy
@@ -39033,9 +39033,9 @@ fiero	f 'iy rx ow
 fieros	f iy 'eh rx ow s
 fierro	f 'ih rx ow
 fierros	f 'ih rx ow z
-fiers	f 'iy rx z
-fierst	f 'iy rx s t
-fierstein	f 'iy rx s t "iy n
+fiers	f 'ih rx z
+fierst	f 'ih rx s t
+fierstein	f 'ih rx s t "iy n
 fiery	f 'ay axr iy
 fieser	f 'iy s axr
 fiest	f 'iy ix s t
@@ -39046,10 +39046,10 @@ fifer	f 'ay f axr
 fifi	f 'iy f iy
 fifield	f 'ih f iy lx d
 fiftee	f 'ih f t iy
-fifteen	f ix f t 'iy n
-fifteen's	f ix f t 'iy n z
-fifteens	f ix f t 'iy n z
-fifteenth	f ix f t 'iy n th
+fifteen	f "ih f t 'iy n
+fifteen's	f "ih f t 'iy n z
+fifteens	f "ih f t 'iy n z
+fifteenth	f "ih f t 'iy n th
 fifth	f 'ih f th
 fifths	f 'ih f th s
 fifties	f 'ih f t iy z
@@ -39469,7 +39469,7 @@ firestine	f ay rx s t 'iy n iy
 firestone	f 'ay rx s t "ow n
 firestone's	f 'ay rx s t "ow n z
 firestorm	f 'ay rx s t "ao rx m
-firewall	f 'ay rx w aa lx
+firewall	f 'ay rx w ao lx
 fireweed	f 'ay axr w "iy d
 firewood	f 'ay axr w "uh d
 firework	f 'ay rx w "er k
@@ -40043,8 +40043,8 @@ flocks	f l 'aa k s
 flodin	f l 'ow d ix n
 floe	f l 'ow
 floersheim	f l 'ao rx sh "ay m
-flog	f l 'aa g
-flogging	f l 'aa g ix ng
+flog	f l 'ao g
+flogging	f l 'ao g ix ng
 flohr	f l 'aa rx
 floirenda	f l "oy rx 'eh n d ax
 flom	f l 'aa m
@@ -40118,7 +40118,7 @@ florrie	f l 'ao rx iy
 florry	f l 'ao rx iy
 florsheim	f l 'ao rx sh "ay m
 flory	f l 'ao rx iy
-floss	f l 'aa s
+floss	f l 'ao s
 flossie	f l 'ao s iy
 flotation	f l ow t 'ey sh ax n
 flotilla	f l ow t 'ih lx ax
@@ -40297,7 +40297,7 @@ foeller	f 'ow lx axr
 foerster	f 'ao rx s t axr
 foertsch	f 'ao rx ch
 foes	f 'ow z
-fog	f 'aa g
+fog	f 'ao g
 fogal	f 'ow jh ax l
 fogarty	f 'aa g "aa rx t iy
 fogel	f 'ow g ax l
@@ -40312,7 +40312,7 @@ fogerty's	f 'aa jh axr t iy z
 fogg	f 'aa g
 fogg's	f 'aa g z
 foggiest	f 'aa g iy ax s t
-foggy	f 'aa g iy
+foggy	f 'ao g iy
 fogle	f 'ow g ax l
 fogleman	f 'ow g ax l m ax n
 fogler	f 'ow g ax l axr
@@ -40743,7 +40743,7 @@ formalism	f 'ao rx m ax l "ih z ax m
 formalist	f 'ao rx m ax l ax s t
 formalities	f ao rx m 'ae lx ax t iy z
 formality	f ao rx m 'ae lx ax t iy
-formalization	f 'ao rx m ax l ax z "ey sh ax n
+formalization	f "ao rx m ax l ax z 'ey sh ax n
 formalize	f 'ao rx m ax l "ay z
 formalized	f 'ao rx m ax l "ay z d
 formalizes	f 'ao rx m ax l "ay z ix z
@@ -40909,7 +40909,7 @@ foskett	f 'aa s k ix t
 foskey	f 'aa s k iy
 fosler	f 'aa s ax l axr
 fosnaugh	f 'aa s n ao
-foss	f 'aa s
+foss	f 'ao s
 fosse	f 'aa s
 fossel	f 'aa s ax l
 fossen	f 'aa s ax n
@@ -40981,9 +40981,9 @@ fournier	f 'ao rx n "iy axr
 fours	f 'ao rx z
 foursome	f 'ao rx s ax m
 foursquare	f 'ao rx s k w 'eh rx
-fourteen	f 'ao rx t 'iy n
-fourteens	f 'ao rx t 'iy n z
-fourteenth	f 'ao rx t 'iy n th
+fourteen	f "ao rx t 'iy n
+fourteens	f "ao rx t 'iy n z
+fourteenth	f "ao rx t 'iy n th
 fourth	f 'ao rx th
 fourth's	f 'ao rx th s
 fourthly	f 'ao rx th l iy
@@ -41307,7 +41307,7 @@ freakshow	f r 'iy k s hh "ow
 freaky	f r 'iy k iy
 frean	f r 'iy n
 frear	f r 'ih rx
-frears	f r 'iy rx z
+frears	f r 'ih rx z
 freas	f r 'iy z
 frease	f r 'iy z
 freberg	f r 'iy b axr g
@@ -41747,15 +41747,15 @@ froehlich	f r 'ow lx ix k
 froelich	f r 'ow lx ix k
 froemming	f r 'ow m ix ng
 froese	f r 'ow s
-frog	f r 'aa g
-frog's	f r 'aa g z
+frog	f r 'ao g
+frog's	f r 'ao g z
 frogg	f r 'aa g
 frogge	f r 'aa g
 frogman	f r 'aa g m "ae n
 frogmen	f r 'aa g m ix n
 frogmouth	f r 'aa g m "aw th
 frogmouths	f r 'aa g m "aw th s
-frogs	f r 'aa g z
+frogs	f r 'ao g z
 froh	f r 'ow
 frohlich	f r 'ow lx ix k
 frohman	f r 'ow m ax n
@@ -42658,7 +42658,7 @@ gamco	g 'ae m k ow
 game	g 'ey m
 game's	g 'ey m z
 gameboy	g 'ey m b "oy
-gamecock	g 'ey m k "ao k
+gamecock	g 'ey m k "aa k
 gamecocks	g 'ey m k "ao k s
 gamekeeper	g 'ey m k "iy p axr
 gamekeepers	g 'ey m k "iy p axr s
@@ -46714,10 +46714,10 @@ groer	g r 'ow axr
 groesbeck	g r 'ow s b eh k
 groff	g r 'ao f
 groft	g r 'aa f t
-grog	g r 'aa g
+grog	g r 'ao g
 grogan	g r 'ow g ax n
 grogg	g r 'aa g
-groggy	g r 'aa g iy
+groggy	g r 'ao g iy
 groh	g r 'ow
 grohman	g r 'ow m ax n
 grohs	g r 'ow s
@@ -46833,7 +46833,7 @@ grounds	g r 'aw n d z
 groundskeeper	g r 'aw n d s k "iy p axr
 groundskeepers	g r 'aw n d s k "iy p axr z
 groundswell	g r 'aw n d s w "eh lx
-groundwater	g r 'aw n d w "aa t axr
+groundwater	g r 'aw n d w "ao t axr
 groundwork	g r 'aw n d w "er k
 group	g r 'uw p
 group's	g r 'uw p s
@@ -49612,14 +49612,14 @@ heaped	hh 'iy p t
 heaphy	hh 'iy f iy
 heaping	hh 'iy p ix ng
 heaps	hh 'iy p s
-hear	hh 'iy rx
+hear	hh 'ih rx
 heard	hh 'er d
-hearer	hh 'iy rx axr
-hearers	hh 'iy rx axr z
+hearer	hh 'ih rx axr
+hearers	hh 'ih rx axr z
 hearin	hh 'ih rx ix n
-hearing	hh 'iy rx ix ng
-hearing's	hh 'iy rx ix ng z
-hearings	hh 'iy rx ix ng z
+hearing	hh 'ih rx ix ng
+hearing's	hh 'ih rx ix ng z
+hearings	hh 'ih rx ix ng z
 hearkens	hh 'aa rx k ax n z
 hearl	hh 'er lx
 hearn	hh 'er n
@@ -49627,8 +49627,8 @@ hearne	hh 'er n
 hearns	hh 'er n z
 hearon	hh 'ih rx ax n
 hearron	hh 'ao rx ax n
-hears	hh 'iy rx z
-hearsay	hh 'iy rx s "ey
+hears	hh 'ih rx z
+hearsay	hh 'ih rx s "ey
 hearse	hh 'er s
 hearst	hh 'er s t
 hearst's	hh 'er s t s
@@ -50518,7 +50518,7 @@ herdman	hh 'er d m ax n
 herds	hh 'er d z
 herdsmen	hh 'er d z m ix n
 herdt	hh 'er t
-here	hh 'iy rx
+here	hh 'ih rx
 here's	hh 'ih rx z
 hereabout	hh 'ih rx ax b "aw t
 hereabouts	hh 'ih rx ax b "aw t s
@@ -50946,7 +50946,7 @@ hieroglyph	hh "ay rx ow g l 'ih f
 hieroglyphic	hh "ay rx ow g l 'ih f ix k
 hieroglyphics	hh "ay rx ow g l 'ih f ix k s
 hieroglyphs	hh "ay rx ow g l 'ih f s
-hiers	hh 'iy rx z
+hiers	hh 'ih rx z
 hiestand	hh 'iy s t ax n d
 hiester	hh 'ay ix s t axr
 hietala	hh 'ay t ax l ax
@@ -51676,7 +51676,7 @@ hofrichter	hh 'aa f r ix k t axr
 hofstad	hh 'aa f s t ae d
 hofstetter	hh 'aa f s t eh t axr
 hofstra	hh 'aa f s t r ax
-hog	hh 'aa g
+hog	hh 'ao g
 hogan	hh 'ow g "aa n
 hogan's	hh 'ow g "aa n z
 hogans	hh 'ow g "aa n z
@@ -51703,7 +51703,7 @@ hoglund's	hh 'ao g l ax n d z
 hoglunds	hh 'ao g l ax n d z
 hognose	hh 'aa g n "ow z
 hogrefe	hh 'aa g r ix f
-hogs	hh 'aa g z
+hogs	hh 'ao g z
 hogsed	hh 'ow g s t
 hogsett	hh 'aa g s ix t
 hogston	hh 'aa g s t ax n
@@ -52545,7 +52545,7 @@ hospitalize	hh 'ao s p "ih t ax l "ay z
 hospitalized	hh 'aa s p ix t ax l "ay z d
 hospitals	hh 'aa s p "ih t ax l z
 hospitals'	hh 'ao s p ix t ax l z
-hoss	hh 'aa s
+hoss	hh 'ao s
 hossack	hh 'aa s ax k
 hossain	hh ax s 'ey n
 hossein	hh 'ao s "ey n
@@ -54171,7 +54171,7 @@ immolate	'ih m ax l "ey t
 immolated	'ih m ax l "ey t ax d
 immolates	'ih m ax l "ey t s
 immolating	'ih m ax l "ey t ix ng
-immolation	'ih m ax l "ey sh ax n
+immolation	"ih m ax l 'ey sh ax n
 immoral	"ih m 'ao rx ax l
 immorality	"ih m axr 'ae lx ix t iy
 immortal	"ih m 'ao rx t ax l
@@ -54585,7 +54585,7 @@ incidents	'ih n s ax d ax n t s
 incinerate	"ih n s 'ih n axr "ey t
 incinerated	"ih n s 'ih n axr "ey t ix d
 incinerating	"ih n s 'ih n axr "ey t ix ng
-incineration	"ih n s 'ih n axr "ey sh ax n
+incineration	"ih n s "ih n axr 'ey sh ax n
 incinerator	"ih n s 'ih n axr "ey t axr
 incinerators	"ih n s 'ih n axr "ey t axr z
 incipient	"ih n s 'ih p iy ax n t
@@ -55471,7 +55471,7 @@ insituform	"ih n s 'ih t "uw f ao rx m
 inskeep	'ih n z k "iy p
 inskip	'ih n s k ix p
 insko	'ih n s k ow
-inslaw	'ih n s l aa
+inslaw	'ih n s l ao
 insley	'ih n s l iy
 insofar	'ih n s ax f aa rx
 insolence	'ih n s ax l ax n s
@@ -55891,7 +55891,7 @@ interplay	'ih n t axr p l "ey
 interpol	'ih n t axr p "ow lx
 interpolate	"ih t 'er p ax l "ey t
 interpolated	"ih t 'er p ax l "ey t ix d
-interpolation	"ih t 'er p ax l "ey sh ax n
+interpolation	"ih n t axr p ax l 'ey sh ax n
 interpolations	"ih t 'er p ax l "ey sh ax n z
 interpose	"ih n t axr p 'ow z
 interpret	"ih n t 'er p r ax t
@@ -56244,7 +56244,7 @@ ionize	'ay ax n "ay z
 ionizer	'ay ax n "ay z axr
 ionizers	'ay ax n "ay z axr z
 ionizing	'ay ax n "ay z ix ng
-ionosphere	"ay 'aa n ao s f "iy rx
+ionosphere	"ay 'aa n ao s f "ih rx
 ionospheric	"ay "aa n ao s f 'eh rx ix k
 ions	'ay ax n z
 iorio	iy 'ao rx iy "ow
@@ -57265,8 +57265,8 @@ jeepney	jh 'iy p n iy
 jeeps	jh 'iy p s
 jeer	jh 'ih rx
 jeered	jh 'ih rx d
-jeering	jh 'iy rx ix ng
-jeers	jh 'iy rx z
+jeering	jh 'ih rx ix ng
+jeers	jh 'ih rx z
 jees	jh 'iy z
 jeeter	jh 'iy t axr
 jeeves	jh 'iy v z
@@ -57697,12 +57697,12 @@ joey's	jh 'ow iy z
 joffe	jh 'aa f
 joffrey	jh 'ao f r iy
 joffrion	y ow f r iy 'ao n
-jog	jh 'aa g
-jogged	jh 'aa g d
-jogger	jh 'aa g axr
-joggers	jh 'aa g axr z
-jogging	jh 'aa g ix ng
-jogs	jh 'aa g z
+jog	jh 'ao g
+jogged	jh 'ao g d
+jogger	jh 'ao g axr
+joggers	jh 'ao g axr z
+jogging	jh 'ao g ix ng
+jogs	jh 'ao g z
 joh	jh 'ow
 johan	y ow hh 'aa n
 johann	y 'ow hh aa n
@@ -57898,7 +57898,7 @@ joslyn	jh 'ao s l ix n
 jospin	jh 'aa s p ix n
 joss	jh 'ao s
 josselyn	jh 'aa s ix l ix n
-jost	jh 'aa s t
+jost	jh 'ao s t
 josten	jh 'aa s ax n
 jostens	jh 'ao s t ax n z
 jostes	jh 'ow s t s
@@ -59061,7 +59061,7 @@ kearney	k 'er n iy
 kearney's	k 'er n iy z
 kearns	k 'er n z
 kearny	k 'er n iy
-kearsarge	k 'iy rx s aa rx jh
+kearsarge	k 'ih rx s aa rx jh
 kearse	k 'er s
 keary	k 'ih rx iy
 keas	k 'iy z
@@ -59184,7 +59184,7 @@ keinath	k 'ay n ax th
 keiner	k 'iy n axr
 keio	k 'ey ow
 keiper	k 'iy p axr
-keir	k 'iy rx
+keir	k 'ih rx
 keiretsu	k "ih rx 'eh t s uw
 keirn	k 'ih rx n
 keirns	k 'ay rx n z
@@ -59339,7 +59339,7 @@ kendricks	k 'eh n d r ix k s
 kendzierski	k ix n jh 'ih rx s k iy
 kendzior	k ix n jh 'iy axr
 kenealy	k 'eh n iy ax l iy
-keneer	k ax n 'iy rx
+keneer	k ax n 'ih rx
 kenefick	k 'eh n ix f ix k
 kenerson	k 'eh n axr s ax n
 kenesset	k eh n 'eh s eh t
@@ -60782,7 +60782,7 @@ knope	n 'ow p
 knopf	n 'aa p f
 knopp	n 'aa p
 knorr	n 'ao rx
-knost	n 'aa s t
+knost	n 'ao s t
 knot	n 'aa t
 knotek	n 'ow t ix k
 knoth	n 'aa th
@@ -61342,7 +61342,7 @@ koss	k 'ao s
 kossman	k 'ao s m ax n
 kossow	k 'aa s ow
 kossuth	k 'aa s ax th
-kost	k 'aa s t
+kost	k 'ao s t
 kosta	k 'ow s t ax
 kostal	k 'aa s t ax l
 kostas	k 'ow s t ax z
@@ -61760,7 +61760,7 @@ kroes	k r 'ow z
 kroese	k r 'ow s
 kroeze	k r 'ow z
 kroft	k r 'aa f t
-krog	k r 'aa g
+krog	k r 'ao g
 kroger	k r 'ow g axr
 kroger's	k r 'ow g axr z
 krogh	k r 'ow
@@ -63906,7 +63906,7 @@ leapley	l 'iy p l iy
 leaps	l 'iy p s
 leapt	l 'eh p t
 lear	l 'ih rx
-lear's	l 'iy rx z
+lear's	l 'ih rx z
 leard	l 'er d
 learjet	l 'ih rx jh "eh t
 learn	l 'er n
@@ -66212,10 +66212,10 @@ logbook	l 'ao g b "uh k
 loge	l 'ow jh
 loges	l 'ow jh ix z
 logged	l 'ao g d
-logger	l 'aa g axr
+logger	l 'ao g axr
 loggerhead	l 'aa g axr hh "eh d
 loggerheads	l 'aa g axr hh "eh d z
-loggers	l 'aa g axr z
+loggers	l 'ao g axr z
 loggia	l 'aa g iy ax
 logging	l 'ao g ix ng
 loggins	l 'aa g ix n z
@@ -68855,7 +68855,7 @@ mansueto	m ae n s w 'ey t ow
 mansur	m 'ae n s axr
 manta	m 'ae n t ax
 manteca	m aa n t 'eh k ax
-manteer	m "ae n t 'iy rx
+manteer	m "ae n t 'ih rx
 mantei	m 'ae n t ay
 mantel	m 'ae n t ax l
 mantell	m ae n t 'eh lx
@@ -71525,7 +71525,7 @@ meanwhile	m 'iy n w "ay lx
 meany	m 'iy n iy
 mear	m 'ih rx
 meara	m 'iy rx ax
-meares	m 'iy rx z
+meares	m 'ih rx z
 mearns	m 'er n z
 mears	m 'ih rx z
 mease	m 'iy z
@@ -71740,7 +71740,7 @@ meenan	m 'iy n ax n
 meents	m 'iy n t s
 meer	m 'iy axr
 meers	m 'iy axr z
-meert	m 'iy rx t
+meert	m 'ih rx t
 mees	m 'iy z
 meese	m 'iy s
 meese's	m 'iy s ix z
@@ -72047,7 +72047,7 @@ melted	m 'eh lx t ax d
 melting	m 'eh lx t ix ng
 melton	m 'eh lx t ax n
 melts	m 'eh lx t s
-meltwater	m 'eh lx t w "aa t axr
+meltwater	m 'eh lx t w "ao t axr
 meltz	m 'eh lx t s
 meltzer	m 'eh lx t s axr
 melucci	m eh lx 'uw ch iy
@@ -72978,7 +72978,7 @@ microscopic	m "ay k r ax s k 'aa p ix k
 microscopically	m "ay k r ax s k 'aa p ix k l iy
 microscopy	m ay k r 'ah s k ax p iy
 microsemi	m "ay k r ow s 'eh m iy
-microsoft	m 'ay k r "ow s 'ao f t
+microsoft	m 'ay k r "ow s 'aa f t
 microsoft's	m 'ay k r "ow s 'ao f t s
 microsystems	m 'ay k r "ow s 'ih s t ax m z
 microsystems'	m 'ay k r ow s "ih s t ax m z
@@ -73104,7 +73104,7 @@ mieras	m ix r 'aa z
 miers	m 'ay axr z
 miert	m 'ay axr t
 mierzejewski	m ix r z ey 'eh f s k iy
-mierzwa	m 'iy rx z w ax
+mierzwa	m 'ih rx z w ax
 mies	m 'ay z
 mieske	m 'ay s k iy
 miesner	m 'iy z n axr
@@ -73935,7 +73935,7 @@ mishaps	m 'ih s hh "ae p s
 mishawaka	m "ih sh ax w 'ao k ax
 mishawaum	m 'ih sh ax w "aa m
 mishawum	m 'ih sh ax w "ah m
-mishear	m ix s hh 'iy rx
+mishear	m ix s hh 'ih rx
 misheard	m "ih s hh 'er d
 mishkin	m 'iy sh k iy n
 mishler	m 'ih sh l axr
@@ -75317,7 +75317,7 @@ morphonios	m ao rx f 'ao n iy ax s
 morphs	m 'ao rx f s
 morr	m 'ao rx
 morra	m 'ao rx ax
-morrall	m ao rx 'aa lx
+morrall	m ao rx 'ao lx
 morreale	m ao rx 'iy lx iy
 morrell	m ao rx 'eh lx
 morren	m 'ao rx ax n
@@ -75378,7 +75378,7 @@ mortgaging	m 'ao rx g ix jh ix ng
 mortician	m ao rx t 'ih sh ax n
 mortie	m 'ao rx t iy
 mortier	m 'ao rx t iy axr
-mortification	m 'ao rx t ax f k "ey sh ax n
+mortification	m "ao rx t ax f ax k 'ey sh ax n
 mortified	m 'ao rx t ax f "ay d
 mortify	m 'ao rx t ix f "ay
 mortimer	m 'ao rx t ix m axr
@@ -76047,7 +76047,7 @@ multivariate	m "ah lx t iy v 'ae rx iy ix t
 multivariates	m "ah lx t iy v 'ae rx iy ix t s
 multivision	m "ah lx t iy v 'ih zh ax n
 multivitamin	m "ah lx t iy v 'ay t "ah m ax n
-multiyear	m 'ah lx t iy y 'iy rx
+multiyear	m 'ah lx t iy y 'ih rx
 multnomah	m "ah lx n 'ow m ax
 mulvaney	m "ah lx v 'ey n iy
 mulvany	m "ah lx v 'ey n iy
@@ -76340,8 +76340,8 @@ muska	m 'ah s k ax
 muske	m 'ah s k
 muskegon	m ax s k 'iy g ix n
 musket	m 'ah s k ax t
-musketeer	m "ah s k ax t 'iy rx
-musketeers	m "ah s k ax t 'iy rx z
+musketeer	m "ah s k ax t 'ih rx
+musketeers	m "ah s k ax t 'ih rx z
 muskie	m 'ah s k iy
 muskie's	m 'ah s k iy z
 muskmelon	m 'ah s k m "eh lx ax n
@@ -77086,7 +77086,7 @@ navratilova's	n ae v r "ae t ix l 'ow v ax z
 navstar	n 'ae v s t "aa rx
 navy	n 'ey v iy
 navy's	n 'ey v iy z
-naw	n 'aa
+naw	n 'ao
 nawrocki	n aa v r 'ow t s k iy
 nawrot	n 'ao rx ax t
 nay	n 'ey
@@ -77141,8 +77141,8 @@ nearhood	n 'ih rx hh uh d
 nearing	n 'ih rx ix ng
 nearly	n 'ih rx l iy
 nears	n 'ih rx z
-nearsighted	n 'iy rx s "ay t ix d
-nearsightedness	n 'iy rx s "ay t ix d n ax s
+nearsighted	n 'ih rx s "ay t ix d
+nearsightedness	n 'ih rx s "ay t ix d n ax s
 neary	n 'ih rx iy
 neas	n 'iy z
 nease	n 'iy z
@@ -78237,8 +78237,8 @@ niner	n 'ay n axr
 niners	n 'ay n axr z
 niners'	n 'ay n axr z
 nines	n 'ay n z
-nineteen	n 'ay n t 'iy n
-nineteenth	n 'ay n t 'iy n th
+nineteen	n "ay n t 'iy n
+nineteenth	n "ay n t 'iy n th
 nineties	n 'ay n t iy z
 nineties'	n 'ay n t iy z
 ninetieth	n 'ay n t iy ix th
@@ -80045,7 +80045,7 @@ oftel	'aa f t "eh lx
 often	'ao f ax n
 oftener	'ao f ax n axr
 oftentimes	'ao f ax n t "ay m z
-og	'aa g
+og	'ao g
 ogan	'ow g ax n
 ogara	"ow g 'aa rx "aa
 ogata	"ow g 'aa t "aa
@@ -81027,7 +81027,7 @@ ornette	"ao rx n 'eh t
 ornish	'ao rx n ix sh
 ornithological	"ao rx n ix th ax l 'ao jh ix k ax l
 ornithology	"ao rx n ix th 'aa lx ax jh iy
-ornoff	'ao rx n aa f
+ornoff	'ao rx n ao f
 ornstein	'ao rx n s t ay n
 oro	'ao rx ow
 oroark	ow rx 'ao rx k
@@ -81274,7 +81274,7 @@ osthoff	'aa s t hh ao f
 ostia	'aa s t iy ax
 ostin	'aa s t ax n
 ostinato	"aa s t ax n 'aa t "ow
-osting	'aa s t ix ng
+osting	'ao s t ix ng
 ostling	'aa s ax l ix ng
 ostlund	'aa s t l ax n d
 ostman	'aa s t m ax n
@@ -81793,10 +81793,10 @@ overhauling	'ow v axr hh "ao lx ix ng
 overhauls	'ow v axr hh "ao lx z
 overhead	'ow v axr hh 'eh d
 overheads	'ow v axr hh "eh d z
-overhear	'ow v axr hh 'iy rx
+overhear	'ow v axr hh 'ih rx
 overheard	'ow v axr hh 'er d
-overhearing	"ow v axr hh 'iy rx ix ng
-overhears	'ow v axr hh 'iy rx z
+overhearing	"ow v axr hh 'ih rx ix ng
+overhears	'ow v axr hh 'ih rx z
 overheat	'ow v axr hh "iy t
 overheated	'ow v axr hh "iy t ix d
 overheating	'ow v axr hh "iy t ix ng
@@ -82364,7 +82364,7 @@ pains	p 'ey n z
 painstaking	p 'ey n s t "ey k ix ng
 painstakingly	p 'ey n s t "ey k ix ng l iy
 paint	p 'ey n t
-paintball	p 'ey n t b "aa lx
+paintball	p 'ey n t b "ao lx
 paintbrush	p 'ey n t b r "ah sh
 paintbrushes	p 'ey n t b r "ah sh ix s
 painted	p 'ey n t ix d
@@ -82469,7 +82469,7 @@ palka	p 'ae lx k ax
 palkar	p 'ae lx k aa rx
 palko	p 'ae lx k ow
 palkovic	p ax l k 'aa v ix k
-pall	p 'aa lx
+pall	p 'ao lx
 palla	p 'ae lx ax
 palladino	p aa lx aa d 'iy n ow
 palladium	p ax l 'ey d iy ax m
@@ -83932,7 +83932,7 @@ peeps	p 'iy p s
 peer	p 'ih rx
 peerage	p 'ih rx ax jh
 peered	p 'ih rx d
-peering	p 'iy rx ix ng
+peering	p 'ih rx ix ng
 peerless	p 'ih rx l ix s
 peers	p 'ih rx z
 peerson	p 'ih rx s ax n
@@ -83980,7 +83980,7 @@ peinado	p ey iy n 'aa d ow
 peine	p 'iy n
 peipu	p 'ey p "uw
 peirce	p 'ih rx s
-peirson	p 'iy rx s ax n
+peirson	p 'ih rx s ax n
 peiser	p 'ay s axr
 peitz	p 'iy t s
 peixoto	p ax k s 'ow t ow
@@ -84643,7 +84643,7 @@ persecuted	p 'er s ax k y "uw t ix d
 persecutes	p 'er s ax k y "uw t s
 persecuting	p 'er s ix k y "uw t ix ng
 persecution	p "er s ax k y 'uw sh ax n
-persecutions	p "er s ax k y 'uw sh ax n s
+persecutions	p "er s ax k y 'uw sh ax n z
 persecutor	p 'er s ax k y "uw t axr
 persecutors	p 'er s ax k y "uw t axr z
 persepolis	p axr s 'eh p ax l ax s
@@ -85073,7 +85073,7 @@ pfluger	f l 'uw g axr
 pflum	f l 'ah m
 pfohl	f 'ow lx
 pforzheimer	f 'ao rx z hh "ay m axr
-pfost	f 'aa s t
+pfost	f 'ao s t
 pfund	f 'ah n d
 pfundstein	f 'ah n d s t "iy n
 pga	p 'iy jh 'iy 'ey
@@ -86479,7 +86479,7 @@ plodded	p l 'aa d ix d
 plodding	p l 'aa d ix ng
 ploeger	p l 'ow g axr
 ploetz	p l 'ow t s
-plog	p l 'aa g
+plog	p l 'ao g
 plohn	p l 'ow n
 plonka	p l 'ow ng k ax
 plonski	p l 'aa n s k iy
@@ -86709,14 +86709,14 @@ pofahl	p 'aa f aa lx
 poff	p 'ao f
 poffenbarger	p 'aa f ix n b aa rx g axr
 poffenberger	p 'ao f ax n b axr g axr
-pog	p 'aa g
+pog	p 'ao g
 poggi	p 'aa jh iy
 poggioli	p "ow jh 'ow lx iy
 pogo	p 'ow g "ow
 pogorzelski	p ax g axr z 'eh lx s k iy
 pogrom	p ax g r 'aa m
 pogroms	p ax g r 'aa m z
-pogs	p 'aa g z
+pogs	p 'ao g z
 pogue	p 'ow g
 poh	p 'ow
 pohang	p 'ow hh ae ng
@@ -87239,7 +87239,7 @@ poppleton	p 'aa p ax l t aa n
 popplewell	p 'aa p ax l w eh lx
 poppy	p 'aa p iy
 poppy's	p 'aa p iy z
-poppycock	p 'aa p iy k "ao k
+poppycock	p 'aa p iy k "aa k
 pops	p 'aa p s
 popsicle	p 'aa p s ix k ax l
 popu	p 'ow p y uw
@@ -87432,7 +87432,7 @@ pospisil	p ow s p iy s 'iy lx
 poss	p 'ao s
 posse	p 'aa s iy
 possehl	p 'aa s ax l
-posses	p 'aa s iy z
+posses	p 'ao s iy z
 possess	p ax z 'eh s
 possessed	p ax z 'eh s t
 possesses	p ax z 'eh s ax z
@@ -89049,7 +89049,7 @@ prosperous	p r 'aa s p axr ax s
 prospers	p r 'aa s p axr z
 pross	p r 'ao s
 prosser	p r 'ao s axr
-prost	p r 'aa s t
+prost	p r 'ao s t
 prostaglandin	p r ow s t ae g l 'ae n d ix n
 prostaglandins	p r ow s t ae g l 'ae n d ix n z
 prostate	p r 'aa s t "ey t
@@ -89601,8 +89601,8 @@ pupil	p y 'uw p ax l
 pupils	p y 'uw p ax l z
 pupo	p 'uw p ow
 puppet	p 'ah p ax t
-puppeteer	p ax p ax t 'iy rx
-puppeteers	p ax p ax t 'iy rx z
+puppeteer	p ax p ax t 'ih rx
+puppeteers	p ax p ax t 'ih rx z
 puppetry	p 'ah p ax t r iy
 puppets	p 'ah p ax t s
 puppies	p 'ah p iy z
@@ -89974,7 +89974,7 @@ quarnstrom	k w 'ao rx n s t r ax m
 quarre	k w 'aa rx
 quarrel	k w 'ao rx ax l
 quarreled	k w 'ao rx ax l d
-quarreling	k w 'aa rx ax l ix ng
+quarreling	k w 'ao rx ax l ix ng
 quarrels	k w 'ao rx ax l z
 quarrelsome	k w 'ao rx ax l s ax m
 quarries	k w 'ao rx iy z
@@ -90307,7 +90307,7 @@ rabbinic	r ax b 'ih n ix k
 rabbinical	r ax b 'ih n ix k ax l
 rabbis	r 'ae b "ay z
 rabbit	r 'ae b ax t
-rabbitears	r 'ae b ix t 'iy rx z
+rabbitears	r 'ae b ix t 'ih rx z
 rabbitlike	r 'ae b ax t l "ay k
 rabbits	r 'ae b ax t s
 rabbitt	r 'ae b ix t
@@ -90593,7 +90593,7 @@ rags	r 'ae g z
 ragsdale	r 'ae g z d "ey lx
 ragtag	r 'ae g t "ae g
 ragtime	r 'ae g t "ay m
-ragtop	r 'ae g t ao p
+ragtop	r 'ae g t aa p
 ragu	r ae g 'uw
 ragucci	r aa g 'uw ch iy
 rague	r 'ey g
@@ -90959,7 +90959,7 @@ rans	r 'ae n z
 ransack	r 'ae n s "ae k
 ransacked	r 'ae n s "ae k t
 ransacking	r 'ae n s "ae k ix ng
-ransall	r 'ae n s aa lx
+ransall	r 'ae n s ao lx
 ransbottom	r 'ae n s b "aa t ax m
 ransburg	r 'ae n z b axr g
 ransburg's	r 'ae n z b axr g z
@@ -91280,7 +91280,7 @@ ravishankar	r "aa v iy sh 'aa ng k "aa rx
 ravishing	r 'ae v ix sh ix ng
 ravitch	r 'ae v ix ch
 ravitz	r 'ae v ix t s
-raw	r 'aa
+raw	r 'ao
 rawalpindi	r "ae w ao lx p 'ih n d iy
 rawding	r 'ao d ix ng
 rawdon	r 'ao d ax n
@@ -92175,7 +92175,7 @@ reeder	r 'iy d axr
 reeders	r 'iy d axr z
 reeds	r 'iy d z
 reeducate	r 'iy "eh jh ax k "ey t
-reeducation	r iy "eh d y ax k "ey sh ax n
+reeducation	r iy "eh d y ax k 'ey sh ax n
 reedy	r 'iy d iy
 reef	r 'iy f
 reefer	r 'iy f axr
@@ -92539,9 +92539,9 @@ rehbein	r 'eh b ay n
 rehberg	r 'eh b axr g
 rehberger	r 'eh b axr g axr
 rehder	r 'eh d axr
-rehear	r iy hh 'iy rx
-rehearing	r iy hh 'iy rx ix ng
-rehearings	r iy hh 'iy rx ix ng z
+rehear	r iy hh 'ih rx
+rehearing	r iy hh 'ih rx ix ng
+rehearings	r iy hh 'ih rx ix ng z
 rehearsal	r ix hh 'er s ax l
 rehearsals	r ix hh 'er s ax l z
 rehearse	r iy hh 'er s
@@ -92733,7 +92733,7 @@ reinsurer	r "iy ix n sh 'uh rx axr
 reinsurers	r "iy ix n sh 'uh rx axr z
 reintegrate	r iy 'ih n t ax g r "ey t
 reintegrated	r iy 'ih n t ax g r "ey t ix d
-reintegration	r iy 'ih n t ax g r "ey sh ax n
+reintegration	r iy "ih n t ax g r 'ey sh ax n
 reinterpret	r "iy ix n t 'er p r ax t
 reinterpretation	r iy ix n t "er p r ax t 'ey sh ax n
 reinterpreted	r iy ix n t 'er p r ax t ix d
@@ -93190,7 +93190,7 @@ renovate	r 'eh n ax v "ey t
 renovated	r 'eh n ax v "ey t ix d
 renovating	r 'eh n ax v "ey t ix ng
 renovation	r "eh n ax v 'ey sh ax n
-renovations	r 'eh n ax v "ey sh ax n z
+renovations	r "eh n ax v 'ey sh ax n z
 renovator	r 'eh n ax v "ey t axr
 renovators	r 'eh n ax v "ey t axr z
 renown	r ix n 'aw n
@@ -94597,7 +94597,7 @@ riendeau	r ax n d 'ow
 rienstra	r 'iy n s t r ax
 riepe	r 'iy p
 riera	r 'iy rx ax
-rierson	r 'iy rx s ax n
+rierson	r 'ih rx s ax n
 ries	r 'ay z
 riesberg	r 'iy s b axr g
 riese	r 'iy z
@@ -95416,7 +95416,7 @@ roff	r 'ao f
 roffe	r 'aa f
 roffman	r 'ao f m ax n
 rofin	r 'ow f ix n
-rog	r 'aa g
+rog	r 'ao g
 rogachev	r 'ow g ax ch ax v
 rogacki	r ax g 'aa t s k iy
 rogaine	r ow g 'ey n
@@ -95939,9 +95939,9 @@ rosner	r 'aa s n axr
 rosoff	r 'aa s ao f
 rosol	r 'ow s ao lx
 rospatch	r 'ao s p ae ch
-ross	r 'aa s
+ross	r 'ao s
 ross'	r 'aa s
-ross's	r 'aa s ix z
+ross's	r 'ao s ix z
 rossa	r 'ow s ax
 rossano	r ow s 'aa n ow
 rossbach	r 'aa s b aa k
@@ -95973,7 +95973,7 @@ rossner	r 'aa s n axr
 rosso	r 'ow s ow
 rosson	r 'aa s ax n
 rossow	r 'aa s ow
-rost	r 'aa s t
+rost	r 'ao s t
 rostad	r 'aa s t ax d
 rosten	r 'aa s ax n
 rostenkowski	r "ao s t eh ng k 'aw s k iy
@@ -96840,7 +96840,7 @@ rwandan's	r ax w 'aa n d ax n z
 rwandans	r ax w 'aa n d ax n z
 rwandese	r ax w "aa d 'iy z
 ryal	r iy 'aa lx
-ryall	r iy 'aa lx
+ryall	r iy 'ao lx
 ryals	r iy 'aa lx z
 ryan	r 'ay ax n
 ryan's	r 'ay ax n z
@@ -97424,7 +97424,7 @@ saltmarsh	s 'ao lx t m "aa rx sh
 salton	s 'ao lx t ax n
 salts	s 'ao lx t s
 saltsman	s 'ao lx t s m ax n
-saltwater	s "ao lx t w 'aa t axr
+saltwater	s "ao lx t w 'ao t axr
 salty	s 'ao lx t iy
 saltz	s 'ae lx t s
 saltzburg	s 'ao lx t s b axr g
@@ -97552,7 +97552,7 @@ sampan	s 'ae m p ae n
 sampans	s 'ae m p ae n z
 samper	s 'ae m p axr
 samper's	s 'ae m p axr z
-sampere	s ae m p 'iy rx
+sampere	s ae m p 'ih rx
 sampey	s 'ae m p iy
 sample	s 'ae m p ax l
 sample's	s 'ae m p ax l z
@@ -97621,7 +97621,7 @@ sanda	s 'ae n d ax
 sandage	s 'ae n d ix jh
 sandahl	s 'ae n d "aa lx
 sandal	s 'ae n d ax l
-sandall	s 'ae n d aa lx
+sandall	s 'ae n d ao lx
 sandalo	s "ae n d 'ae lx ow
 sandals	s 'ae n d ax l z
 sandau	s 'ae n d aw
@@ -99939,7 +99939,7 @@ seaver	s 'iy v axr
 seavers	s 'iy v axr z
 seavey	s 'iy v iy
 seaward	s 'iy w axr d
-seawater	s 'iy w "aa t axr
+seawater	s 'iy w "ao t axr
 seaway	s 'iy w "ey
 seaweed	s 'iy w "iy d
 seaweeds	s 'iy w "iy d z
@@ -100177,8 +100177,8 @@ seepage	s 'iy p ix jh
 seeped	s 'iy p t
 seeping	s 'iy p ix ng
 seeps	s 'iy p s
-seer	s 'iy rx
-seers	s 'iy rx z
+seer	s 'ih rx
+seers	s 'ih rx z
 seery	s 'iy rx iy
 sees	s 'iy z
 seesaw	s 'iy s "ao
@@ -100755,7 +100755,7 @@ serenely	s axr 'iy n ax l iy
 serengeti	s "eh rx ax n g 'eh t iy
 serenity	s axr 'eh n ax t iy
 sereno	s eh rx 'ey n ow
-seres	s 'iy rx z
+seres	s 'ih rx z
 serex	s 'eh rx ax k s
 serf	s 'er f
 serfass	s 'er f "ae s
@@ -100934,9 +100934,9 @@ seven	s 'eh v ax n
 seven's	s 'eh v ax n z
 sevenfold	s 'eh v ax n f "ow lx d
 sevens	s 'eh v ax n z
-seventeen	s 'eh v ax n t 'iy n
-seventeens	s 'eh v ax n t "iy n z
-seventeenth	s 'eh v ax n t 'iy n th
+seventeen	s "eh v ax n t 'iy n
+seventeens	s "eh v ax n t 'iy n z
+seventeenth	s "eh v ax n t 'iy n th
 seventh	s 'eh v ax n th
 sevenths	s 'eh v ax n th s
 seventies	s 'eh v ax n t iy z
@@ -101136,7 +101136,7 @@ shakeout	sh 'ey k "aw t
 shaker	sh 'ey k axr
 shakers	sh 'ey k axr z
 shakes	sh 'ey k s
-shakespeare	sh 'ey k s p "iy rx
+shakespeare	sh 'ey k s p "ih rx
 shakespeare's	sh 'ey k s p "iy rx z
 shakespearean	sh "ey k s p 'ih rx iy ax n
 shakeup	sh 'ey k "ah p
@@ -101162,7 +101162,7 @@ shalikashvili	sh "ae lx iy k aa sh v 'iy lx iy
 shalikashvili's	sh "ae lx iy k aa sh v 'iy lx iy z
 shall	sh 'ae lx
 shall's	sh 'ae lx z
-shallcross	sh 'ae lx k r "aa s
+shallcross	sh 'ae lx k r "ao s
 shallenberger	sh 'ao lx ax n b axr g axr
 shallow	sh 'ae lx ow
 shallower	sh 'ae lx ow axr
@@ -101433,17 +101433,17 @@ shealey	sh 'iy lx iy
 shealy	sh 'iy lx iy
 shean	sh 'iy n
 shear	sh 'ih rx
-shear's	sh 'iy rx z
+shear's	sh 'ih rx z
 sheard	sh 'ih rx d
 sheared	sh 'ih rx d
 shearer	sh 'ih rx axr
 shearin	sh 'ih rx ix n
 shearing	sh 'ih rx ix ng
-shearman	sh 'iy rx m ax n
+shearman	sh 'ih rx m ax n
 shearn	sh 'ih rx n
 shearon	sh 'ih rx ax n
 shearouse	sh 'ih rx aw s
-shears	sh 'iy rx z
+shears	sh 'ih rx z
 shearson	sh 'ih rx s ax n
 shearson's	sh 'ih rx s ax n z
 sheath	sh 'iy th
@@ -101493,7 +101493,7 @@ sheepskin	sh 'iy p s k "ih n
 sheer	sh 'ih rx
 sheeran	sh 'ih rx ax n
 sheeran's	sh 'ih rx ax n z
-sheerer	sh 'iy rx axr
+sheerer	sh 'ih rx axr
 sheerin	sh 'ih rx ix n
 sheesh	sh 'iy sh
 sheesley	sh 'iy z l iy
@@ -102586,12 +102586,12 @@ sienko	s iy 'eh ng k ow
 sienna	s iy 'eh n ax
 sienna's	s iy 'eh n ax z
 sieracki	s ix r 'aa t s k iy
-sierchio	s 'iy rx ch iy ow
+sierchio	s 'ih rx ch iy ow
 sierra	s iy 'eh rx ax
 sierra's	s iy 'eh rx ax z
 sierracin	s iy 'eh rx ax s ix n
 sierras	s iy 'eh rx ax z
-siers	s 'iy rx z
+siers	s 'ih rx z
 sies	s 'iy z
 siese	s iy 'eh s
 siess	s 'iy s
@@ -103187,11 +103187,11 @@ sixer	s 'ih k s axr
 sixers	s 'ih k s axr z
 sixes	s 'ih k s ix z
 sixfold	s 'ih k s f "ow lx d
-sixteen	s ix k s t 'iy n
+sixteen	s "ih k s t 'iy n
 sixteen's	s "ih k s t 'iy n z
-sixteens	s 'ih k s t 'iy n z
-sixteenth	s ix k s t 'iy n th
-sixteenths	s 'ih k s t 'iy n th s
+sixteens	s "ih k s t 'iy n z
+sixteenth	s "ih k s t 'iy n th
+sixteenths	s "ih k s t 'iy n th s
 sixth	s 'ih k s th
 sixths	s 'ih k s th s
 sixties	s 'ih k s t iy z
@@ -103395,7 +103395,7 @@ skoal	s k 'ow lx
 skoczylas	s k ax ch 'ih lx ax z
 skoda	s k 'ow d "aa
 skoff	s k 'ao f
-skog	s k 'aa g
+skog	s k 'ao g
 skogen	s k 'aa g ax n
 skoglund	s k 'aa g l ax n d
 skok	s k 'aa k
@@ -103751,11 +103751,11 @@ slocomb	s l 'ow k ax m
 slocum	s l 'ow k ax m
 slocumb	s l 'ow k ax m
 sloe	s l 'ow
-slog	s l 'aa g
+slog	s l 'ao g
 slogan	s l 'ow g ax n
 slogans	s l 'ow g ax n z
-slogged	s l 'aa g d
-slogging	s l 'aa g ix ng
+slogged	s l 'ao g d
+slogging	s l 'ao g ix ng
 slokum	s l 'ow k ax m
 sloma	s l 'ow m ax
 sloman	s l 'ow m ax n
@@ -104021,7 +104021,7 @@ smittle	s m 'ih t ax l
 smitty	s m 'ih t iy
 smoak	s m 'ow k
 smock	s m 'aa k
-smog	s m 'aa g
+smog	s m 'ao g
 smoggiest	s m 'aa g iy ax s t
 smoggy	s m 'ao g iy
 smoke	s m 'ow k
@@ -104539,7 +104539,7 @@ software	s 'ao f t w "eh rx
 software's	s 'ao f t w "eh rx z
 softwood	s 'ao f t w "uh d
 sogang	s 'ow g ae ng
-soggy	s 'aa g iy
+soggy	s 'ao g iy
 sogo	s 'ow g ow
 sohio	s ow hh 'ay ow
 sohl	s 'ow lx
@@ -104811,7 +104811,7 @@ songs	s 'ao ng z
 songwriter	s 'ao ng r "ay t axr
 songwriters	s 'ao ng r "ay t axr z
 songwriting	s 'ao ng r "ay t ix ng
-songy	s 'aa n jh iy
+songy	s 'ao n jh iy
 soni	s 'ow n "iy
 sonia	s 'ow n y "aa
 sonic	s 'aa n ix k
@@ -105186,9 +105186,9 @@ spaceship	s p 'ey s sh "ih p
 spaceships	s p 'ey s sh "ih p s
 spacesuit	s p 'ey s "uw t
 spacesuits	s p 'ey s "uw t s
-spacewalk	s p 'ey s w "aa k
+spacewalk	s p 'ey s w "ao k
 spacewalking	s p 'ey s w "aa k ix ng
-spacewalks	s p 'ey s w "aa k s
+spacewalks	s p 'ey s w "ao k s
 spacex	s p 'ey s ax k s
 spacey	s p 'ey s iy
 spacial	s p 'ey sh ax l
@@ -105334,10 +105334,10 @@ spaulding	s p 'ao lx d ix ng
 spaur	s p 'ao rx
 spavo	s p 'aa v "ow
 spaw	s p 'ao
-spawn	s p 'aa n
+spawn	s p 'ao n
 spawned	s p 'ao n d
-spawning	s p 'aa n ix ng
-spawns	s p 'aa n z
+spawning	s p 'ao n ix ng
+spawns	s p 'ao n z
 spay	s p 'ey
 spayd	s p 'ey d
 spayde	s p 'ey d
@@ -105359,7 +105359,7 @@ speaking	s p 'iy k ix ng
 speakman	s p 'iy k m ax n
 speaks	s p 'iy k s
 spear	s p 'ih rx
-speare	s p 'iy rx
+speare	s p 'ih rx
 spearhead	s p 'ih rx hh "eh d
 spearheaded	s p 'ih rx hh "eh d ix d
 spearheading	s p 'ih rx hh "eh d ix ng
@@ -106825,7 +106825,7 @@ stearn	s t 'er n
 stearne	s t 'er n
 stearns	s t 'er n z
 stearns's	s t 'er n z ix z
-stears	s t 'iy rx z
+stears	s t 'ih rx z
 stebbins	s t 'eh b ix n z
 steber	s t 'iy b axr
 stebner	s t 'eh b n axr
@@ -107711,7 +107711,7 @@ stordahl	s t 'ao rx d aa lx
 store	s t 'ao rx
 store's	s t 'ao rx z
 stored	s t 'ao rx d
-storefront	s t 'ao rx f r "aa n t
+storefront	s t 'ao rx f r "ah n t
 storefronts	s t 'ao rx f r "aa n t s
 storehouse	s t 'ao rx hh "aw s
 storehouse's	s t 'ao rx hh "aw s ix z
@@ -109575,7 +109575,7 @@ swami	s w 'aa m iy
 swaminathan	s w "aa m ix n 'aa th ax n
 swamp	s w 'aa m p
 swampbuster	s w 'aa m p b "ah s t axr
-swamped	s w 'ao m p t
+swamped	s w 'aa m p t
 swamper	s w 'aa m p axr
 swampers	s w 'aa m p axr z
 swamping	s w 'aa m p ix ng
@@ -109729,7 +109729,7 @@ sweetness	s w 'iy t n ax s
 sweeton	s w 'iy t ax n
 sweets	s w 'iy t s
 sweetser	s w 'iy t s axr
-sweetwater	s w 'iy t w "aa t axr
+sweetwater	s w 'iy t w "ao t axr
 sweezey	s w 'iy z iy
 sweezy	s w 'iy z iy
 sweger	s w 'iy g axr
@@ -109870,7 +109870,7 @@ swiveling	s w 'ih v ax l ix ng
 swivels	s w 'ih v ax l z
 swoboda	s w ow b 'ow d ax
 swofford	s w 'aa f axr d
-swogger	s w 'aa g axr
+swogger	s w 'ao g axr
 swollen	s w 'ow lx ax n
 swonger	s w 'ao ng axr
 swoon	s w 'uw n
@@ -110033,7 +110033,7 @@ syncom	s 'ih ng k aa m
 syncopal	s 'ih n k ax p "ah
 syncopate	s 'ih ng k ax p "ey t
 syncopated	s 'ih ng k ax p "ey t ix d
-syncopation	s 'ih ng k ax p "ey sh ax n
+syncopation	s "ih ng k ax p 'ey sh ax n
 syncope	s 'ih n k ax p "iy
 syncor	s 'ih n k "ao rx
 synder	s 'ih n d axr
@@ -111019,7 +111019,7 @@ teaneck	t 'iy n "eh k
 teaney	t 'iy n iy
 teapot	t 'iy p "aa t
 tear	t 'eh rx
-teare	t 'iy rx
+teare	t 'ih rx
 tearful	t 'ih rx f ax l
 tearfully	t 'ih rx f ax l iy
 tearing	t 'eh rx ix ng
@@ -112196,14 +112196,14 @@ thirst	th 'er s t
 thirsting	th 'er s t ix ng
 thirsts	th 'er s t s
 thirsty	th 'er s t iy
-thirteen	th 'er t 'iy n
-thirteen's	th 'er t "iy n z
-thirteenth	th 'er t 'iy n th
-thirteenths	th 'er t 'iy n th s
+thirteen	th "er t 'iy n
+thirteen's	th "er t 'iy n z
+thirteenth	th "er t 'iy n th
+thirteenths	th "er t 'iy n th s
 thirties	th 'er t iy z
-thirtieth	th 'er t iy ax th
-thirty	th 'er d "iy
-thirty's	th 'er d "iy z
+thirtieth	th 'er t iy ix th
+thirty	th 'er t iy
+thirty's	th 'er t iy z
 thirtysomething	th 'er t iy s "ah m th ix ng
 thiry	th 'ih rx iy
 thirza	th 'er z ax
@@ -112626,14 +112626,14 @@ tiemann	t 'iy m ax n
 tiemeyer	t 'iy m ay axr
 tien	t y 'eh n
 tienanmen	t y eh n ax n m 'eh n
-tier	t 'iy rx
-tierce	t 'iy rx s
-tierco	t 'iy rx k ow
-tiered	t 'iy rx d
+tier	t 'ih rx
+tierce	t 'ih rx s
+tierco	t 'ih rx k ow
+tiered	t 'ih rx d
 tiernan	t 'ih rx n ax n
 tierney	t 'ih rx n iy
 tierno	t 'ih rx n ow
-tiers	t 'iy rx z
+tiers	t 'ih rx z
 ties	t 'ay z
 tieszen	t 'iy sh ax n
 tietje	t 'iy t jh
@@ -113074,7 +113074,7 @@ toggled	t 'aa g ax l d
 toggling	t 'aa g l ix ng
 tognino	t "aa g n 'iy n ow
 togo	t 'ow g ow
-togs	t 'aa g z
+togs	t 'ao g z
 toibin	t 'oy b ix n
 toil	t 'oy lx
 toiled	t 'oy lx d
@@ -114261,8 +114261,8 @@ trees	t r 'iy z
 treese	t r 'iy z
 treesh	t r 'iy sh
 treesweet	t r 'iy s w "iy t
-treetop	t r 'iy t "ao p
-treetops	t r 'iy t "ao p s
+treetop	t r 'iy t "aa p
+treetops	t r 'iy t "aa p s
 trefethen	t r 'eh f ix th ax n
 trefgarne	t r 'eh f g aa rx n
 trefry	t r 'eh f r iy
@@ -114675,7 +114675,7 @@ tropworld	t r 'aa p w axr l d
 trosch	t r 'aa sh
 trosclair	t r ax s k l 'eh rx
 trosper	t r 'aa s p axr
-trost	t r 'aa s t
+trost	t r 'ao s t
 trostel	t r 'aa s t ax l
 trostle	t r 'aa s ax l
 trot	t r 'aa t
@@ -114823,7 +114823,7 @@ truncate	t r 'ah ng k "ey t
 truncated	t r 'ah ng k "ey t ix d
 truncates	t r 'ah ng k "ey t s
 truncating	t r 'ah ng k "ey t ix ng
-truncation	t r 'ah ng k "ey sh ax n
+truncation	t r "ah ng k 'ey sh ax n
 truncheon	t r 'ah n ch ix n
 truncheons	t r 'ah n ch ix n z
 trundle	t r 'ah n d ax l
@@ -115331,7 +115331,7 @@ twelfth	t w 'eh lx f th
 twelve	t w 'eh lx v
 twelvth	t w 'eh lx v th
 twenties	t w 'eh n t iy z
-twentieth	t w 'eh n t iy ax th
+twentieth	t w 'eh n t iy ix th
 twenty	t w 'eh n t iy
 twenty's	t w 'eh n t iy z
 twentysomething	t w "eh n t iy s 'ah m th ix ng
@@ -117560,7 +117560,7 @@ vandervliet	v 'ae n d axr v l "iy t
 vandervoort	v 'ae n d axr v "uh rx t
 vandervort	v 'ae n d axr v "ao rx t
 vanderwal	v 'ae n d axr w "aa lx
-vanderwall	v 'ae n d axr w "aa lx
+vanderwall	v 'ae n d axr w "ao lx
 vanderweele	v 'ae n d axr w "iy lx
 vanderweide	v 'ae n d axr w "ay d
 vanderwerf	v 'ae n d axr w "er f
@@ -118256,7 +118256,7 @@ vereen	v 'ih rx iy n
 vereinsbank	v axr 'ay n z b "ae ng k
 verena	v axr 'ey n ax
 verene	v 'eh rx iy n
-veres	v 'iy rx z
+veres	v 'ih rx z
 verex	v 'eh rx ax k s
 verga	v 'eh rx g ax
 vergara	v axr g 'aa rx ax
@@ -119925,7 +119925,7 @@ wanta	w 'aa n t ax
 wantage	w 'aa n t ix jh
 wantages	w 'aa n t ix jh ix z
 wante	w 'aa n t ax
-wanted	w 'ao n t ix d
+wanted	w 'aa n t ix d
 wanting	w 'aa n t ix ng
 wantland	w 'aa n t l ax n d
 wanton	w 'ao n t ax n
@@ -120007,9 +120007,9 @@ warley	w 'ao rx l iy
 warlick	w 'ao rx l ix k
 warlike	w 'ao rx l "ay k
 warling	w 'ao rx l ix ng
-warlock	w 'ao rx l "ao k
+warlock	w 'ao rx l "aa k
 warlock's	w 'ao rx l "ao k s
-warlocks	w 'ao rx l "ao k s
+warlocks	w 'ao rx l "aa k s
 warloeck	w 'ao rx l "aa k
 warlord	w 'ao rx l "ao rx d
 warlords	w 'ao rx l "ao rx d z
@@ -120235,7 +120235,7 @@ waterhouse	w 'ao t axr hh "aw s
 waterhouse's	w 'ao t axr hh "aw s ix z
 watering	w 'ao t axr ix ng
 waterishness	w 'ao t axr ix sh n ax s
-waterlog	w 'ao t axr l "aa g
+waterlog	w 'ao t axr l "ao g
 waterlogged	w 'ao t axr l "aa g d
 waterloo	w 'ao t axr l "uw
 waterman	w 'ao t axr m ax n
@@ -120689,8 +120689,8 @@ weintz'	w 'ay n t s
 weintz's	w 'ay n t s ix z
 weinzierl	w 'ay n z ix r l
 weipert	w 'ay p axr t
-weir	w 'iy rx
-weir's	w 'iy rx z
+weir	w 'ih rx
+weir's	w 'ih rx z
 weirauch	w 'ay rx aw k
 weird	w 'ih rx d
 weirder	w 'ih rx d axr
@@ -121720,7 +121720,7 @@ wier	w 'ih rx
 wierdin	w 'ih rx d ix n
 wierenga	v ix r 'eh ng g ax
 wierman	w 'ih rx m ax n
-wiers	w 'iy rx z
+wiers	w 'ih rx z
 wiersema	v ix r s 'iy m ax
 wiersma	v 'ih rx s m ax
 wierzba	v 'ih rx z b ax
@@ -124564,7 +124564,7 @@ ziemian	z 'iy m iy ax n
 ziemke	z 'iy m k
 zientek	z 'iy n t ix k
 zier	z 'ih rx
-zierke	z 'iy rx k
+zierke	z 'ih rx k
 ziesemer	z 'iy s iy m axr
 zieske	z 'iy s k
 ziesmer	z 'iy s ax m axr

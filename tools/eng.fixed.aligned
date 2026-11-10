@@ -1453,7 +1453,7 @@ a f s h a r	'ae f _ sh _ axr
 a f s h a r ' s	'ae f _ sh _ axr _ z
 a f t	'ae f t
 a f t e r	'ae f t _ axr
-a f t e r a l l	'ae f t _ axr "aa _ lx
+a f t e r a l l	'ae f t _ axr "ao _ lx
 a f t e r b u r n e r	'ae f t _ axr b _ "er n _ axr
 a f t e r b u r n e r s	'ae f t _ axr b _ "er n _ axr z
 a f t e r e f f e c t	'ae f t _ axr ax f _ "eh k t
@@ -1892,8 +1892,8 @@ a i r l i n e s	'eh _ rx l "ay n _ z
 a i r l i n e s '	'eh _ rx l "ay n _ z _
 a i r l i n k	'eh _ rx l "ih ng k
 a i r l i n k s	'eh _ rx l "ih ng k s
-a i r l o c k	'eh _ rx l "ao _ k
-a i r l o c k s	'eh _ rx l "ao _ k s
+a i r l o c k	'eh _ rx l "aa _ k
+a i r l o c k s	'eh _ rx l "aa _ k s
 a i r m a i l	'eh _ rx m "ey _ lx
 a i r m a n	'eh _ rx m ax n
 a i r m a n ' s	'eh _ rx m ax n _ z
@@ -2563,7 +2563,7 @@ a l l i s o n	'ae lx ax _ s ax n
 a l l i s o n ' s	'ae _ lx ix s ax n _ z
 a l l i s t e r	'ao _ lx ix s t _ axr
 a l l i s t o n	'ae _ lx ix s t aa n
-a l l i t e r a t i o n	ax l _ 'ih t _ axr _ "ey sh ax n
+a l l i t e r a t i o n	ax l _ "ih t _ axr _ 'ey sh ax n
 a l l i t e r a t i v e	ax l _ 'ih t _ axr ax t ix v _
 a l l m a n	'ao _ lx m ax n
 a l l m e n d i n g e r	'ae _ lx m eh n d ix _ ng _ axr
@@ -2818,7 +2818,7 @@ a l t e r n a t e d	'ao lx t _ axr n "ey t ix d
 a l t e r n a t e l y	'ao lx t _ axr n ax t _ l iy
 a l t e r n a t e s	'ao lx t _ axr n "ey t _ s
 a l t e r n a t i n g	'ao lx t _ axr n "ey t ix _ ng
-a l t e r n a t i o n	'ao lx t _ axr n _ "ey sh ax n
+a l t e r n a t i o n	"ao lx t _ axr n _ 'ey sh ax n
 a l t e r n a t i v e	ao lx t _ 'er n ax t ix v _
 a l t e r n a t i v e l y	ao lx t _ 'er n ax t ix v _ l iy
 a l t e r n a t i v e s	ao lx t _ 'er n ax t ix v _ z
@@ -6232,7 +6232,7 @@ a v e m c o	ax v 'eh m k ow
 a v e m c o ' s	ax v 'eh m k ow _ z
 a v e n	aa v 'ey n
 a v e n a	aa v 'ey n ax
-a v e n a l l	aa v ey n 'aa _ lx
+a v e n a l l	aa v ey n 'ao _ lx
 a v e n d a n o	aa v eh n d 'aa n ow
 a v e n e l	aa v ey n 'eh lx
 a v e n e l l	aa v ey n 'ey _ lx
@@ -6509,7 +6509,7 @@ b a b b l e r	b 'ae _ b l _ axr
 b a b b l e r s	b 'ae _ b l _ axr z
 b a b b l i n g	b 'ae b ax l ix _ ng
 b a b b s	b 'ae _ b z
-b a b c o c k	b 'ae b k ao _ k
+b a b c o c k	b 'ae b k aa _ k
 b a b e	b 'ey b _
 b a b e l	b 'ae b ax l
 b a b e r	b 'ey b _ axr
@@ -6637,7 +6637,7 @@ b a c k l i g h t	b 'ae _ k l "ay _ _ t
 b a c k l i g h t s	b 'ae _ k l "ay _ _ t s
 b a c k l i s t	b 'ae _ k l "ih s t
 b a c k l i s t e d	b 'ae _ k l "ih s t ix d
-b a c k l o g	b 'ae _ k l "aa g
+b a c k l o g	b 'ae _ k l "ao g
 b a c k l o g g e d	b 'ae _ k l "aa _ g _ d
 b a c k l o g s	b 'ae _ k l "ao g z
 b a c k l u n d	b 'ae _ k l ax n d
@@ -8295,15 +8295,15 @@ b e a b e r	b 'iy _ b _ axr
 b e a b o u t	b _ ax b _ 'uw t
 b e a c h	b 'iy _ ch _
 b e a c h a m	b _ ax _ sh 'ae m
-b e a c h b a l l	b 'iy _ ch _ b "aa _ lx
-b e a c h b a l l s	b 'iy _ ch _ b "aa _ lx z
+b e a c h b a l l	b 'iy _ ch _ b "ao _ lx
+b e a c h b a l l s	b 'iy _ ch _ b "ao _ lx z
 b e a c h c o m b e r	b 'iy _ ch _ k "ow m _ _ axr
 b e a c h c o m b e r s	b 'iy _ ch _ k "ow m _ _ axr z
 b e a c h e d	b 'iy _ ch _ t _
 b e a c h e m	b 'iy _ k _ ix m
 b e a c h e r	b 'iy _ ch _ _ axr
 b e a c h e s	b 'iy _ ch _ ax z
-b e a c h f r o n t	b 'iy _ ch _ f r aa n t
+b e a c h f r o n t	b 'iy _ ch _ f r "ah n t
 b e a c h f r o n t s	b 'iy _ ch _ f r aa n t s
 b e a c h h e a d	b 'iy _ ch _ hh "eh _ d
 b e a c h h e a d s	b 'iy _ ch _ hh "eh _ d z
@@ -8662,7 +8662,7 @@ b e e p e r s	b _ 'iy p _ axr z
 b e e p i n g	b _ 'iy p ix _ ng
 b e e p s	b _ 'iy p s
 b e e r	b _ 'ih rx
-b e e r ' s	b _ 'iy rx _ z
+b e e r ' s	b _ 'ih rx _ z
 b e e r b o w e r	b _ 'ih rx b ow _ _ axr
 b e e r m a n	b _ 'ih rx m ax n
 b e e r s	b _ 'ih rx z
@@ -9382,7 +9382,7 @@ b e r e n d z e n	b 'eh rx ix n d z ax n
 b e r e n s	b 'ih rx ax n z
 b e r e n s o n	b 'eh rx ix n s ax n
 b e r e n t	b 'eh rx ax n t
-b e r e s	b 'iy rx _ z
+b e r e s	b 'ih rx _ z
 b e r e s f o r d	b 'ih rx _ z f _ axr d
 b e r e t	b 'eh rx ax t
 b e r e t s	b 'eh rx ax t s
@@ -10066,7 +10066,7 @@ b i e n n i a l	b ay 'eh _ n iy ax l
 b i e n s t o c k	b 'iy _ n s t "aa _ k
 b i e n v e n u	b ax _ n v 'eh n uw
 b i e n v e n u e	b ax _ n v 'ey n w eh
-b i e r	b 'iy _ rx
+b i e r	b 'ih _ rx
 b i e r b a r r o r	b 'ih _ rx b "aa _ rx _ axr
 b i e r b a u e r	b 'ih _ rx b _ aw _ axr
 b i e r b a u e r ' s	b 'ih _ rx b _ aw _ axr _ z
@@ -10082,7 +10082,7 @@ b i e r m a	b 'ih _ rx m ax
 b i e r m a n	b 'ih _ rx m ax n
 b i e r m a n n	b 'ih _ rx m ax n _
 b i e r n a t	b ix _ r n 'ae t
-b i e r s	b 'iy _ rx z
+b i e r s	b 'ih _ rx z
 b i e r w i r t h	b 'ih _ rx w _ axr _ th
 b i e r y	b 'ih _ rx iy
 b i e s	b 'ay _ z
@@ -11219,7 +11219,7 @@ b l u d g e o n e d	b l 'ah _ jh _ ax n _ d
 b l u d g e o n i n g	b l 'ah _ jh _ ax n ix _ ng
 b l u e	b l 'uw _
 b l u e ' s	b l 'uw _ _ z
-b l u e b e a r d	b l 'uw _ b "iy _ rx d
+b l u e b e a r d	b l 'uw _ b "ih _ rx d
 b l u e b e l l	b l 'uw _ b "eh _ lx
 b l u e b e l l s	b l 'uw _ b "eh _ lx z
 b l u e b e r r i e s	b l 'uw _ b "eh rx _ iy _ z
@@ -11559,7 +11559,7 @@ b o f f a	b 'aa _ f ax
 b o f f o	b 'ao _ f ow
 b o f o r s	b 'ow f _ axr z
 b o f o r s ' s	b 'ow f _ axr z ix z
-b o g	b 'aa g
+b o g	b 'ao g
 b o g a c z	b 'aa g ax ch _
 b o g a n	b 'ow g ax n
 b o g a r	b ax g 'aa rx
@@ -11581,7 +11581,7 @@ b o g e y	b 'ow g _ iy
 b o g e y e d	b 'ow g _ iy _ d
 b o g e y m a n	b 'ow g _ iy m "ae n
 b o g g a n	b 'aa _ g ax n
-b o g g e d	b 'aa _ g _ d
+b o g g e d	b 'ao _ g _ d
 b o g g e s s	b 'aa _ g ix _ s
 b o g g i n g	b 'ao _ g ix _ ng
 b o g g i o	b 'ow _ jh iy ow
@@ -11599,7 +11599,7 @@ b o g n e r	b 'aa g n _ axr
 b o g o r	b 'ow g "ao rx
 b o g o s i a n	b ax g 'aa zh ix _ n
 b o g o t a	b "ow g ax t 'aa
-b o g s	b 'aa g z
+b o g s	b 'ao g z
 b o g u e	b 'ow g _ _
 b o g u s	b 'ow g ax s
 b o g u s l a v s k a y a	b ow g "ah s l ax v s k _ 'ay ax
@@ -11946,7 +11946,7 @@ b o n o b o s	b aa n 'aa b ow z
 b o n o m o	b 'aa n ax m ow
 b o n s	b 'aa n s
 b o n s a i	b aa n s _ 'ay
-b o n s a l l	b ow n s 'aa _ lx
+b o n s a l l	b ow n s 'ao _ lx
 b o n s e r	b 'aa n s _ axr
 b o n s i g n o r e	b ow n s iy g n 'ao rx iy
 b o n t a	b 'aa n t ax
@@ -12307,13 +12307,13 @@ b o s n i a n s	b 'aa z n iy ax n z
 b o s n i a s	b 'aa z n iy ax z
 b o s o	b 'ow s ow
 b o s q u e z	b ow s k w 'eh z
-b o s s	b 'aa _ s
+b o s s	b 'ao _ s
 b o s s '	b 'ao _ s _
 b o s s ' s	b 'ao _ s ix z
 b o s s a r d	b ax _ s 'aa rx d
 b o s s a r t	b ax _ s 'aa rx t
 b o s s e	b 'aa _ s _
-b o s s e d	b 'aa _ s t _
+b o s s e d	b 'ao _ s t _
 b o s s e n	b 'aa _ s ax n
 b o s s e r m a n	b 'ao _ s _ axr m ax n
 b o s s e r t	b 'aa _ s _ axr t
@@ -12329,7 +12329,7 @@ b o s s l e r	b 'aa s ax l _ axr
 b o s s m a n	b 'ao _ s m ax n
 b o s s o	b 'ow _ s ow
 b o s s y	b 'ao _ s iy
-b o s t	b 'aa s t
+b o s t	b 'ao s t
 b o s t e l m a n	b 'aa s t ax l m ax n
 b o s t e r	b 'aa s t _ axr
 b o s t i a n	b 'aa s ch ix _ n
@@ -12337,7 +12337,7 @@ b o s t i c	b 'aa s t ix k
 b o s t i c k	b 'ow s t ix _ k
 b o s t o c k	b 'ow s t "aa _ k
 b o s t o n	b 'aa s t ax n
-b o s t o n ' s	b 'ao s t ax n _ z
+b o s t o n ' s	b 'aa s t ax n _ z
 b o s t o n i a n	b "ao s t 'ow n iy ax n
 b o s t o n i a n s	b 'aa s t ow n iy ax n z
 b o s t r a	b 'aa s t r ax
@@ -12443,7 +12443,7 @@ b o u g h e r	b _ 'aw _ _ _ axr
 b o u g h m a n	b _ 'aw _ _ m ax n
 b o u g h n e r	b _ 'aw _ _ n _ axr
 b o u g h s	b _ 'aw _ _ z
-b o u g h t	b 'aa _ _ _ t
+b o u g h t	b 'ao _ _ _ t
 b o u g h t e n	b 'ao _ _ _ t ax n
 b o u g h t e r	b 'ao _ _ _ t _ axr
 b o u g h t o n	b _ 'aw _ _ t ax n
@@ -13910,7 +13910,7 @@ b r o s s e a u	b r ax _ s _ _ 'ow
 b r o s s e r	b r 'aa s _ _ axr
 b r o s s e t t e	b r ax _ s 'eh _ t _
 b r o s s m a n	b r 'ao _ s m ax n
-b r o s t	b r 'aa s t
+b r o s t	b r 'ao s t
 b r o s t r o m	b r 'aa s t r ax m
 b r o s z	b r 'aa sh _
 b r o t e n	b r 'ow t ax n
@@ -14168,7 +14168,7 @@ b r u t	b r 'uw t
 b r u t a l	b r 'uw t ax l
 b r u t a l i t i e s	b r uw t 'ae lx ax t iy _ z
 b r u t a l i t y	b r uw t 'ae lx ax t iy
-b r u t a l i z a t i o n	b r 'uw t ax l ax z _ "ey sh ax n
+b r u t a l i z a t i o n	b r "uw t ax l ax z _ 'ey sh ax n
 b r u t a l i z e	b r 'uw t ax l "ay z _
 b r u t a l i z e d	b r 'uw t ax l "ay z _ d
 b r u t a l i z e s	b r 'uw t ax l "ay z ix z
@@ -14227,8 +14227,8 @@ b u b o n i c	b|y uw b 'aa n ix k
 b u c	b 'ah k
 b u c a r o	b uw k 'aa rx ow
 b u c c a l	b y 'uw k ax l
-b u c c a n e e r	b "ah _ k ax n _ 'iy rx
-b u c c a n e e r s	b "ah _ k ax n _ 'iy rx z
+b u c c a n e e r	b "ah _ k ax n _ 'ih rx
+b u c c a n e e r s	b "ah _ k ax n _ 'ih rx z
 b u c c e l l a t o	b uw _ ch eh _ lx 'aa t ow
 b u c c h e r i	b uw _ k _ 'eh rx iy
 b u c c i	b 'uw _ ch iy
@@ -17358,7 +17358,7 @@ c a t t o	k 'ae _ t ow
 c a t t o l i c a	k ax _ t 'ow lx ix k ax
 c a t t o n	k 'ae _ t ax n
 c a t t y	k 'ae _ t iy
-c a t w a l k	k 'ae t w "aa _ k
+c a t w a l k	k 'ae t w "ao _ k
 c a t w o m a n	k 'ae t w "uh m ax n
 c a u	k _ 'aw
 c a u b l e	k 'ao _ b ax l
@@ -17377,7 +17377,7 @@ c a u g h e y	k 'ao _ _ _ _ iy
 c a u g h l i n	k 'ao _ _ _ lx ix n
 c a u g h m a n	k 'ao _ _ _ m ax n
 c a u g h r o n	k 'ao _ _ _ rx ax n
-c a u g h t	k 'aa _ _ _ t
+c a u g h t	k 'ao _ _ _ t
 c a u l	k 'aa _ lx
 c a u l d e r	k 'ao _ lx d _ axr
 c a u l d r o n	k 'aa _ lx d r ax n
@@ -17413,8 +17413,8 @@ c a u t h o r n	k 'ao _ _ th _ axr n
 c a u t i o n	k 'aa _ _ sh ax n
 c a u t i o n a r y	k 'ao _ _ sh ax n "eh rx iy
 c a u t i o n e d	k 'aa _ _ sh ax n _ d
-c a u t i o n i n g	k 'ao _ _ sh ax n ix _ ng
-c a u t i o n s	k 'ao _ _ sh ax n z
+c a u t i o n i n g	k 'aa _ _ sh ax n ix _ ng
+c a u t i o n s	k 'aa _ _ sh ax n z
 c a u t i o u s	k 'ao _ _ sh ax _ s
 c a u t i o u s l y	k 'ao _ _ sh ax _ s l iy
 c a u t i o u s n e s s	k 'ao _ _ sh ax _ s n ax _ s
@@ -17942,7 +17942,7 @@ c h a l f a n t	ch _ 'ae _ f ax n t
 c h a l f i n	ch _ 'ae lx f ix n
 c h a l i c e	ch _ 'ae lx ix s _
 c h a l i f o u x	_ sh 'ae lx ix f _ uw _
-c h a l k	ch _ 'aa _ k
+c h a l k	ch _ 'ao _ k
 c h a l k e d	ch _ 'ao _ k t _
 c h a l k e r	ch _ 'ao _ k _ axr
 c h a l k i n g	ch _ 'ao _ k ix _ ng
@@ -18534,7 +18534,7 @@ c h e r r y s t o n e	ch _ 'eh rx _ iy s t "ow n _
 c h e r r y s t o n e s	ch _ 'eh rx _ iy s t "ow n _ z
 c h e r t	ch _ _ 'er t
 c h e r t k o w	ch _ _ 'er t k _ aw
-c h e r t o f f	ch _ _ 'er t aa _ f
+c h e r t o f f	ch _ _ 'er t ao _ f
 c h e r t s	ch _ _ 'er t s
 c h e r u b	ch _ 'eh rx ax b
 c h e r u b i c	ch _ _ axr 'uw b ix k
@@ -18819,7 +18819,7 @@ c h i p p i n g	ch _ 'ih _ p ix _ ng
 c h i p p s	ch _ 'ih _ p s
 c h i p p y	ch _ 'ih p _ iy
 c h i p s	ch _ 'ih p s
-c h i p s o f t	ch _ 'ih p s "ao f t
+c h i p s o f t	ch _ 'ih p s "aa f t
 c h i q u i t a	k _ ix k w 'iy t ax
 c h i r a c	_ sh ix r 'ae k
 c h i r a c ' s	_ sh ix r 'ae k _ s
@@ -19377,7 +19377,7 @@ c i r c u l a r s	s _ 'er k y ax l axr z
 c i r c u l a t e	s _ 'er k y ax l "ey t
 c i r c u l a t e s	s _ 'er k y ax l "ey t s
 c i r c u l a t i n g	s _ 'er k y ax l "ey t ix ng
-c i r c u l a t i o n	s _ 'er k y ax l "ey sh ax n
+c i r c u l a t i o n	s _ "er k y ax l 'ey sh ax n
 c i r c u l a t i o n s	s _ "er k y ax l 'ey sh ax n z
 c i r c u m f e r e n c e	s _ "er k 'ah m f _ r ax n s _
 c i r c u m n a v i g a t e	s _ "er k ax m n 'ae v ax g "ey t _
@@ -19767,7 +19767,7 @@ c l e a r e r	k l 'ih _ rx _ axr
 c l e a r e s t	k l 'ih _ rx ix s t
 c l e a r i n g	k l 'ih _ rx ix _ ng
 c l e a r i n g h o u s e	k l 'ih _ rx ix _ ng hh _ "aw s _
-c l e a r i n g h o u s e s	k l 'iy _ rx ix _ ng hh _ "aw s ix z
+c l e a r i n g h o u s e s	k l 'ih _ rx ix _ ng hh _ "aw s ix z
 c l e a r l y	k l 'ih _ rx l iy
 c l e a r m a n	k l 'ih _ rx m ax n
 c l e a r n e s s	k l 'ih _ rx n ax _ s
@@ -20003,10 +20003,10 @@ c l o d o v e o	k l ow d 'ow v iy ow
 c l o e	k l 'ow _
 c l o e r	k l 'ow _ axr
 c l o e y	k l 'ow _ iy
-c l o g	k l 'aa g
+c l o g	k l 'ao g
 c l o g g e d	k l 'ao _ g _ d
-c l o g g i n g	k l 'aa _ g ix _ ng
-c l o g s	k l 'aa g z
+c l o g g i n g	k l 'ao _ g ix _ ng
+c l o g s	k l 'ao g z
 c l o g s t o n	k l 'aa g s t ax n
 c l o h e r t y	k l 'aa hh _ axr t iy
 c l o h e s s y	k l 'aa hh ix _ s iy
@@ -20409,7 +20409,7 @@ c o f f e e ' s	k 'aa f _ _ _ iy z
 c o f f e e h o u s e	k 'ao _ f _ iy hh _ "aw s _
 c o f f e e h o u s e s	k 'ao _ f _ iy hh _ "aw s ix z
 c o f f e e n	k ax f _ 'iy _ n
-c o f f e e s	k 'ao _ f _ iy z
+c o f f e e s	k 'aa _ f _ iy z
 c o f f e l	k 'aa f _ ax l
 c o f f e l t	k 'aa f _ ix l t
 c o f f e r	k 'ao _ f _ axr
@@ -20592,7 +20592,7 @@ c o l e n	k 'ow lx ax n
 c o l e r	k 'ow lx _ axr
 c o l e r i d g e	k 'ow lx _ r ix _ jh _
 c o l e s	k 'ow lx _ z
-c o l e s l a w	k 'ow lx _ s l "aa _
+c o l e s l a w	k 'ow lx _ s l "ao _
 c o l e s o n	k 'aa lx ix s ax n
 c o l e s t i p o l	k 'ow lx _ s t "ih p "aa lx
 c o l e s t o c k	k 'ow lx _ s t "aa _ k
@@ -20889,9 +20889,9 @@ c o m a n c h e	k ax m 'ae n ch _ iy
 c o m a n c h e s	k ax m 'ae n ch _ iy z
 c o m a n d a n t e	k "ow m ax n d 'aa n t ey
 c o m a n d a n t e s	k "ow m ax n d 'aa n t eh z
-c o m a n d e e r	k aa m ax n d _ 'iy rx
-c o m a n d e e r e d	k aa m ax n d _ 'iy rx _ d
-c o m a n d e e r s	k aa m ax n d _ 'iy rx z
+c o m a n d e e r	k aa m ax n d _ 'ih rx
+c o m a n d e e r e d	k aa m ax n d _ 'ih rx _ d
+c o m a n d e e r s	k aa m ax n d _ 'ih rx z
 c o m a r c o	k ow m 'aa rx k ow
 c o m a s	k 'ow m ax z
 c o m a t o s e	k 'ow m ax t "ow s _
@@ -22402,7 +22402,7 @@ c o n v o k e	k aa n v 'ow k _
 c o n v o k e d	k aa n v 'ow k t _
 c o n v o l u t e	k 'aa n v ax l "uw t _
 c o n v o l u t e d	k 'aa n v ax l "uw t ax d
-c o n v o l u t i o n	k 'aa n v ax l "uw _ sh ax n
+c o n v o l u t i o n	k "aa n v ax l 'uw _ sh ax n
 c o n v o y	k 'aa n v _ "oy
 c o n v o y s	k 'aa n v _ "oy z
 c o n v u l s a n t	k ax _ v 'ah lx s ax n t
@@ -23051,7 +23051,7 @@ c o s s e y	k 'aa s _ _ iy
 c o s s i g a	k "ao _ s 'iy g ax
 c o s s i n	k 'aa s _ ix n
 c o s s m a n	k 'ao _ s m ax n
-c o s t	k 'aa s t
+c o s t	k 'ao s t
 c o s t a	k 'ao s t aa
 c o s t a b i l e	k 'ao s t ax b "ay lx _
 c o s t a i n	k "ow s t 'ey _ n
@@ -23067,7 +23067,7 @@ c o s t a s	k 'ao s t ax z
 c o s t c o	k 'ao s t k ow
 c o s t c u t t i n g	k 'ao s t k "ah _ t ix _ ng
 c o s t e	k 'ow s t _
-c o s t e d	k 'aa s t ix d
+c o s t e d	k 'ao s t ix d
 c o s t e l l a	k "ao s t 'eh _ lx ax
 c o s t e l l o	k "ao s t 'eh _ lx ow
 c o s t e l l o ' s	k "ao s t 'eh _ lx ow _ z
@@ -23082,12 +23082,12 @@ c o s t l e y	k 'aa s t l _ iy
 c o s t l i e r	k 'ao s t l iy _ axr
 c o s t l i e s t	k 'ao s t l iy ix s t
 c o s t l o w	k 'ao s t l "ow _
-c o s t l y	k 'aa s t l iy
+c o s t l y	k 'ao s t l iy
 c o s t n e r	k 'aa s t n _ axr
 c o s t n e r ' s	k 'aa s t n _ axr _ z
 c o s t o n	k 'aa s t ax n
 c o s t r a	k 'aa s t r ax
-c o s t s	k 'aa s t s
+c o s t s	k 'ao s t s
 c o s t u m e	k aa s t 'uw m _
 c o s t u m e d	k 'ao s t "uw m _ d
 c o s t u m e r	k 'aa s t uw m _ axr
@@ -24215,8 +24215,8 @@ c r o s s r o a d s	k r 'ao _ s r "ow _ d z
 c r o s s t a l k	k r 'ao _ s t 'ao _ k
 c r o s s t o w n	k r 'ao _ s t _ "aw n
 c r o s s v i l l e	k r 'aa _ s v ix _ l _
-c r o s s w a l k	k r 'aa _ s w "aa _ k
-c r o s s w a l k s	k r 'aa _ s w "aa _ k s
+c r o s s w a l k	k r 'aa _ s w "ao _ k
+c r o s s w a l k s	k r 'aa _ s w "ao _ k s
 c r o s s w h i t e	k r 'aa _ s w _ ay t _
 c r o s s w i s e	k r 'ao _ s w "ay z _
 c r o s s w o r d	k r 'ao _ s w _ "er d
@@ -25906,7 +25906,7 @@ d e a t h b e d	d 'eh _ _ th b "eh d
 d e a t h e r a g e	d 'eh _ _ th _ axr ix jh _
 d e a t h l y	d 'eh _ _ th l iy
 d e a t h s	d 'eh _ _ th s
-d e a t h s h o t	d 'eh _ _ th _ sh ao t
+d e a t h s h o t	d 'eh _ _ th _ sh aa t
 d e a t h w a t c h	d 'eh _ _ th w "aa _ ch _
 d e a t l e y	d 'iy _ t l _ iy
 d e a t o n	d 'iy _ t ax n
@@ -26130,7 +26130,7 @@ d e c i m a l s	d 'eh s ax m ax l z
 d e c i m a t e	d 'eh s ax m "ey t _
 d e c i m a t e d	d 'eh s ax m "ey t ix d
 d e c i m a t i n g	d 'eh s ax m "ey t ix _ ng
-d e c i m a t i o n	d 'eh s ax m _ "ey sh ax n
+d e c i m a t i o n	d "eh s ax m _ 'ey sh ax n
 d e c i p h e r	d ix s 'ay f _ _ axr
 d e c i p h e r e d	d ix s 'ay f _ _ axr _ d
 d e c i p h e r i n g	d ax s 'ay f _ _ axr ix _ ng
@@ -26604,7 +26604,7 @@ d e i n e s	d _ 'iy n _ z
 d e i n i n g e r	d _ 'ay n ix _ ng _ axr
 d e i n s t i t u t i o n a l i z a t i o n	d "iy "ih n s t ix t "uw _ sh ax n ax l ax z 'ey _ sh ax n
 d e i n s t i t u t i o n a l i z e	d "iy "ih n s t ix t "uw _ sh ax n ax l "ay z _
-d e i r d r e	d _ 'iy rx d r ax
+d e i r d r e	d _ 'ih rx d r ax
 d e i s	d _ 'iy z
 d e i s h e r	d 'iy ix _ sh _ axr
 d e i s m	d 'iy ix z|ax m
@@ -27830,7 +27830,7 @@ d e s t i n e d	d 'eh s t ix n _ d
 d e s t i n i e s	d 'eh s t ax n iy _ z
 d e s t i n y	d 'eh s t ax n iy
 d e s t i t u t e	d 'eh s t ax t "uw t _
-d e s t i t u t i o n	d 'eh s t ax t "uw _ sh ax n
+d e s t i t u t i o n	d "eh s t ax t 'uw _ sh ax n
 d e s t r o y	d ix s t r _ 'oy
 d e s t r o y e d	d ix s t r _ 'oy _ d
 d e s t r o y e r	d ix s t r _ 'oy _ axr
@@ -27886,7 +27886,7 @@ d e t e r i o r a t e	d ix t 'ih rx iy _ axr "ey t _
 d e t e r i o r a t e d	d ix t 'ih rx iy _ axr "ey t ix d
 d e t e r i o r a t e s	d ix t 'ih rx iy _ axr "ey t _ s
 d e t e r i o r a t i n g	d ix t 'ih rx iy _ axr "ey t ix _ ng
-d e t e r i o r a t i o n	d ix t 'ih rx iy _ axr _ "ey sh ax n
+d e t e r i o r a t i o n	d ix t "ih rx iy _ axr _ 'ey sh ax n
 d e t e r m a n	d 'iy t _ axr m ax n
 d e t e r m e n t	d ix t _ 'er m ax n t
 d e t e r m i n a b l e	d ix t _ 'er m ax n ax b ax l
@@ -27994,7 +27994,7 @@ d e v	d 'eh v
 d e v a	d 'ey v ax
 d e v a l	d ix v 'aa lx
 d e v a l ' s	d ix v 'aa lx _ z
-d e v a l l	d ey v 'aa _ lx
+d e v a l l	d ey v 'ao _ lx
 d e v a l l e	d ix v 'ae _ lx _
 d e v a l u a t e	d ix v 'ae lx y uw "ey t
 d e v a l u a t i o n	d ix v "ae lx y uw 'ey sh ax n
@@ -28462,12 +28462,12 @@ d i e n e s	d 'iy _ n eh z
 d i e n s t	d 'iy _ n s t
 d i e p	d 'iy _ p
 d i e r	d 'iy _ axr
-d i e r c k s	d 'iy _ rx _ k s
+d i e r c k s	d 'ih _ rx _ k s
 d i e r i n g e r	d 'ih _ rx ix n jh _ axr
-d i e r k e r	d 'iy _ rx k _ axr
-d i e r k e s	d 'iy _ rx k _ s
+d i e r k e r	d 'ih _ rx k _ axr
+d i e r k e s	d 'ih _ rx k _ s
 d i e r k i n g	d 'ay _ axr k ix _ ng
-d i e r k s	d 'iy _ rx k s
+d i e r k s	d 'ih _ rx k s
 d i e r o l f	d 'ih _ rx ow lx f
 d i e r s	d 'iy _ axr z
 d i e r y	d 'ih _ rx iy
@@ -29917,7 +29917,7 @@ d o g m a	d 'aa g m ax
 d o g m a t i c	d aa g m 'ae t ix k
 d o g m a t i c a l l y	d aa g m 'ae t ix k _ _ l iy
 d o g m a t i s m	d 'aa g m ax t "ih z|ax m
-d o g s	d 'aa g z
+d o g s	d 'ao g z
 d o g s '	d 'ao g z _
 d o g w o o d	d 'ao g w "uh _ d
 d o g w o o d s	d 'ao g w "uh _ d z
@@ -30409,7 +30409,7 @@ d o s s e t t	d 'aa _ s ix _ t
 d o s s e y	d 'aa _ s _ iy
 d o s s i e r	d "ao _ s y 'ey _
 d o s s i e r s	d "ao _ s y 'ey _ z
-d o s t	d 'aa s t
+d o s t	d 'ao s t
 d o s t a l	d 'aa s t ax l
 d o s t e r	d 'aa s t _ axr
 d o s t i e	d 'aa s t iy _
@@ -30993,7 +30993,7 @@ d r o p s	d r 'aa p s
 d r o p s y	d r 'aa p s iy
 d r o s e r	d r 'ow z _ axr
 d r o s s	d r 'ao _ s
-d r o s t	d r 'aa s t
+d r o s t	d r 'ao s t
 d r o s t e	d r 'ow s t _
 d r o t a r	d r 'ow t _ axr
 d r o u g h t	d r _ 'aw _ _ t
@@ -31093,7 +31093,7 @@ d r y p e r s	d r 'ay p _ axr z
 d r y p o i n t	d r 'ay p "oy _ n t
 d r y s d a l e	d r 'ay z d "ey lx _
 d r y s e r	d r 'ay s _ axr
-d r y w a l l	d r 'ay w "aa _ lx
+d r y w a l l	d r 'ay w "ao _ lx
 d u	d 'uw
 d u a l	d 'uw ax l
 d u a l i s m	d 'uw ax l "ih z|ax m
@@ -31823,10 +31823,10 @@ e a m e s	'iy _ m _ z
 e a m o n	'iy _ m ax n
 e a n e s	'iy _ n _ z
 e a p p e n	'iy _ _ p ax n
-e a r	'iy _ rx
+e a r	'ih _ rx
 e a r d l e y	'ih _ rx d l _ iy
 e a r e d	'ih _ rx _ d
-e a r f u l	'iy _ rx f "ah lx
+e a r f u l	'ih _ rx f "ah lx
 e a r f u l l	'ih _ rx f "ah _ lx
 e a r g l e	'ih _ rx g ax l
 e a r h a r t	'ih _ rx hh aa rx t
@@ -32557,10 +32557,10 @@ e i g h m e y	_ 'ey _ _ m _ iy
 e i g h m y	_ 'ey g _ m iy
 e i g h t	_ 'ey _ _ t
 e i g h t ' s	_ 'ey _ _ t _ s
-e i g h t e e n	ey _ _ _ t _ 'iy n
-e i g h t e e n ' s	ey _ _ _ t _ 'iy n _ z
-e i g h t e e n s	ey _ _ _ t _ 'iy n z
-e i g h t e e n t h	ey _ _ _ t _ 'iy n _ th
+e i g h t e e n	"ey _ _ _ t _ 'iy n
+e i g h t e e n ' s	"ey _ _ _ t _ 'iy n _ z
+e i g h t e e n s	"ey _ _ _ t _ 'iy n z
+e i g h t e e n t h	"ey _ _ _ t _ 'iy n _ th
 e i g h t f o l d	_ 'ey _ _ t f "ow lx d
 e i g h t h	_ 'ey _ _ t th
 e i g h t h s	_ 'ey _ _ t th s
@@ -33607,9 +33607,9 @@ e n d a n g e r m e n t	eh n d 'ey n jh _ axr m ax n t
 e n d a n g e r s	eh n d 'ey n jh _ axr z
 e n d a r a	'eh n d 'aa rx ax
 e n d e	'eh n d _
-e n d e a r	eh n d 'iy _ rx
-e n d e a r e d	eh n d 'iy _ rx _ d
-e n d e a r i n g	eh n d 'iy _ rx ix _ ng
+e n d e a r	eh n d 'ih _ rx
+e n d e a r e d	eh n d 'ih _ rx _ d
+e n d e a r i n g	eh n d 'ih _ rx ix _ ng
 e n d e a r m e n t	ix n d 'ih _ rx m ax n t
 e n d e a v o r	ix n d 'eh _ v _ axr
 e n d e a v o r ' s	ix n d 'eh _ v _ axr _ z
@@ -33779,8 +33779,8 @@ e n g i n e	'eh n jh ax n _
 e n g i n e ' s	'eh n jh ax n _ _ z
 e n g i n e d	'eh n jh ax n _ d
 e n g i n e e r	'eh n jh ax n _ 'ih rx
-e n g i n e e r ' s	"eh n jh ax n _ 'iy rx _ z
-e n g i n e e r e d	"eh n jh ax n _ 'iy rx _ d
+e n g i n e e r ' s	"eh n jh ax n _ 'ih rx _ z
+e n g i n e e r e d	"eh n jh ax n _ 'ih rx _ d
 e n g i n e e r i n g	'eh n jh ax n _ 'ih rx ix _ ng
 e n g i n e e r s	'eh n jh ax n _ 'ih rx z
 e n g i n e e r s '	'eh n jh ax n _ 'ih rx z _
@@ -35258,7 +35258,7 @@ e x c o m m u n i c a t e d	"eh k|s k ax m y 'uw n ax k "ey t ax d
 e x c o r i a t e	eh k s k 'ao rx iy "ey t
 e x c o r i a t e d	eh k|s k 'ao rx iy "ey t ix d
 e x c o r i a t i n g	eh k s k 'ao rx iy "ey t ix ng
-e x c o r i a t i o n	eh k s k 'ao rx iy "ey sh ax n
+e x c o r i a t i o n	eh k s k "ao rx iy 'ey sh ax n
 e x c r e m e n t	'eh k|s k r ax m ax n t
 e x c r e t e d	ix k|s k r 'iy t ix d
 e x c r e t o r y	'eh k|s k r ax t "ao rx iy
@@ -35902,7 +35902,7 @@ f a l l e r t	f 'ae _ lx _ axr t
 f a l l i b i l i t y	f "ae lx _ ix b 'ih lx ix t iy
 f a l l i b l e	f 'ae lx ax _ b ax l
 f a l l i n	f 'ae _ lx ix n
-f a l l i n g	f 'aa _ lx ix _ ng
+f a l l i n g	f 'ao _ lx ix _ ng
 f a l l i s	f 'ae _ lx ix s
 f a l l i s h	f 'aa _ lx ix _ sh
 f a l l o f f	f 'ao _ lx "ao _ f
@@ -35929,7 +35929,7 @@ f a l s o n e	f 'ao lx s ax n _
 f a l s t a f f	f 'ao lx s t "ae _ f
 f a l s t a f f ' s	f 'ao lx s t "ae _ f _ s
 f a l t e r	f 'ao lx t _ axr
-f a l t e r e d	f 'aa lx t _ axr _ d
+f a l t e r e d	f 'ao lx t _ axr _ d
 f a l t e r i n g	f 'ao lx t _ axr ix _ ng
 f a l t e r s	f 'ao lx t _ axr z
 f a l v e y	f 'ae lx v _ iy
@@ -37175,9 +37175,9 @@ f i e r o	f 'iy _ rx ow
 f i e r o s	f iy 'eh rx ow s
 f i e r r o	f 'ih _ rx _ ow
 f i e r r o s	f 'ih _ _ rx ow z
-f i e r s	f 'iy _ rx z
-f i e r s t	f 'iy _ rx s t
-f i e r s t e i n	f 'iy _ rx s t _ "iy n
+f i e r s	f 'ih _ rx z
+f i e r s t	f 'ih _ rx s t
+f i e r s t e i n	f 'ih _ rx s t _ "iy n
 f i e r y	f 'ay _ axr iy
 f i e s e r	f 'iy _ s _ axr
 f i e s t	f 'iy ix s t
@@ -37188,10 +37188,10 @@ f i f e r	f 'ay f _ axr
 f i f i	f 'iy f iy
 f i f i e l d	f 'ih f iy _ lx d
 f i f t e e	f 'ih f t _ iy
-f i f t e e n	f ix f t _ 'iy n
-f i f t e e n ' s	f ix f t _ 'iy n _ z
-f i f t e e n s	f ix f t _ 'iy n z
-f i f t e e n t h	f ix f t _ 'iy n _ th
+f i f t e e n	f "ih f t _ 'iy n
+f i f t e e n ' s	f "ih f t _ 'iy n _ z
+f i f t e e n s	f "ih f t _ 'iy n z
+f i f t e e n t h	f "ih f t _ 'iy n _ th
 f i f t h	f 'ih f _ th
 f i f t h s	f 'ih f _ th s
 f i f t i e s	f 'ih f t iy _ z
@@ -37605,7 +37605,7 @@ f i r e s t i n e	f ay rx _ s t 'iy n iy
 f i r e s t o n e	f 'ay rx _ s t "ow n _
 f i r e s t o n e ' s	f 'ay rx _ s t "ow n _ _ z
 f i r e s t o r m	f 'ay rx _ s t "ao rx m
-f i r e w a l l	f 'ay rx _ w aa _ lx
+f i r e w a l l	f 'ay rx _ w ao _ lx
 f i r e w e e d	f 'ay axr _ w _ "iy d
 f i r e w o o d	f 'ay axr _ w "uh _ d
 f i r e w o r k	f 'ay rx _ w _ "er k
@@ -38154,8 +38154,8 @@ f l o c k s	f l 'aa _ k s
 f l o d i n	f l 'ow d ix n
 f l o e	f l 'ow _
 f l o e r s h e i m	f l 'ao _ rx _ sh _ "ay m
-f l o g	f l 'aa g
-f l o g g i n g	f l 'aa _ g ix _ ng
+f l o g	f l 'ao g
+f l o g g i n g	f l 'ao _ g ix _ ng
 f l o h r	f l 'aa _ rx
 f l o m	f l 'aa m
 f l o n o r i a l	f l "aa n 'ao rx iy ax l
@@ -38228,7 +38228,7 @@ f l o r r i e	f l 'ao _ rx iy _
 f l o r r y	f l 'ao _ rx iy
 f l o r s h e i m	f l 'ao rx _ sh _ "ay m
 f l o r y	f l 'ao rx iy
-f l o s s	f l 'aa _ s
+f l o s s	f l 'ao _ s
 f l o s s i e	f l 'ao s _ iy _
 f l o t a t i o n	f l ow t 'ey _ sh ax n
 f l o t i l l a	f l ow t 'ih _ lx ax
@@ -38402,7 +38402,7 @@ f o e l l e r	f 'ow _ _ lx _ axr
 f o e r s t e r	f 'ao _ rx s t _ axr
 f o e r t s c h	f 'ao _ rx _ _ ch _
 f o e s	f 'ow _ z
-f o g	f 'aa g
+f o g	f 'ao g
 f o g a l	f 'ow jh ax l
 f o g a r t y	f 'aa g "aa rx t iy
 f o g e l	f 'ow g ax l
@@ -38417,7 +38417,7 @@ f o g e r t y ' s	f 'aa jh _ axr t iy _ z
 f o g g	f 'aa _ g
 f o g g ' s	f 'aa _ g _ z
 f o g g i e s t	f 'aa _ g iy ax s t
-f o g g y	f 'aa _ g iy
+f o g g y	f 'ao _ g iy
 f o g l e	f 'ow g ax l
 f o g l e m a n	f 'ow g ax l m ax n
 f o g l e r	f 'ow g ax l axr
@@ -38829,7 +38829,7 @@ f o r m a l i s m	f 'ao rx m ax l "ih z|ax m
 f o r m a l i s t	f 'ao rx m ax l ax s t
 f o r m a l i t i e s	f ao rx m 'ae lx ax t iy _ z
 f o r m a l i t y	f ao rx m 'ae lx ax t iy
-f o r m a l i z a t i o n	f 'ao rx m ax l ax z _ "ey sh ax n
+f o r m a l i z a t i o n	f "ao rx m ax l ax z _ 'ey sh ax n
 f o r m a l i z e	f 'ao rx m ax l "ay z _
 f o r m a l i z e d	f 'ao rx m ax l "ay z _ d
 f o r m a l i z e s	f 'ao rx m ax l "ay z ix z
@@ -38994,7 +38994,7 @@ f o s k e t t	f 'aa s k ix _ t
 f o s k e y	f 'aa s k _ iy
 f o s l e r	f 'aa s ax l axr
 f o s n a u g h	f 'aa s n ao _ _ _
-f o s s	f 'aa _ s
+f o s s	f 'ao _ s
 f o s s e	f 'aa _ s _
 f o s s e l	f 'aa _ s ax l
 f o s s e n	f 'aa _ s ax n
@@ -39061,9 +39061,9 @@ f o u r n i e r	f 'ao _ rx n "iy _ axr
 f o u r s	f 'ao _ rx z
 f o u r s o m e	f 'ao _ rx s ax m _
 f o u r s q u a r e	f 'ao _ rx s k w 'eh rx _
-f o u r t e e n	f 'ao _ rx t _ 'iy n
-f o u r t e e n s	f 'ao _ rx t _ 'iy n z
-f o u r t e e n t h	f 'ao _ rx t _ 'iy n _ th
+f o u r t e e n	f "ao _ rx t _ 'iy n
+f o u r t e e n s	f "ao _ rx t _ 'iy n z
+f o u r t e e n t h	f "ao _ rx t _ 'iy n _ th
 f o u r t h	f 'ao _ rx _ th
 f o u r t h ' s	f 'ao _ rx _ th _ s
 f o u r t h l y	f 'ao _ rx _ th l iy
@@ -39360,7 +39360,7 @@ f r e a k s h o w	f r 'iy _ k s hh "ow _
 f r e a k y	f r 'iy _ k iy
 f r e a n	f r 'iy _ n
 f r e a r	f r 'ih _ rx
-f r e a r s	f r 'iy _ rx z
+f r e a r s	f r 'ih _ rx z
 f r e a s	f r 'iy _ z
 f r e a s e	f r 'iy _ z _
 f r e b e r g	f r 'iy b _ axr g
@@ -39794,15 +39794,15 @@ f r o e h l i c h	f r 'ow _ _ lx ix k _
 f r o e l i c h	f r 'ow _ lx ix k _
 f r o e m m i n g	f r 'ow _ _ m ix _ ng
 f r o e s e	f r 'ow _ s _
-f r o g	f r 'aa g
-f r o g ' s	f r 'aa g _ z
+f r o g	f r 'ao g
+f r o g ' s	f r 'ao g _ z
 f r o g g	f r 'aa _ g
 f r o g g e	f r 'aa _ g _
 f r o g m a n	f r 'aa g m "ae n
 f r o g m e n	f r 'aa g m ix n
 f r o g m o u t h	f r 'aa g m _ "aw _ th
 f r o g m o u t h s	f r 'aa g m _ "aw _ th s
-f r o g s	f r 'aa g z
+f r o g s	f r 'ao g z
 f r o h	f r 'ow _
 f r o h l i c h	f r 'ow _ lx ix k _
 f r o h m a n	f r 'ow _ m ax n
@@ -40649,7 +40649,7 @@ g a m c o	g 'ae m k ow
 g a m e	g 'ey m _
 g a m e ' s	g 'ey m _ _ z
 g a m e b o y	g 'ey m _ b _ "oy
-g a m e c o c k	g 'ey m _ k "ao _ k
+g a m e c o c k	g 'ey m _ k "aa _ k
 g a m e c o c k s	g 'ey m _ k "ao _ k s
 g a m e k e e p e r	g 'ey m _ k _ "iy p _ axr
 g a m e k e e p e r s	g 'ey m _ k _ "iy p _ axr s
@@ -44567,10 +44567,10 @@ g r o e r	g r 'ow _ axr
 g r o e s b e c k	g r 'ow _ s b eh _ k
 g r o f f	g r 'ao _ f
 g r o f t	g r 'aa f t
-g r o g	g r 'aa g
+g r o g	g r 'ao g
 g r o g a n	g r 'ow g ax n
 g r o g g	g r 'aa _ g
-g r o g g y	g r 'aa _ g iy
+g r o g g y	g r 'ao _ g iy
 g r o h	g r 'ow _
 g r o h m a n	g r 'ow _ m ax n
 g r o h s	g r 'ow _ s
@@ -44682,7 +44682,7 @@ g r o u n d s	g r _ 'aw n d z
 g r o u n d s k e e p e r	g r _ 'aw n d s k _ "iy p _ axr
 g r o u n d s k e e p e r s	g r _ 'aw n d s k _ "iy p _ axr z
 g r o u n d s w e l l	g r _ 'aw n d s w "eh _ lx
-g r o u n d w a t e r	g r _ 'aw n d w "aa t _ axr
+g r o u n d w a t e r	g r _ 'aw n d w "ao t _ axr
 g r o u n d w o r k	g r _ 'aw n d w _ "er k
 g r o u p	g r _ 'uw p
 g r o u p ' s	g r _ 'uw p _ s
@@ -47335,14 +47335,14 @@ h e a p e d	hh 'iy _ p t _
 h e a p h y	hh 'iy _ f _ iy
 h e a p i n g	hh 'iy _ p ix _ ng
 h e a p s	hh 'iy _ p s
-h e a r	hh 'iy _ rx
+h e a r	hh 'ih _ rx
 h e a r d	hh _ _ 'er d
-h e a r e r	hh 'iy _ rx _ axr
-h e a r e r s	hh 'iy _ rx _ axr z
+h e a r e r	hh 'ih _ rx _ axr
+h e a r e r s	hh 'ih _ rx _ axr z
 h e a r i n	hh 'ih _ rx ix n
-h e a r i n g	hh 'iy _ rx ix _ ng
-h e a r i n g ' s	hh 'iy _ rx ix _ ng _ z
-h e a r i n g s	hh 'iy _ rx ix _ ng z
+h e a r i n g	hh 'ih _ rx ix _ ng
+h e a r i n g ' s	hh 'ih _ rx ix _ ng _ z
+h e a r i n g s	hh 'ih _ rx ix _ ng z
 h e a r k e n s	hh _ 'aa rx k ax n z
 h e a r l	hh _ _ 'er lx
 h e a r n	hh _ _ 'er n
@@ -47350,8 +47350,8 @@ h e a r n e	hh _ _ 'er n _
 h e a r n s	hh _ _ 'er n z
 h e a r o n	hh 'ih _ rx ax n
 h e a r r o n	hh _ 'ao _ rx ax n
-h e a r s	hh 'iy _ rx z
-h e a r s a y	hh 'iy _ rx s "ey _
+h e a r s	hh 'ih _ rx z
+h e a r s a y	hh 'ih _ rx s "ey _
 h e a r s e	hh _ _ 'er s _
 h e a r s t	hh _ _ 'er s t
 h e a r s t ' s	hh _ _ 'er s t _ s
@@ -48213,7 +48213,7 @@ h e r d m a n	hh _ 'er d m ax n
 h e r d s	hh _ 'er d z
 h e r d s m e n	hh _ 'er d z m ix n
 h e r d t	hh _ 'er _ t
-h e r e	hh 'iy rx _
+h e r e	hh 'ih rx _
 h e r e ' s	hh 'ih rx _ _ z
 h e r e a b o u t	hh 'ih rx _ ax b _ "aw t
 h e r e a b o u t s	hh 'ih rx _ ax b _ "aw t s
@@ -48604,7 +48604,7 @@ h i e r o g l y p h	hh "ay _ rx ow g l 'ih f _
 h i e r o g l y p h i c	hh "ay _ rx ow g l 'ih f _ ix k
 h i e r o g l y p h i c s	hh "ay _ rx ow g l 'ih f _ ix k s
 h i e r o g l y p h s	hh "ay _ rx ow g l 'ih f _ s
-h i e r s	hh 'iy _ rx z
+h i e r s	hh 'ih _ rx z
 h i e s t a n d	hh 'iy _ s t ax n d
 h i e s t e r	hh 'ay ix s t _ axr
 h i e t a l a	hh 'ay _ t ax l ax
@@ -49316,7 +49316,7 @@ h o f r i c h t e r	hh 'aa f r ix k _ t _ axr
 h o f s t a d	hh 'aa f s t ae d
 h o f s t e t t e r	hh 'aa f s t eh _ t _ axr
 h o f s t r a	hh 'aa f s t r ax
-h o g	hh 'aa g
+h o g	hh 'ao g
 h o g a n	hh 'ow g "aa n
 h o g a n ' s	hh 'ow g "aa n _ z
 h o g a n s	hh 'ow g "aa n z
@@ -49343,7 +49343,7 @@ h o g l u n d ' s	hh 'ao g l ax n d _ z
 h o g l u n d s	hh 'ao g l ax n d z
 h o g n o s e	hh 'aa g n "ow z _
 h o g r e f e	hh 'aa g r ix f _
-h o g s	hh 'aa g z
+h o g s	hh 'ao g z
 h o g s e d	hh 'ow g s t _
 h o g s e t t	hh 'aa g s ix _ t
 h o g s t o n	hh 'aa g s t ax n
@@ -50158,7 +50158,7 @@ h o s p i t a l i z e	hh 'ao s p "ih t ax l "ay z _
 h o s p i t a l i z e d	hh 'aa s p ix t ax l "ay z _ d
 h o s p i t a l s	hh 'aa s p "ih t ax l z
 h o s p i t a l s '	hh 'ao s p ix t ax l z _
-h o s s	hh 'aa s _
+h o s s	hh 'ao s _
 h o s s a c k	hh 'aa s _ ax _ k
 h o s s a i n	hh ax _ s 'ey _ n
 h o s s e i n	hh 'ao _ s _ "ey n
@@ -51681,7 +51681,7 @@ i m m o l a t e	'ih _ m ax l "ey t _
 i m m o l a t e d	'ih _ m ax l "ey t ax d
 i m m o l a t e s	'ih _ m ax l "ey t _ s
 i m m o l a t i n g	'ih _ m ax l "ey t ix _ ng
-i m m o l a t i o n	'ih _ m ax l _ "ey sh ax n
+i m m o l a t i o n	"ih _ m ax l _ 'ey sh ax n
 i m m o r a l	"ih _ m 'ao rx ax l
 i m m o r a l i t y	"ih _ m _ axr 'ae lx ix t iy
 i m m o r t a l	"ih _ m 'ao rx t ax l
@@ -52090,7 +52090,7 @@ i n c i d e n t s	'ih n s ax d ax n t s
 i n c i n e r a t e	"ih n s 'ih n _ axr "ey t _
 i n c i n e r a t e d	"ih n s 'ih n _ axr "ey t ix d
 i n c i n e r a t i n g	"ih n s 'ih n _ axr "ey t ix _ ng
-i n c i n e r a t i o n	"ih n s 'ih n _ axr _ "ey sh ax n
+i n c i n e r a t i o n	"ih n s "ih n _ axr _ 'ey sh ax n
 i n c i n e r a t o r	"ih n s 'ih n _ axr "ey t _ axr
 i n c i n e r a t o r s	"ih n s 'ih n _ axr "ey t _ axr z
 i n c i p i e n t	"ih n s 'ih p iy ax n t
@@ -52932,7 +52932,7 @@ i n s i t u f o r m	"ih n s 'ih t "uw f ao rx m
 i n s k e e p	'ih n z k _ "iy p
 i n s k i p	'ih n s k ix p
 i n s k o	'ih n s k ow
-i n s l a w	'ih n s l aa _
+i n s l a w	'ih n s l ao _
 i n s l e y	'ih n s l _ iy
 i n s o f a r	'ih n s ax f aa rx
 i n s o l e n c e	'ih n s ax l ax n s _
@@ -53342,7 +53342,7 @@ i n t e r p l a y	'ih n t _ axr p l "ey _
 i n t e r p o l	'ih n t _ axr p "ow lx
 i n t e r p o l a t e	"ih _ t _ 'er p ax l "ey t _
 i n t e r p o l a t e d	"ih _ t _ 'er p ax l "ey t ix d
-i n t e r p o l a t i o n	"ih _ t _ 'er p ax l _ "ey sh ax n
+i n t e r p o l a t i o n	"ih n t _ axr p ax l 'ey sh _ ax n
 i n t e r p o l a t i o n s	"ih _ t _ 'er p ax l _ "ey sh ax n z
 i n t e r p o s e	"ih n t _ axr p 'ow z _
 i n t e r p r e t	"ih n t _ 'er p r ax t
@@ -53684,7 +53684,7 @@ i o n i z e	'ay ax n "ay z _
 i o n i z e r	'ay ax n "ay z _ axr
 i o n i z e r s	'ay ax n "ay z _ axr z
 i o n i z i n g	'ay ax n "ay z ix _ ng
-i o n o s p h e r e	"ay 'aa n ao s f _ "iy rx _
+i o n o s p h e r e	"ay 'aa n ao s f _ "ih rx _
 i o n s	'ay ax n z
 i o r i o	iy 'ao rx iy "ow
 i o s	'iy ow s
@@ -54638,8 +54638,8 @@ j e e p n e y	jh _ 'iy p n _ iy
 j e e p s	jh _ 'iy p s
 j e e r	jh _ 'ih rx
 j e e r e d	jh _ 'ih rx _ d
-j e e r i n g	jh _ 'iy rx ix _ ng
-j e e r s	jh _ 'iy rx z
+j e e r i n g	jh _ 'ih rx ix _ ng
+j e e r s	jh _ 'ih rx z
 j e e s	jh _ 'iy z
 j e e t e r	jh _ 'iy t _ axr
 j e e v e s	jh _ 'iy v _ z
@@ -55036,12 +55036,12 @@ j o e y ' s	jh 'ow _ iy _ z
 j o f f e	jh 'aa _ f _
 j o f f r e y	jh 'ao _ f r _ iy
 j o f f r i o n	y ow _ f r iy 'ao n
-j o g	jh 'aa g
-j o g g e d	jh 'aa g _ _ d
-j o g g e r	jh 'aa g _ _ axr
-j o g g e r s	jh 'aa g _ _ axr z
-j o g g i n g	jh 'aa g _ ix _ ng
-j o g s	jh 'aa g z
+j o g	jh 'ao g
+j o g g e d	jh 'ao g _ _ d
+j o g g e r	jh 'ao g _ _ axr
+j o g g e r s	jh 'ao g _ _ axr z
+j o g g i n g	jh 'ao g _ ix _ ng
+j o g s	jh 'ao g z
 j o h	jh 'ow _
 j o h a n	y ow hh 'aa n
 j o h a n n	y 'ow hh aa n _
@@ -55221,7 +55221,7 @@ j o s l y n	jh 'ao s l ix n
 j o s p i n	jh 'aa s p ix n
 j o s s	jh 'ao _ s
 j o s s e l y n	jh 'aa _ s ix l ix n
-j o s t	jh 'aa s t
+j o s t	jh 'ao s t
 j o s t e n	jh 'aa s _ ax n
 j o s t e n s	jh 'ao s t ax n z
 j o s t e s	jh 'ow s t _ s
@@ -56306,7 +56306,7 @@ k e a r n e y	k _ _ 'er n _ iy
 k e a r n e y ' s	k _ _ 'er n _ iy _ z
 k e a r n s	k _ _ 'er n z
 k e a r n y	k _ _ 'er n iy
-k e a r s a r g e	k 'iy _ rx s aa rx jh _
+k e a r s a r g e	k 'ih _ rx s aa rx jh _
 k e a r s e	k _ _ 'er s _
 k e a s	k 'iy _ z
 k e a s l e r	k 'iy _ z l _ axr
@@ -56428,7 +56428,7 @@ k e i n a t h	k _ 'ay n ax _ th
 k e i n e r	k _ 'iy n _ axr
 k e i o	k _ 'ey ow
 k e i p e r	k _ 'iy p _ axr
-k e i r	k _ 'iy rx
+k e i r	k _ 'ih rx
 k e i r e t s u	k _ "ih rx 'eh t s uw
 k e i r n	k _ 'ih rx n
 k e i r n s	k _ 'ay rx n z
@@ -56581,7 +56581,7 @@ k e n d r i c k s	k 'eh n d r ix _ k s
 k e n d z i e r s k i	k ix n jh _ 'ih _ rx s k iy
 k e n d z i o r	k ix n jh _ 'iy _ axr
 k e n e a l y	k 'eh n iy ax l iy
-k e n e e r	k ax n _ 'iy rx
+k e n e e r	k ax n _ 'ih rx
 k e n e f i c k	k 'eh n ix f ix _ k
 k e n e r s o n	k 'eh n _ axr s ax n
 k e n e s s e t	k eh n 'eh _ s eh t
@@ -57971,7 +57971,7 @@ k n o p e	_ n 'ow p _
 k n o p f	_ n 'aa p f
 k n o p p	_ n 'aa p _
 k n o r r	_ n 'ao _ rx
-k n o s t	_ n 'aa s t
+k n o s t	_ n 'ao s t
 k n o t	_ n 'aa t
 k n o t e k	_ n 'ow t ix k
 k n o t h	_ n 'aa _ th
@@ -58496,7 +58496,7 @@ k o s s	k 'ao _ s
 k o s s m a n	k 'ao _ s m ax n
 k o s s o w	k 'aa s _ ow _
 k o s s u t h	k 'aa _ s ax _ th
-k o s t	k 'aa s t
+k o s t	k 'ao s t
 k o s t a	k 'ow s t ax
 k o s t a l	k 'aa s t ax l
 k o s t a s	k 'ow s t ax z
@@ -58890,7 +58890,7 @@ k r o e s	k r 'ow _ z
 k r o e s e	k r 'ow _ s _
 k r o e z e	k r 'ow _ z _
 k r o f t	k r 'aa f t
-k r o g	k r 'aa g
+k r o g	k r 'ao g
 k r o g e r	k r 'ow g _ axr
 k r o g e r ' s	k r 'ow g _ axr _ z
 k r o g h	k r 'ow _ _
@@ -60904,7 +60904,7 @@ l e a p l e y	l 'iy _ p l _ iy
 l e a p s	l 'iy _ p s
 l e a p t	l 'eh _ p t
 l e a r	l 'ih _ rx
-l e a r ' s	l 'iy _ rx _ z
+l e a r ' s	l 'ih _ rx _ z
 l e a r d	l _ _ 'er d
 l e a r j e t	l 'ih _ rx jh "eh t
 l e a r n	l _ _ 'er n
@@ -63127,10 +63127,10 @@ l o g b o o k	l 'ao g b _ "uh k
 l o g e	l 'ow jh _
 l o g e s	l 'ow jh ix z
 l o g g e d	l 'ao _ g _ d
-l o g g e r	l 'aa _ g _ axr
+l o g g e r	l 'ao _ g _ axr
 l o g g e r h e a d	l 'aa _ g _ axr hh "eh _ d
 l o g g e r h e a d s	l 'aa _ g _ axr hh "eh _ d z
-l o g g e r s	l 'aa _ g _ axr z
+l o g g e r s	l 'ao _ g _ axr z
 l o g g i a	l 'aa _ g iy ax
 l o g g i n g	l 'ao _ g ix _ ng
 l o g g i n s	l 'aa _ g ix n z
@@ -65642,7 +65642,7 @@ m a n s u e t o	m ae n s w 'ey t ow
 m a n s u r	m 'ae n s _ axr
 m a n t a	m 'ae n t ax
 m a n t e c a	m aa n t 'eh k ax
-m a n t e e r	m "ae n t _ 'iy rx
+m a n t e e r	m "ae n t _ 'ih rx
 m a n t e i	m 'ae n t _ ay
 m a n t e l	m 'ae n t ax l
 m a n t e l l	m ae n t 'eh _ lx
@@ -67962,7 +67962,7 @@ m e a n w h i l e	m 'iy _ n w _ "ay lx _
 m e a n y	m 'iy _ n iy
 m e a r	m 'ih _ rx
 m e a r a	m 'iy _ rx ax
-m e a r e s	m 'iy _ rx _ z
+m e a r e s	m 'ih _ rx _ z
 m e a r n s	m _ _ 'er n z
 m e a r s	m 'ih _ rx z
 m e a s e	m 'iy _ z _
@@ -68172,7 +68172,7 @@ m e e n a n	m _ 'iy n ax n
 m e e n t s	m _ 'iy n t s
 m e e r	m _ 'iy axr
 m e e r s	m _ 'iy axr z
-m e e r t	m _ 'iy rx t
+m e e r t	m _ 'ih rx t
 m e e s	m _ 'iy z
 m e e s e	m _ 'iy s _
 m e e s e ' s	m _ 'iy s ix _ z
@@ -68466,7 +68466,7 @@ m e l t e d	m 'eh lx t ax d
 m e l t i n g	m 'eh lx t ix _ ng
 m e l t o n	m 'eh lx t ax n
 m e l t s	m 'eh lx t s
-m e l t w a t e r	m 'eh lx t w "aa t _ axr
+m e l t w a t e r	m 'eh lx t w "ao t _ axr
 m e l t z	m 'eh lx t s
 m e l t z e r	m 'eh lx t s _ axr
 m e l u c c i	m eh lx 'uw _ ch iy
@@ -69341,7 +69341,7 @@ m i c r o s c o p i c	m "ay k r ax s k 'aa p ix k
 m i c r o s c o p i c a l l y	m "ay k r ax s k 'aa p ix k _ _ l iy
 m i c r o s c o p y	m ay k r 'ah s k ax p iy
 m i c r o s e m i	m "ay k r ow s 'eh m iy
-m i c r o s o f t	m 'ay k r "ow s 'ao f t
+m i c r o s o f t	m 'ay k r "ow s 'aa f t
 m i c r o s o f t ' s	m 'ay k r "ow s 'ao f t _ s
 m i c r o s y s t e m s	m 'ay k r "ow s 'ih s t ax m z
 m i c r o s y s t e m s '	m 'ay k r ow s "ih s t ax m z _
@@ -69461,7 +69461,7 @@ m i e r a	m 'iy _ rx ax
 m i e r a s	m ix _ r 'aa z
 m i e r s	m 'ay _ axr z
 m i e r t	m 'ay _ axr t
-m i e r z w a	m 'iy _ rx z w ax
+m i e r z w a	m 'ih _ rx z w ax
 m i e s	m 'ay _ z
 m i e s k e	m 'ay _ s k iy
 m i e s n e r	m 'iy _ z n _ axr
@@ -70268,7 +70268,7 @@ m i s h a p	m 'ih s hh "ae p
 m i s h a p s	m 'ih s hh "ae p s
 m i s h a w a k a	m "ih _ sh ax w 'ao k ax
 m i s h a w a u m	m 'ih _ sh ax w "aa _ m
-m i s h e a r	m ix s hh 'iy _ rx
+m i s h e a r	m ix s hh 'ih _ rx
 m i s h e a r d	m "ih s hh _ _ 'er d
 m i s h k i n	m 'iy _ sh k iy n
 m i s h l e r	m 'ih _ sh l _ axr
@@ -71589,7 +71589,7 @@ m o r p h o n i o s	m ao rx f _ 'ao n iy ax s
 m o r p h s	m 'ao rx f _ s
 m o r r	m 'ao _ rx
 m o r r a	m 'ao _ rx ax
-m o r r a l l	m ao _ rx 'aa _ lx
+m o r r a l l	m ao _ rx 'ao _ lx
 m o r r e a l e	m ao _ rx 'iy _ lx iy
 m o r r e l l	m ao _ rx 'eh _ lx
 m o r r e n	m 'ao _ rx ax n
@@ -71646,7 +71646,7 @@ m o r t g a g e s	m 'ao rx _ g ax jh ax z
 m o r t i c i a n	m ao rx t 'ih _ sh ax n
 m o r t i e	m 'ao rx t iy _
 m o r t i e r	m 'ao rx t iy _ axr
-m o r t i f i c a t i o n	m 'ao rx t ax f _ k _ "ey sh ax n
+m o r t i f i c a t i o n	m "ao rx t ax f ax k 'ey sh _ ax n
 m o r t i f i e d	m 'ao rx t ax f "ay _ d
 m o r t i f y	m 'ao rx t ix f "ay
 m o r t i m e r	m 'ao rx t ix m _ axr
@@ -72277,7 +72277,7 @@ m u l t i v a r i a t e	m "ah lx t iy v 'ae rx iy ix t _
 m u l t i v a r i a t e s	m "ah lx t iy v 'ae rx iy ix t _ s
 m u l t i v i s i o n	m "ah lx t iy v 'ih _ zh ax n
 m u l t i v i t a m i n	m "ah lx t iy v 'ay t "ah m ax n
-m u l t i y e a r	m 'ah lx t iy y 'iy _ rx
+m u l t i y e a r	m 'ah lx t iy y 'ih _ rx
 m u l t n o m a h	m "ah lx _ n 'ow m ax _
 m u l v a n e y	m "ah lx v 'ey n _ iy
 m u l v a n y	m "ah lx v 'ey n iy
@@ -72548,8 +72548,8 @@ m u s k	m 'ah s k
 m u s k a	m 'ah s k ax
 m u s k e	m 'ah s k _
 m u s k e t	m 'ah s k ax t
-m u s k e t e e r	m "ah s k ax t _ 'iy rx
-m u s k e t e e r s	m "ah s k ax t _ 'iy rx z
+m u s k e t e e r	m "ah s k ax t _ 'ih rx
+m u s k e t e e r s	m "ah s k ax t _ 'ih rx z
 m u s k i e	m 'ah s k iy _
 m u s k i e ' s	m 'ah s k iy _ _ z
 m u s k m e l o n	m 'ah s k m "eh lx ax n
@@ -73239,7 +73239,7 @@ n a v r a t i l o v a ' s	n ae v r "ae t ix l 'ow v ax _ z
 n a v s t a r	n 'ae v s t "aa rx
 n a v y	n 'ey v iy
 n a v y ' s	n 'ey v iy _ z
-n a w	n 'aa _
+n a w	n 'ao _
 n a w r o t	n 'ao _ rx ax t
 n a y	n 'ey _
 n a y d e n	n 'ey _ d ix n
@@ -73280,8 +73280,8 @@ n e a r h o o d	n 'ih _ rx hh _ uh d
 n e a r i n g	n 'ih _ rx ix _ ng
 n e a r l y	n 'ih _ rx l iy
 n e a r s	n 'ih _ rx z
-n e a r s i g h t e d	n 'iy _ rx s "ay _ _ t ix d
-n e a r s i g h t e d n e s s	n 'iy _ rx s "ay _ _ t ix d n ax _ s
+n e a r s i g h t e d	n 'ih _ rx s "ay _ _ t ix d
+n e a r s i g h t e d n e s s	n 'ih _ rx s "ay _ _ t ix d n ax _ s
 n e a r y	n 'ih _ rx iy
 n e a s	n 'iy _ z
 n e a s e	n 'iy _ z _
@@ -74324,8 +74324,8 @@ n i n e r	n 'ay n _ axr
 n i n e r s	n 'ay n _ axr z
 n i n e r s '	n 'ay n _ axr z _
 n i n e s	n 'ay n _ z
-n i n e t e e n	n 'ay n _ t _ 'iy n
-n i n e t e e n t h	n 'ay n _ t _ 'iy n _ th
+n i n e t e e n	n "ay n _ t _ 'iy n
+n i n e t e e n t h	n "ay n _ t _ 'iy n _ th
 n i n e t i e s	n 'ay n _ t iy _ z
 n i n e t i e s '	n 'ay n _ t iy _ z _
 n i n e t i e t h	n 'ay n _ t iy ix _ th
@@ -76009,7 +76009,7 @@ o f t e l	'aa f t "eh lx
 o f t e n	'ao f _ ax n
 o f t e n e r	'ao f _ ax n _ axr
 o f t e n t i m e s	'ao f _ ax n t "ay m _ z
-o g	'aa g
+o g	'ao g
 o g a n	'ow g ax n
 o g a r a	"ow g 'aa rx "aa
 o g a t a	"ow g 'aa t "aa
@@ -76955,7 +76955,7 @@ o r n e t t e	"ao rx n 'eh _ t _
 o r n i s h	'ao rx n ix _ sh
 o r n i t h o l o g i c a l	"ao rx n ix _ th ax l 'ao jh ix k ax l
 o r n i t h o l o g y	"ao rx n ix _ th 'aa lx ax jh iy
-o r n o f f	'ao rx n aa _ f
+o r n o f f	'ao rx n ao _ f
 o r n s t e i n	'ao rx n s t _ ay n
 o r o	'ao rx ow
 o r o a r k	ow rx 'ao _ rx k
@@ -77193,7 +77193,7 @@ o s t h o f f	'aa s t hh ao f _
 o s t i a	'aa s t iy ax
 o s t i n	'aa s t ax n
 o s t i n a t o	"aa s t ax n 'aa t "ow
-o s t i n g	'aa s t ix _ ng
+o s t i n g	'ao s t ix _ ng
 o s t l i n g	'aa s ax l ix _ ng
 o s t l u n d	'aa s t l ax n d
 o s t m a n	'aa s t m ax n
@@ -77702,10 +77702,10 @@ o v e r h a u l i n g	'ow v _ axr hh "ao _ lx ix _ ng
 o v e r h a u l s	'ow v _ axr hh "ao _ lx z
 o v e r h e a d	'ow v _ axr hh 'eh _ d
 o v e r h e a d s	'ow v _ axr hh "eh _ d z
-o v e r h e a r	'ow v _ axr hh 'iy _ rx
+o v e r h e a r	'ow v _ axr hh 'ih _ rx
 o v e r h e a r d	'ow v _ axr hh _ _ 'er d
-o v e r h e a r i n g	"ow v _ axr hh 'iy _ rx ix _ ng
-o v e r h e a r s	'ow v _ axr hh 'iy _ rx z
+o v e r h e a r i n g	"ow v _ axr hh 'ih _ rx ix _ ng
+o v e r h e a r s	'ow v _ axr hh 'ih _ rx z
 o v e r h e a t	'ow v _ axr hh "iy _ t
 o v e r h e a t e d	'ow v _ axr hh "iy _ t ix d
 o v e r h e a t i n g	'ow v _ axr hh "iy _ t ix _ ng
@@ -78226,7 +78226,7 @@ p a i n s	p 'ey _ n z
 p a i n s t a k i n g	p 'ey _ n s t "ey k ix _ ng
 p a i n s t a k i n g l y	p 'ey _ n s t "ey k ix _ ng l iy
 p a i n t	p 'ey _ n t
-p a i n t b a l l	p 'ey _ n t b "aa _ lx
+p a i n t b a l l	p 'ey _ n t b "ao _ lx
 p a i n t b r u s h	p 'ey _ n t b r "ah _ sh
 p a i n t b r u s h e s	p 'ey _ n t b r "ah _ sh ix s
 p a i n t e d	p 'ey _ n t ix d
@@ -78327,7 +78327,7 @@ p a l k a	p 'ae lx k ax
 p a l k a r	p 'ae lx k aa rx
 p a l k o	p 'ae lx k ow
 p a l k o v i c	p ax l k 'aa v ix k
-p a l l	p 'aa _ lx
+p a l l	p 'ao _ lx
 p a l l a	p 'ae _ lx ax
 p a l l a d i n o	p aa _ lx aa d 'iy n ow
 p a l l a d i u m	p ax _ l 'ey d iy ax m
@@ -79729,7 +79729,7 @@ p e e p s	p _ 'iy p s
 p e e r	p _ 'ih rx
 p e e r a g e	p _ 'ih rx ax jh _
 p e e r e d	p _ 'ih rx _ d
-p e e r i n g	p _ 'iy rx ix _ ng
+p e e r i n g	p _ 'ih rx ix _ ng
 p e e r l e s s	p _ 'ih rx l ix _ s
 p e e r s	p _ 'ih rx z
 p e e r s o n	p _ 'ih rx s ax n
@@ -79776,7 +79776,7 @@ p e i l	p _ 'iy lx
 p e i n a d o	p ey iy n 'aa d ow
 p e i n e	p _ 'iy n _
 p e i r c e	p _ 'ih rx s _
-p e i r s o n	p _ 'iy rx s ax n
+p e i r s o n	p _ 'ih rx s ax n
 p e i s e r	p _ 'ay s _ axr
 p e i t z	p _ 'iy t s
 p e j o r a t i v e	p ax jh 'ao rx ax t ix v _
@@ -80411,7 +80411,7 @@ p e r s e c u t e	p _ 'er s ax k y "uw t
 p e r s e c u t e s	p _ 'er s ax k y "uw t s
 p e r s e c u t i n g	p _ 'er s ix k y "uw t ix ng
 p e r s e c u t i o n	p _ "er s ax k y 'uw sh ax n
-p e r s e c u t i o n s	p _ "er s ax k y 'uw sh ax n s
+p e r s e c u t i o n s	p _ "er s ax k y 'uw sh ax n z
 p e r s e c u t o r	p _ 'er s ax k y "uw t axr
 p e r s e c u t o r s	p _ 'er s ax k y "uw t axr z
 p e r s e p o l i s	p _ axr s 'eh p ax l ax s
@@ -80828,7 +80828,7 @@ p f l u g e r	_ f l 'uw g _ axr
 p f l u m	_ f l 'ah m
 p f o h l	_ f 'ow _ lx
 p f o r z h e i m e r	_ f 'ao rx z hh _ "ay m _ axr
-p f o s t	_ f 'aa s t
+p f o s t	_ f 'ao s t
 p f u n d	_ f 'ah n d
 p f u n d s t e i n	_ f 'ah n d s t _ "iy n
 p h a g a n	f _ 'ey g ax n
@@ -82178,7 +82178,7 @@ p l o d d e d	p l 'aa _ d ix d
 p l o d d i n g	p l 'aa _ d ix _ ng
 p l o e g e r	p l 'ow _ g _ axr
 p l o e t z	p l 'ow _ t s
-p l o g	p l 'aa g
+p l o g	p l 'ao g
 p l o h n	p l 'ow _ n
 p l o n k a	p l 'ow ng k ax
 p l o n s k i	p l 'aa n s k iy
@@ -82400,14 +82400,14 @@ p o f a h l	p 'aa f aa _ lx
 p o f f	p 'ao _ f
 p o f f e n b a r g e r	p 'aa f _ ix n b aa rx g _ axr
 p o f f e n b e r g e r	p 'ao _ f ax n b _ axr g _ axr
-p o g	p 'aa g
+p o g	p 'ao g
 p o g g i	p 'aa _ jh iy
 p o g g i o l i	p "ow _ jh _ 'ow lx iy
 p o g o	p 'ow g "ow
 p o g o r z e l s k i	p ax g _ axr z 'eh lx s k iy
 p o g r o m	p ax g r 'aa m
 p o g r o m s	p ax g r 'aa m z
-p o g s	p 'aa g z
+p o g s	p 'ao g z
 p o g u e	p 'ow g _ _
 p o h	p 'ow _
 p o h a n g	p 'ow hh ae _ ng
@@ -82905,7 +82905,7 @@ p o p p l e t o n	p 'aa p ax l _ t aa n
 p o p p l e w e l l	p 'aa p ax l _ w eh _ lx
 p o p p y	p 'aa _ p iy
 p o p p y ' s	p 'aa _ p iy _ z
-p o p p y c o c k	p 'aa _ p iy k "ao _ k
+p o p p y c o c k	p 'aa _ p iy k "aa _ k
 p o p s	p 'aa p s
 p o p s i c l e	p 'aa p s ix k ax l
 p o p u l a r	p 'aa p y ax l axr
@@ -83092,7 +83092,7 @@ p o s p i s i l	p ow s p iy s 'iy lx
 p o s s	p 'ao s _
 p o s s e	p 'aa _ s iy
 p o s s e h l	p 'aa _ s ax _ l
-p o s s e s	p 'aa _ s iy z
+p o s s e s	p 'ao _ s iy z
 p o s s e s s	p ax _ z 'eh _ s
 p o s s e s s e d	p ax _ z 'eh _ s t _
 p o s s e s s e s	p ax _ z 'eh _ s ax z
@@ -84644,7 +84644,7 @@ p r o s p e r o u s	p r 'aa s p _ axr ax _ s
 p r o s p e r s	p r 'aa s p _ axr z
 p r o s s	p r 'ao _ s
 p r o s s e r	p r 'ao _ s _ axr
-p r o s t	p r 'aa s t
+p r o s t	p r 'ao s t
 p r o s t a g l a n d i n	p r ow s t ae g l 'ae n d ix n
 p r o s t a g l a n d i n s	p r ow s t ae g l 'ae n d ix n z
 p r o s t a t e	p r 'aa s t "ey t _
@@ -85159,8 +85159,8 @@ p u p i l	p|y 'uw p ax l
 p u p i l s	p|y 'uw p ax l z
 p u p o	p 'uw p ow
 p u p p e t	p 'ah _ p ax t
-p u p p e t e e r	p ax _ p ax t _ 'iy rx
-p u p p e t e e r s	p ax _ p ax t _ 'iy rx z
+p u p p e t e e r	p ax _ p ax t _ 'ih rx
+p u p p e t e e r s	p ax _ p ax t _ 'ih rx z
 p u p p e t r y	p 'ah _ p ax t r iy
 p u p p e t s	p 'ah _ p ax t s
 p u p p i e s	p 'ah _ p iy _ z
@@ -85477,7 +85477,7 @@ q u a r n s t r o m	k w 'ao rx n s t r ax m
 q u a r r e	k w 'aa _ rx _
 q u a r r e l	k w 'ao _ rx ax l
 q u a r r e l e d	k w 'ao _ rx ax l _ d
-q u a r r e l i n g	k w 'aa _ rx ax l ix _ ng
+q u a r r e l i n g	k w 'ao _ rx ax l ix _ ng
 q u a r r e l s	k w 'ao _ rx ax l z
 q u a r r e l s o m e	k w 'ao _ rx ax l s ax m _
 q u a r r i e s	k w 'ao _ rx iy _ z
@@ -85785,7 +85785,7 @@ r a b b i n i c	r ax _ b 'ih n ix k
 r a b b i n i c a l	r ax _ b 'ih n ix k ax l
 r a b b i s	r 'ae _ b "ay z
 r a b b i t	r 'ae _ b ax t
-r a b b i t e a r s	r 'ae _ b ix t 'iy _ rx z
+r a b b i t e a r s	r 'ae _ b ix t 'ih _ rx z
 r a b b i t l i k e	r 'ae _ b ax t l "ay k _
 r a b b i t s	r 'ae _ b ax t s
 r a b b i t t	r 'ae _ b ix _ t
@@ -86065,7 +86065,7 @@ r a g s	r 'ae g z
 r a g s d a l e	r 'ae g z d "ey lx _
 r a g t a g	r 'ae g t "ae g
 r a g t i m e	r 'ae g t "ay m _
-r a g t o p	r 'ae g t ao p
+r a g t o p	r 'ae g t aa p
 r a g u	r ae g 'uw
 r a g u c c i	r aa g 'uw ch _ iy
 r a g u e	r 'ey g _ _
@@ -86423,7 +86423,7 @@ r a n s	r 'ae n z
 r a n s a c k	r 'ae n s "ae _ k
 r a n s a c k e d	r 'ae n s "ae _ k t _
 r a n s a c k i n g	r 'ae n s "ae _ k ix _ ng
-r a n s a l l	r 'ae n s aa lx _
+r a n s a l l	r 'ae n s ao lx _
 r a n s b o t t o m	r 'ae n s b "aa _ t ax m
 r a n s b u r g	r 'ae n z b _ axr g
 r a n s b u r g ' s	r 'ae n z b _ axr g _ z
@@ -86724,7 +86724,7 @@ r a v i s h a n k a r	r "aa v iy _ sh 'aa ng k "aa rx
 r a v i s h i n g	r 'ae v ix _ sh ix _ ng
 r a v i t c h	r 'ae v ix _ ch _
 r a v i t z	r 'ae v ix t s
-r a w	r 'aa _
+r a w	r 'ao _
 r a w a l p i n d i	r "ae w ao lx p 'ih n d iy
 r a w d i n g	r 'ao _ d ix _ ng
 r a w d o n	r 'ao _ d ax n
@@ -87943,9 +87943,9 @@ r e h b e i n	r 'eh _ b _ ay n
 r e h b e r g	r 'eh _ b _ axr g
 r e h b e r g e r	r 'eh _ b _ axr g _ axr
 r e h d e r	r 'eh _ d _ axr
-r e h e a r	r iy hh 'iy _ rx
-r e h e a r i n g	r iy hh 'iy _ rx ix _ ng
-r e h e a r i n g s	r iy hh 'iy _ rx ix _ ng z
+r e h e a r	r iy hh 'ih _ rx
+r e h e a r i n g	r iy hh 'ih _ rx ix _ ng
+r e h e a r i n g s	r iy hh 'ih _ rx ix _ ng z
 r e h e a r s a l	r ix hh _ _ 'er s ax l
 r e h e a r s a l s	r ix hh _ _ 'er s ax l z
 r e h e a r s e	r iy hh _ _ 'er s _
@@ -88133,7 +88133,7 @@ r e i n s u r e r	r "iy ix n sh 'uh rx _ axr
 r e i n s u r e r s	r "iy ix n sh 'uh rx _ axr z
 r e i n t e g r a t e	r iy 'ih n t ax g r "ey t _
 r e i n t e g r a t e d	r iy 'ih n t ax g r "ey t ix d
-r e i n t e g r a t i o n	r iy 'ih n t ax g r _ "ey sh ax n
+r e i n t e g r a t i o n	r iy "ih n t ax g r _ 'ey sh ax n
 r e i n t e r p r e t	r "iy ix n t _ 'er p r ax t
 r e i n t e r p r e t a t i o n	r iy ix n t _ "er p r ax t 'ey _ sh ax n
 r e i n t e r p r e t e d	r iy ix n t _ 'er p r ax t ix d
@@ -88581,7 +88581,7 @@ r e n o v a t e	r 'eh n ax v "ey t _
 r e n o v a t e d	r 'eh n ax v "ey t ix d
 r e n o v a t i n g	r 'eh n ax v "ey t ix _ ng
 r e n o v a t i o n	r "eh n ax v 'ey _ sh ax n
-r e n o v a t i o n s	r 'eh n ax v _ "ey sh ax n z
+r e n o v a t i o n s	r "eh n ax v _ 'ey sh ax n z
 r e n o v a t o r	r 'eh n ax v "ey t _ axr
 r e n o v a t o r s	r 'eh n ax v "ey t _ axr z
 r e n o w n	r ix n _ 'aw n
@@ -89937,7 +89937,7 @@ r i e n d e a u	r ax _ n d _ _ 'ow
 r i e n s t r a	r 'iy _ n s t r ax
 r i e p e	r 'iy _ p _
 r i e r a	r 'iy _ rx ax
-r i e r s o n	r 'iy _ rx s ax n
+r i e r s o n	r 'ih _ rx s ax n
 r i e s	r 'ay _ z
 r i e s b e r g	r 'iy _ s b _ axr g
 r i e s e	r 'iy _ z _
@@ -90731,7 +90731,7 @@ r o f f	r 'ao _ f
 r o f f e	r 'aa _ f _
 r o f f m a n	r 'ao _ f m ax n
 r o f i n	r 'ow f ix n
-r o g	r 'aa g
+r o g	r 'ao g
 r o g a c h e v	r 'ow g ax ch _ ax v
 r o g a i n e	r ow g 'ey _ n _
 r o g a l	r 'ow g ax l
@@ -91237,9 +91237,9 @@ r o s n e r	r 'aa s n _ axr
 r o s o f f	r 'aa s ao _ f
 r o s o l	r 'ow s ao lx
 r o s p a t c h	r 'ao s p ae _ ch _
-r o s s	r 'aa _ s
+r o s s	r 'ao _ s
 r o s s '	r 'aa _ s _
-r o s s ' s	r 'aa _ s ix z
+r o s s ' s	r 'ao _ s ix z
 r o s s a	r 'ow _ s ax
 r o s s a n o	r ow _ s 'aa n ow
 r o s s b a c h	r 'aa _ s b aa k _
@@ -91270,7 +91270,7 @@ r o s s n e r	r 'aa _ s n _ axr
 r o s s o	r 'ow _ s ow
 r o s s o n	r 'aa _ s ax n
 r o s s o w	r 'aa _ s ow _
-r o s t	r 'aa s t
+r o s t	r 'ao s t
 r o s t a d	r 'aa s t ax d
 r o s t e n	r 'aa s _ ax n
 r o s t e n k o w s k i	r "ao s t eh ng k _ 'aw s k iy
@@ -92097,7 +92097,7 @@ r u z i c h	r 'ah z ix _ hh
 r u z i c k a	r "uw z 'ih _ k ax
 r u z z o	r 'uw _ z ow
 r y a l	r iy 'aa lx
-r y a l l	r iy 'aa _ lx
+r y a l l	r iy 'ao _ lx
 r y a l s	r iy 'aa lx z
 r y a n	r 'ay ax n
 r y a n ' s	r 'ay ax n _ z
@@ -92661,7 +92661,7 @@ s a l t m a r s h	s 'ao lx t m "aa rx _ sh
 s a l t o n	s 'ao lx t ax n
 s a l t s	s 'ao lx t s
 s a l t s m a n	s 'ao lx t s m ax n
-s a l t w a t e r	s "ao lx t w 'aa t _ axr
+s a l t w a t e r	s "ao lx t w 'ao t _ axr
 s a l t y	s 'ao lx t iy
 s a l t z	s 'ae lx t s
 s a l t z b u r g	s 'ao lx t s b _ axr g
@@ -92782,7 +92782,7 @@ s a m p a n	s 'ae m p ae n
 s a m p a n s	s 'ae m p ae n z
 s a m p e r	s 'ae m p _ axr
 s a m p e r ' s	s 'ae m p _ axr _ z
-s a m p e r e	s ae m p 'iy rx _
+s a m p e r e	s ae m p 'ih rx _
 s a m p e y	s 'ae m p _ iy
 s a m p l e	s 'ae m p ax l
 s a m p l e ' s	s 'ae m p ax l _ z
@@ -92845,7 +92845,7 @@ s a n d ' s	s 'ae n d _ z
 s a n d a	s 'ae n d ax
 s a n d a h l	s 'ae n d "aa _ lx
 s a n d a l	s 'ae n d ax l
-s a n d a l l	s 'ae n d aa _ lx
+s a n d a l l	s 'ae n d ao _ lx
 s a n d a l o	s "ae n d 'ae lx ow
 s a n d a l s	s 'ae n d ax l z
 s a n d a u	s 'ae n d _ aw
@@ -95080,7 +95080,7 @@ s e a v e r	s 'iy _ v _ axr
 s e a v e r s	s 'iy _ v _ axr z
 s e a v e y	s 'iy _ v _ iy
 s e a w a r d	s 'iy _ w _ axr d
-s e a w a t e r	s 'iy _ w "aa t _ axr
+s e a w a t e r	s 'iy _ w "ao t _ axr
 s e a w a y	s 'iy _ w "ey _
 s e a w e e d	s 'iy _ w _ "iy d
 s e a w e e d s	s 'iy _ w _ "iy d z
@@ -95310,8 +95310,8 @@ s e e p	s _ 'iy p
 s e e p e d	s _ 'iy p t _
 s e e p i n g	s _ 'iy p ix _ ng
 s e e p s	s _ 'iy p s
-s e e r	s 'iy _ rx
-s e e r s	s 'iy _ rx z
+s e e r	s 'ih _ rx
+s e e r s	s 'ih _ rx z
 s e e r y	s 'iy _ rx iy
 s e e s	s 'iy _ z
 s e e s a w	s 'iy _ s _ "ao
@@ -95865,7 +95865,7 @@ s e r e n e l y	s _ axr 'iy n ax l iy
 s e r e n g e t i	s "eh rx ax n g 'eh t iy
 s e r e n i t y	s _ axr 'eh n ax t iy
 s e r e n o	s eh rx 'ey n ow
-s e r e s	s 'iy rx _ z
+s e r e s	s 'ih rx _ z
 s e r e x	s 'eh rx ax k|s
 s e r f	s _ 'er f
 s e r f a s s	s _ 'er f "ae _ s
@@ -96039,9 +96039,9 @@ s e v e n	s 'eh v ax n
 s e v e n ' s	s 'eh v ax n _ z
 s e v e n f o l d	s 'eh v ax n f "ow lx d
 s e v e n s	s 'eh v ax n z
-s e v e n t e e n	s 'eh v ax n t _ 'iy n
-s e v e n t e e n s	s 'eh v ax n t _ "iy n z
-s e v e n t e e n t h	s 'eh v ax n t _ 'iy n _ th
+s e v e n t e e n	s "eh v ax n t _ 'iy n
+s e v e n t e e n s	s "eh v ax n t _ 'iy n z
+s e v e n t e e n t h	s "eh v ax n t _ 'iy n _ th
 s e v e n t h	s 'eh v ax n _ th
 s e v e n t h s	s 'eh v ax n _ th s
 s e v e n t i e s	s 'eh v ax n t iy _ z
@@ -96221,7 +96221,7 @@ s h a k e o u t	_ sh 'ey k _ _ "aw t
 s h a k e r	_ sh 'ey k _ axr
 s h a k e r s	_ sh 'ey k _ axr z
 s h a k e s	_ sh 'ey k _ s
-s h a k e s p e a r e	_ sh 'ey k _ s p "iy _ rx _
+s h a k e s p e a r e	_ sh 'ey k _ s p "ih _ rx _
 s h a k e s p e a r e ' s	_ sh 'ey k _ s p "iy _ rx _ _ z
 s h a k e s p e a r e a n	_ sh "ey k _ s p 'ih _ rx iy ax n
 s h a k i e r	_ sh 'ey k iy _ axr
@@ -96245,7 +96245,7 @@ s h a l i k a s h v i l i	_ sh "ae lx iy k aa _ sh v 'iy lx iy
 s h a l i k a s h v i l i ' s	_ sh "ae lx iy k aa _ sh v 'iy lx iy _ z
 s h a l l	_ sh 'ae _ lx
 s h a l l ' s	_ sh 'ae _ lx _ z
-s h a l l c r o s s	_ sh 'ae _ lx k r "aa _ s
+s h a l l c r o s s	_ sh 'ae _ lx k r "ao _ s
 s h a l l e n b e r g e r	_ sh 'ao lx ax _ n b _ axr g _ axr
 s h a l l o w	_ sh 'ae _ lx ow _
 s h a l l o w e r	_ sh 'ae _ lx ow _ _ axr
@@ -96505,17 +96505,17 @@ s h e a l e y	_ sh 'iy _ lx _ iy
 s h e a l y	_ sh 'iy _ lx iy
 s h e a n	_ sh 'iy _ n
 s h e a r	sh 'ih _ _ rx
-s h e a r ' s	_ sh 'iy _ rx _ z
+s h e a r ' s	_ sh 'ih _ rx _ z
 s h e a r d	sh 'ih _ _ rx d
 s h e a r e d	sh 'ih _ _ rx _ d
 s h e a r e r	sh 'ih _ _ rx _ axr
 s h e a r i n	sh 'ih _ _ rx ix n
 s h e a r i n g	sh 'ih _ _ rx ix _ ng
-s h e a r m a n	_ sh 'iy _ rx m ax n
+s h e a r m a n	_ sh 'ih _ rx m ax n
 s h e a r n	sh 'ih _ _ rx n
 s h e a r o n	sh 'ih _ _ rx ax n
 s h e a r o u s e	sh 'ih _ _ rx _ aw s _
-s h e a r s	_ sh 'iy _ rx z
+s h e a r s	_ sh 'ih _ rx z
 s h e a r s o n	sh 'ih _ _ rx s ax n
 s h e a r s o n ' s	sh 'ih _ _ rx s ax n _ z
 s h e a t h	_ sh 'iy _ _ th
@@ -96565,7 +96565,7 @@ s h e e p s k i n	_ sh _ 'iy p s k "ih n
 s h e e r	sh 'ih _ _ rx
 s h e e r a n	sh 'ih _ _ rx ax n
 s h e e r a n ' s	sh 'ih _ _ rx ax n _ z
-s h e e r e r	_ sh _ 'iy rx _ axr
+s h e e r e r	_ sh _ 'ih rx _ axr
 s h e e r i n	sh 'ih _ _ rx ix n
 s h e e s h	_ sh _ 'iy _ sh
 s h e e s l e y	_ sh _ 'iy z l _ iy
@@ -97617,12 +97617,12 @@ s i e m s e n	s 'iy _ m s ax n
 s i e n k o	s iy 'eh ng k ow
 s i e n n a	s iy 'eh n _ ax
 s i e n n a ' s	s iy 'eh n _ ax _ z
-s i e r c h i o	s 'iy _ rx ch _ iy ow
+s i e r c h i o	s 'ih _ rx ch _ iy ow
 s i e r r a	s iy 'eh _ rx ax
 s i e r r a ' s	s iy 'eh _ rx ax _ z
 s i e r r a c i n	s iy 'eh _ rx ax s ix n
 s i e r r a s	s iy 'eh _ rx ax z
-s i e r s	s 'iy _ rx z
+s i e r s	s 'ih _ rx z
 s i e s	s 'iy _ z
 s i e s e	s iy 'eh s _
 s i e s s	s 'iy _ _ s
@@ -98197,11 +98197,11 @@ s i x e d	s 'ih k s t
 s i x e r	s 'ih k s axr
 s i x e r s	s 'ih k s axr z
 s i x e s	s 'ih k|s ix z
-s i x t e e n	s ix k s t 'iy n
+s i x t e e n	s "ih k s t 'iy n
 s i x t e e n ' s	s "ih k s t 'iy n _ z
-s i x t e e n s	s 'ih k s t 'iy n z
-s i x t e e n t h	s ix k s t 'iy n _ th
-s i x t e e n t h s	s 'ih k s t 'iy n _ th s
+s i x t e e n s	s "ih k s t 'iy n z
+s i x t e e n t h	s "ih k s t 'iy n _ th
+s i x t e e n t h s	s "ih k s t 'iy n _ th s
 s i x t h	s 'ih k s th
 s i x t h s	s 'ih k s th s
 s i x t i e s	s 'ih k s t iy z
@@ -98388,7 +98388,7 @@ s k o a l	s k 'ow _ lx
 s k o c z y l a s	s k ax ch _ 'ih lx ax z
 s k o d a	s k 'ow d "aa
 s k o f f	s k 'ao _ f
-s k o g	s k 'aa g
+s k o g	s k 'ao g
 s k o g e n	s k 'aa g ax n
 s k o g l u n d	s k 'aa g l ax n d
 s k o k	s k 'aa k
@@ -98738,11 +98738,11 @@ s l o c o m b	s l 'ow k ax m _
 s l o c u m	s l 'ow k ax m
 s l o c u m b	s l 'ow k ax m _
 s l o e	s l 'ow _
-s l o g	s l 'aa g
+s l o g	s l 'ao g
 s l o g a n	s l 'ow g ax n
 s l o g a n s	s l 'ow g ax n z
-s l o g g e d	s l 'aa _ g _ d
-s l o g g i n g	s l 'aa _ g ix _ ng
+s l o g g e d	s l 'ao _ g _ d
+s l o g g i n g	s l 'ao _ g ix _ ng
 s l o k u m	s l 'ow k ax m
 s l o m a	s l 'ow m ax
 s l o m a n	s l 'ow m ax n
@@ -99003,7 +99003,7 @@ s m i t t l e	s m 'ih t ax l _
 s m i t t y	s m 'ih _ t iy
 s m o a k	s m 'ow _ k
 s m o c k	s m 'aa _ k
-s m o g	s m 'aa g
+s m o g	s m 'ao g
 s m o g g i e s t	s m 'aa _ g iy ax s t
 s m o g g y	s m 'ao _ g iy
 s m o k e	s m 'ow k _
@@ -99506,7 +99506,7 @@ s o f t w a r e	s 'ao f t w "eh rx _
 s o f t w a r e ' s	s 'ao f t w "eh rx _ _ z
 s o f t w o o d	s 'ao f t w _ "uh d
 s o g a n g	s 'ow g ae _ ng
-s o g g y	s 'aa _ g iy
+s o g g y	s 'ao _ g iy
 s o g o	s 'ow g ow
 s o h i o	s ow hh 'ay ow
 s o h l	s 'ow _ lx
@@ -99753,7 +99753,7 @@ s o n g b o o k	s 'ao n g b _ "uh k
 s o n g b o o k s	s 'ao n g b _ "uh k s
 s o n g e r	s 'ao _ ng _ axr
 s o n g s	s 'ao _ ng z
-s o n g y	s 'aa n jh iy
+s o n g y	s 'ao n jh iy
 s o n i	s 'ow n "iy
 s o n i a	s 'ow n y "aa
 s o n i c	s 'aa n ix k
@@ -100109,9 +100109,9 @@ s p a c e s h i p	s p 'ey _ _ s sh "ih p
 s p a c e s h i p s	s p 'ey _ _ s sh "ih p s
 s p a c e s u i t	s p 'ey _ _ s "uw _ t
 s p a c e s u i t s	s p 'ey _ _ s "uw _ t s
-s p a c e w a l k	s p 'ey s _ w "aa _ k
+s p a c e w a l k	s p 'ey s _ w "ao _ k
 s p a c e w a l k i n g	s p 'ey s _ w "aa _ k ix _ ng
-s p a c e w a l k s	s p 'ey s _ w "aa _ k s
+s p a c e w a l k s	s p 'ey s _ w "ao _ k s
 s p a c e x	s p 'ey s ax k|s
 s p a c e y	s p 'ey s _ iy
 s p a c i a l	s p 'ey _ sh ax l
@@ -100252,10 +100252,10 @@ s p a u l d i n g	s p 'ao _ lx d ix _ ng
 s p a u r	s p 'ao _ rx
 s p a v o	s p 'aa v "ow
 s p a w	s p 'ao _
-s p a w n	s p 'aa _ n
+s p a w n	s p 'ao _ n
 s p a w n e d	s p 'ao _ n _ d
-s p a w n i n g	s p 'aa _ n ix _ ng
-s p a w n s	s p 'aa _ n z
+s p a w n i n g	s p 'ao _ n ix _ ng
+s p a w n s	s p 'ao _ n z
 s p a y	s p 'ey _
 s p a y d	s p 'ey _ d
 s p a y d e	s p 'ey _ d _
@@ -100277,7 +100277,7 @@ s p e a k i n g	s p 'iy _ k ix _ ng
 s p e a k m a n	s p 'iy _ k m ax n
 s p e a k s	s p 'iy _ k s
 s p e a r	s p 'ih _ rx
-s p e a r e	s p 'iy _ rx _
+s p e a r e	s p 'ih _ rx _
 s p e a r h e a d	s p 'ih _ rx hh "eh _ d
 s p e a r h e a d e d	s p 'ih _ rx hh "eh _ d ix d
 s p e a r h e a d i n g	s p 'ih _ rx hh "eh _ d ix _ ng
@@ -101701,7 +101701,7 @@ s t e a r n	s t _ _ 'er n
 s t e a r n e	s t _ _ 'er n _
 s t e a r n s	s t _ _ 'er n z
 s t e a r n s ' s	s t _ _ 'er n z ix z
-s t e a r s	s t 'iy _ rx z
+s t e a r s	s t 'ih _ rx z
 s t e b b i n s	s t 'eh b _ ix n z
 s t e b e r	s t 'iy b _ axr
 s t e b n e r	s t 'eh b n _ axr
@@ -102558,7 +102558,7 @@ s t o r d a h l	s t 'ao rx d aa _ lx
 s t o r e	s t 'ao rx _
 s t o r e ' s	s t 'ao rx _ _ z
 s t o r e d	s t 'ao rx _ d
-s t o r e f r o n t	s t 'ao rx _ f r "aa n t
+s t o r e f r o n t	s t 'ao rx _ f r "ah n t
 s t o r e f r o n t s	s t 'ao rx _ f r "aa n t s
 s t o r e h o u s e	s t 'ao rx _ hh _ "aw s _
 s t o r e h o u s e ' s	s t 'ao rx _ hh _ "aw s ix _ z
@@ -104347,7 +104347,7 @@ s w a m i	s w 'aa m iy
 s w a m i n a t h a n	s w "aa m ix n 'aa _ th ax n
 s w a m p	s w 'aa m p
 s w a m p b u s t e r	s w 'aa m p b "ah s t _ axr
-s w a m p e d	s w 'ao m p t _
+s w a m p e d	s w 'aa m p t _
 s w a m p e r	s w 'aa m p _ axr
 s w a m p e r s	s w 'aa m p _ axr z
 s w a m p i n g	s w 'aa m p ix _ ng
@@ -104500,7 +104500,7 @@ s w e e t n e s s	s w _ 'iy t n ax s _
 s w e e t o n	s w _ 'iy t ax n
 s w e e t s	s w _ 'iy t s
 s w e e t s e r	s w _ 'iy t s _ axr
-s w e e t w a t e r	s w _ 'iy t w "aa t _ axr
+s w e e t w a t e r	s w _ 'iy t w "ao t _ axr
 s w e e z e y	s w _ 'iy z _ iy
 s w e e z y	s w _ 'iy z iy
 s w e g e r	s w 'iy g _ axr
@@ -104637,7 +104637,7 @@ s w i v e l e d	s w 'ih v ax l _ d
 s w i v e l i n g	s w 'ih v ax l ix _ ng
 s w i v e l s	s w 'ih v ax l z
 s w o f f o r d	s w 'aa _ f _ axr d
-s w o g g e r	s w 'aa _ g _ axr
+s w o g g e r	s w 'ao _ g _ axr
 s w o l l e n	s w 'ow lx ax _ n
 s w o n g e r	s w 'ao _ ng _ axr
 s w o o n	s w _ 'uw n
@@ -104789,7 +104789,7 @@ s y n c h r o n o u s	s 'ih ng k _ r ax n ax _ s
 s y n c o m	s 'ih ng k aa m
 s y n c o p a t e	s 'ih ng k ax p "ey t _
 s y n c o p a t e d	s 'ih ng k ax p "ey t ix d
-s y n c o p a t i o n	s 'ih ng k ax p _ "ey sh ax n
+s y n c o p a t i o n	s "ih ng k ax p _ 'ey sh ax n
 s y n c o p e	s 'ih n k ax p "iy
 s y n c o r	s 'ih n k "ao rx
 s y n d e r	s 'ih n d _ axr
@@ -105717,7 +105717,7 @@ t e a n e c k	t 'iy _ n "eh _ k
 t e a n e y	t 'iy _ n _ iy
 t e a p o t	t 'iy _ p "aa t
 t e a r	t 'eh _ rx
-t e a r e	t 'iy _ rx _
+t e a r e	t 'ih _ rx _
 t e a r f u l	t 'ih _ rx f ax l
 t e a r f u l l y	t 'ih _ rx f ax l _ iy
 t e a r i n g	t 'eh _ rx ix _ ng
@@ -106838,12 +106838,12 @@ t h i r s t	_ th _ 'er s t
 t h i r s t i n g	_ th _ 'er s t ix _ ng
 t h i r s t s	_ th _ 'er s t s
 t h i r s t y	_ th _ 'er s t iy
-t h i r t e e n	_ th _ 'er t _ 'iy n
-t h i r t e e n ' s	_ th _ 'er t _ "iy n _ z
-t h i r t e e n t h	_ th _ 'er t _ 'iy n _ th
-t h i r t e e n t h s	_ th _ 'er t _ 'iy n _ th s
+t h i r t e e n	_ th _ "er t _ 'iy n
+t h i r t e e n ' s	_ th _ "er t _ 'iy n _ z
+t h i r t e e n t h	_ th _ "er t _ 'iy n _ th
+t h i r t e e n t h s	_ th _ "er t _ 'iy n _ th s
 t h i r t i e s	_ th _ 'er t iy _ z
-t h i r t i e t h	_ th _ 'er t iy ax _ th
+t h i r t i e t h	_ th _ 'er t iy ix _ th
 t h i r y	_ th 'ih rx iy
 t h i r z a	_ th _ 'er z ax
 t h i s	_ dh 'ih s
@@ -107253,14 +107253,14 @@ t i e m a n n	t 'iy _ m ax n _
 t i e m e y e r	t 'iy _ m _ ay _ axr
 t i e n	t y 'eh n
 t i e n a n m e n	t y eh n ax n m 'eh n
-t i e r	t 'iy _ rx
-t i e r c e	t 'iy _ rx s _
-t i e r c o	t 'iy _ rx k ow
-t i e r e d	t 'iy _ rx _ d
+t i e r	t 'ih _ rx
+t i e r c e	t 'ih _ rx s _
+t i e r c o	t 'ih _ rx k ow
+t i e r e d	t 'ih _ rx _ d
 t i e r n a n	t 'ih _ rx n ax n
 t i e r n e y	t 'ih _ rx n _ iy
 t i e r n o	t 'ih _ rx n ow
-t i e r s	t 'iy _ rx z
+t i e r s	t 'ih _ rx z
 t i e s	t 'ay _ z
 t i e s z e n	t 'iy _ sh _ ax n
 t i e t j e	t 'iy _ t jh _
@@ -107688,7 +107688,7 @@ t o g g l e d	t 'aa g ax l _ d
 t o g g l i n g	t 'aa g _ l ix _ ng
 t o g n i n o	t "aa g n 'iy n ow
 t o g o	t 'ow g ow
-t o g s	t 'aa g z
+t o g s	t 'ao g z
 t o i b i n	t 'oy _ b ix n
 t o i l	t 'oy _ lx
 t o i l e d	t 'oy _ lx _ d
@@ -108844,8 +108844,8 @@ t r e e s	t r _ 'iy z
 t r e e s e	t r _ 'iy z _
 t r e e s h	t r _ 'iy _ sh
 t r e e s w e e t	t r _ 'iy s w _ "iy t
-t r e e t o p	t r _ 'iy t "ao p
-t r e e t o p s	t r _ 'iy t "ao p s
+t r e e t o p	t r _ 'iy t "aa p
+t r e e t o p s	t r _ 'iy t "aa p s
 t r e f e t h e n	t r 'eh f ix _ th ax n
 t r e f g a r n e	t r 'eh f g aa rx n _
 t r e f r y	t r 'eh f r iy
@@ -109238,7 +109238,7 @@ t r o p w o r l d	t r 'aa p w _ axr l d
 t r o s c h	t r 'aa _ _ sh
 t r o s c l a i r	t r ax s k l 'eh _ rx
 t r o s p e r	t r 'aa s p _ axr
-t r o s t	t r 'aa s t
+t r o s t	t r 'ao s t
 t r o s t e l	t r 'aa s t ax l
 t r o s t l e	t r 'aa s ax l _
 t r o t	t r 'aa t
@@ -109383,7 +109383,7 @@ t r u n c a t e	t r 'ah ng k "ey t _
 t r u n c a t e d	t r 'ah ng k "ey t ix d
 t r u n c a t e s	t r 'ah ng k "ey t _ s
 t r u n c a t i n g	t r 'ah ng k "ey t ix _ ng
-t r u n c a t i o n	t r 'ah ng k _ "ey sh ax n
+t r u n c a t i o n	t r "ah ng k _ 'ey sh ax n
 t r u n c h e o n	t r 'ah n ch _ ix _ n
 t r u n c h e o n s	t r 'ah n ch _ ix _ n z
 t r u n d l e	t r 'ah n d ax l
@@ -109850,7 +109850,7 @@ t w e e z e r s	t w _ 'iy z _ axr z
 t w e l f t h	t w 'eh lx f _ th
 t w e l v e	t w 'eh lx v _
 t w e n t i e s	t w 'eh n t iy _ z
-t w e n t i e t h	t w 'eh n t iy ax _ th
+t w e n t i e t h	t w 'eh n t iy ix _ th
 t w e n t y	t w 'eh n t iy
 t w e n t y ' s	t w 'eh n t iy _ z
 t w e n t y s o m e t h i n g	t w "eh n t iy s 'ah m _ _ th ix _ ng
@@ -111874,7 +111874,7 @@ v a n d e r v l i e t	v 'ae n d _ axr v l "iy _ t
 v a n d e r v o o r t	v 'ae n d _ axr v _ "uh rx t
 v a n d e r v o r t	v 'ae n d _ axr v "ao rx t
 v a n d e r w a l	v 'ae n d _ axr w "aa lx
-v a n d e r w a l l	v 'ae n d _ axr w "aa _ lx
+v a n d e r w a l l	v 'ae n d _ axr w "ao _ lx
 v a n d e r w e e l e	v 'ae n d _ axr w _ "iy lx _
 v a n d e r w e i d e	v 'ae n d _ axr w _ "ay d _
 v a n d e r w e r f	v 'ae n d _ axr w _ "er f
@@ -112540,7 +112540,7 @@ v e r e e n	v 'ih rx _ iy n
 v e r e i n s b a n k	v _ axr _ 'ay n z b "ae ng k
 v e r e n a	v _ axr 'ey n ax
 v e r e n e	v 'eh rx iy n _
-v e r e s	v 'iy rx _ z
+v e r e s	v 'ih rx _ z
 v e r e x	v 'eh rx ax k|s
 v e r g a	v 'eh rx g ax
 v e r g a r a	v _ axr g 'aa rx ax
@@ -114129,7 +114129,7 @@ w a n t a	w 'aa n t ax
 w a n t a g e	w 'aa n t ix jh _
 w a n t a g e s	w 'aa n t ix jh ix z
 w a n t e	w 'aa n t ax
-w a n t e d	w 'ao n t ix d
+w a n t e d	w 'aa n t ix d
 w a n t i n g	w 'aa n t ix _ ng
 w a n t l a n d	w 'aa n t l ax n d
 w a n t o n	w 'ao n t ax n
@@ -114209,9 +114209,9 @@ w a r l e y	w 'ao rx l _ iy
 w a r l i c k	w 'ao rx l ix _ k
 w a r l i k e	w 'ao rx l "ay k _
 w a r l i n g	w 'ao rx l ix _ ng
-w a r l o c k	w 'ao rx l "ao _ k
+w a r l o c k	w 'ao rx l "aa _ k
 w a r l o c k ' s	w 'ao rx l "ao _ k _ s
-w a r l o c k s	w 'ao rx l "ao _ k s
+w a r l o c k s	w 'ao rx l "aa _ k s
 w a r l o e c k	w 'ao rx l "aa _ _ k
 w a r l o r d	w 'ao rx l "ao rx d
 w a r l o r d s	w 'ao rx l "ao rx d z
@@ -114426,7 +114426,7 @@ w a t e r h o u s e	w 'ao t _ axr hh _ "aw s _
 w a t e r h o u s e ' s	w 'ao t _ axr hh _ "aw s ix _ z
 w a t e r i n g	w 'ao t _ axr ix _ ng
 w a t e r i s h n e s s	w 'ao t _ axr ix _ sh n ax _ s
-w a t e r l o g	w 'ao t _ axr l "aa g
+w a t e r l o g	w 'ao t _ axr l "ao g
 w a t e r l o g g e d	w 'ao t _ axr l "aa _ g _ d
 w a t e r m a n	w 'ao t _ axr m ax n
 w a t e r m a n ' s	w 'ao t _ axr m ax n _ z
@@ -114860,8 +114860,8 @@ w e i n t z	w _ 'ay n t s
 w e i n t z ' s	w _ 'ay n t s ix z
 w e i n z i e r l	w _ 'ay n z ix _ r l
 w e i p e r t	w _ 'ay p _ axr t
-w e i r	w _ 'iy rx
-w e i r ' s	w _ 'iy rx _ z
+w e i r	w _ 'ih rx
+w e i r ' s	w _ 'ih rx _ z
 w e i r a u c h	w _ 'ay rx _ aw k _
 w e i r d	w _ 'ih rx d
 w e i r d e r	w _ 'ih rx d _ axr
@@ -115843,7 +115843,7 @@ w i e r	w 'ih _ rx
 w i e r d i n	w 'ih _ rx d ix n
 w i e r e n g a	v ix _ r 'eh ng g ax
 w i e r m a n	w 'ih _ rx m ax n
-w i e r s	w 'iy _ rx z
+w i e r s	w 'ih _ rx z
 w i e r s e m a	v ix _ r s 'iy m ax
 w i e r s m a	v 'ih _ rx s m ax
 w i e r z b a	v 'ih _ rx z b ax
@@ -118423,7 +118423,7 @@ z i e m i a n	z 'iy _ m iy ax n
 z i e m k e	z 'iy _ m k _
 z i e n t e k	z 'iy _ n t ix k
 z i e r	z 'ih _ rx
-z i e r k e	z 'iy _ rx k _
+z i e r k e	z 'ih _ rx k _
 z i e s e m e r	z 'iy _ s iy m _ axr
 z i e s k e	z 'iy _ s k _
 z i e t l o w	z 'iy _ t l ow _
