@@ -150,7 +150,7 @@ def envelope_db(fs, bs, freqs):
     return out
 
 
-# ponytail: only Windows stops the last sound before the next; elsewhere live previews can overlap
+# only Windows stops the last sound before the next; elsewhere live previews can overlap
 def play(path, loop=False):
     if sys.platform == 'win32':
         import winsound

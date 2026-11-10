@@ -56,7 +56,7 @@ impl engine {
 	// NUMBER TO WORD PART
 	fn reset_ntw(&mut self) { self.number = 0; }
 	fn consume_digit(&mut self, x: u8) {
-		// ponytail: saturates past u64 (20+ digits), which then reads the wrong digits; keep the digit text if that matters
+		// saturates past u64 (20+ digits), which then reads the wrong digits; keep the digit text if that matters
 		if x.is_ascii_digit() { self.number = self.number.saturating_mul(10).saturating_add((x - b'0') as u64); }
 	}
 	fn process_number(&mut self, x: u64, zero_oh: bool, is_ordinal: bool) {
