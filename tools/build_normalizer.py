@@ -98,7 +98,7 @@ def write_tables(rules, path):
     first = [[] for _ in range(256)]
     for i, (p, _) in enumerate(entries):
         if p[0] == SPACE:
-            starts = [0x20, 0x08, 0x0A]
+            starts = [0x20, 0x09, 0x0A]
         elif p[0] == EITHER:
             starts = [p[1], p[1] - 0x20]
         else:

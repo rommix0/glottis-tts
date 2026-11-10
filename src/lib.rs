@@ -559,6 +559,8 @@ mod tests {
 	#[test]
 	fn units_follow_the_number() {
 		says_all(&[("It is 100 km away.", "one hundred kilometers"), ("It is 1 km away.", "one kilometer away")]);
+		// a rule that starts with a space starts at a tab or newline too
+		says_all(&[("5\tbps now.", "five bits per second now"), ("5\nbps now.", "five bits per second now")]);
 	}
 
 	#[test]
