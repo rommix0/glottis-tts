@@ -112,7 +112,7 @@ const RHOTIC_F3: f32 = 200.0;
 // where a vowel sits before an r: phone, then F1 and F2 at its start and at its end
 const BEFORE_R: [(u8, f32, f32, f32, f32); 5] = [
 	(13, 420.0, 2060.0, 470.0, 1900.0),	// eh
-	(1,  610.0, 1000.0, 640.0, 1000.0),	// aa
+	(1,  706.0, 1250.0, 716.0, 1300.0),	// aa: only a little closer than its own place
 	(4,  548.0,  808.0, 545.0,  808.0),	// ao
 	(38, 310.0,  930.0, 370.0,  890.0),	// uh
 	(39, 310.0,  930.0, 370.0,  890.0),	// uw
@@ -2575,6 +2575,9 @@ mod tests {
 		assert!(ao_r.0 < ao_t.0 - 80.0 && ao_r.1 < ao_t.1 - 100.0, "ao before r {:?}, before t {:?}", ao_r, ao_t);
 		let (_, a, b) = vowel_targets(36, 38, 33);
 		assert!(a < 1100.0 && b < 1100.0, "uh in tour glides {} -> {}", a, b);
+		// aa barely moves ("march" is not "morch")
+		let (aa_r, aa_t) = (vowel_targets(9, 1, 33), vowel_targets(9, 1, 36));
+		assert!(aa_r.0 > aa_t.0 - 80.0 && (aa_r.1 - aa_t.1).abs() < 100.0, "aa before r {:?}, before t {:?}", aa_r, aa_t);
 	}
 
 	#[test]
