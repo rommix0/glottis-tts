@@ -119,14 +119,14 @@ pub struct Voice {
 
 // voice profiles, picked by number; 0-4 follow head size, 5 and up are silly
 pub const VOICES: [Voice; 8] = [
-	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.0, fl:  25.0, jit: 0.2, shim: 0.2 },	// 0 table voice
-	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.5, fl:  25.0, jit: 0.2, shim: 0.2 },	// 1 large head
-	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -2.5, fl:  25.0, jit: 0.2, shim: 0.2 },	// 2 female
-	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -5.0, fl:  25.0, jit: 0.2, shim: 0.2 },	// 3 child
-	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.0, fl:  25.0, jit: 0.6, shim: 0.4 },	// 4 giant
-	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  1.5, fl:  25.0, jit: 0.2, shim: 0.2 },	// 5 deep voice, tiny head
-	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  1.0, fl:  25.0, jit: 0.2, shim: 0.2 },	// 6 pulled apart
-	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  0.5, fl: 250.0, jit: 1.5, shim: 1.0 },	// 7 shaky
+	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },	// 0 table voice
+	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },	// 1 large head
+	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -1.4, fl:  25.0, jit: 0.2, shim: 0.2 },	// 2 female
+	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -3.1, fl:  25.0, jit: 0.2, shim: 0.2 },	// 3 child
+	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.1, fl:  25.0, jit: 0.6, shim: 0.4 },	// 4 giant
+	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  2.6, fl:  25.0, jit: 0.2, shim: 0.2 },	// 5 deep voice, tiny head
+	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.6, fl:  25.0, jit: 0.2, shim: 0.2 },	// 6 pulled apart
+	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  1.1, fl: 250.0, jit: 1.5, shim: 1.0 },	// 7 shaky
 ];
 
 struct noise { nxt: u32 }
@@ -554,6 +554,7 @@ pub struct vtm {
 	fric_y1:  f32,		// frication noise lowpass state
 	voice:    Voice,	// voice profile
 	vgain:    f32,		// the voice profile's output level, linear
+	min_bw:   f32,		// the cascade's B1/B2 floor: wider for a higher-pitched voice, whose rings have less time to die
 	fric_a:   f32,		// frication lowpass coefficient
 	lip_d:    f32,		// lip radiation coefficient at this rate
 	out_g:    f32,		// output trim, linear
@@ -615,6 +616,7 @@ impl vtm {
 			fric_y1: 0.0,
 			voice: VOICES[0],
 			vgain: 1.0,
+			min_bw: CASC_MIN_BW,
 
 			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
 			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
@@ -628,21 +630,23 @@ impl vtm {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
 		self.voice = v;
 		self.vgain = libm::powf(10.0, v.db / 20.0);
+		self.min_bw = CASC_MIN_BW * libm::sqrtf((v.f0 / 100.0).max(1.0));
 		self.glottal.jitter = v.jit;
 		self.glottal.shimmer = v.shim;
 		let f = |hz: f32| (hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32);
-		self.VR4  = resonator::new(f(F4_INIT),  B4_INIT,  false);
-		self.VR5  = resonator::new(f(F5_INIT),  B5_INIT,  false);
-		self.VR6  = resonator::new(f(F6_INIT),  B6_INIT,  false);
-		self.VR7  = resonator::new(f(F7_INIT),  B7_INIT,  false);
-		self.VR8  = resonator::new(f(F8_INIT),  B8_INIT,  false);
-		self.FR4  = resonator::new(f(F4_INIT),  B4_INIT,  false);
-		self.FR5  = resonator::new(f(F5_INIT),  B5_INIT,  false);
-		self.FR6  = resonator::new(f(F6_INIT),  B6_INIT,  false);
-		self.FR7  = resonator::new(f(F7_INIT),  B7_INIT,  false);
-		self.FR8  = resonator::new(f(F8_INIT),  B8_INIT,  false);
-		self.FR9  = resonator::new(f(F9_INIT),  B9_INIT,  false);
-		self.FR10 = resonator::new(f(F10_INIT), B10_INIT, false);
+		let b = |hz: f32| hz * (v.fhi / 100.0);
+		self.VR4  = resonator::new(f(F4_INIT),  b(B4_INIT),  false);
+		self.VR5  = resonator::new(f(F5_INIT),  b(B5_INIT),  false);
+		self.VR6  = resonator::new(f(F6_INIT),  b(B6_INIT),  false);
+		self.VR7  = resonator::new(f(F7_INIT),  b(B7_INIT),  false);
+		self.VR8  = resonator::new(f(F8_INIT),  b(B8_INIT),  false);
+		self.FR4  = resonator::new(f(F4_INIT),  b(B4_INIT),  false);
+		self.FR5  = resonator::new(f(F5_INIT),  b(B5_INIT),  false);
+		self.FR6  = resonator::new(f(F6_INIT),  b(B6_INIT),  false);
+		self.FR7  = resonator::new(f(F7_INIT),  b(B7_INIT),  false);
+		self.FR8  = resonator::new(f(F8_INIT),  b(B8_INIT),  false);
+		self.FR9  = resonator::new(f(F9_INIT),  b(B9_INIT),  false);
+		self.FR10 = resonator::new(f(F10_INIT), b(B10_INIT), false);
 	}
 	fn apply_voice(&mut self) {
 		// scale this sample's pitch, formants and source by the voice profile
@@ -655,6 +659,10 @@ impl vtm {
 		self.F1 = (self.F1 * (v.f1 / 100.0)).min(top);
 		self.F2 = (self.F2 * (v.f2 / 100.0)).min(top);
 		self.F3 = (self.F3 * (v.f3 / 100.0)).min(top);
+		// bandwidths follow the formants, so a smaller tract keeps the same sharpness (Q)
+		self.B1 *= v.f1 / 100.0;
+		self.B2 *= v.f2 / 100.0;
+		self.B3 *= v.f3 / 100.0;
 		self.RD *= v.rd / 100.0;
 		self.BR += v.br;
 	}
@@ -671,8 +679,8 @@ impl vtm {
 		// F0-proximity bandwidth adjust
 		self.B1 += 200.0 * libm::powf(self.F0 / self.F1 - 0.5, 2.0);
 
-		// glottal leakage adjust (B1, B2)
-		let DB1 = 250.0 * libm::powf(self.F1 / 500.0, 2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0;
+		// glottal leakage adjust (B1, B2): an open glottis only adds loss, so it never narrows a bandwidth
+		let DB1 = (250.0 * libm::powf(self.F1 / 500.0, 2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0).max(0.0);
 		let DB2 = DB1 * self.F1 / (2.0 * self.F2);
 		self.B1 += DB1;
 		self.B2 += DB2;
@@ -710,8 +718,8 @@ impl vtm {
 		let mut bb1 = self.B1 * self.B1_ADJ;
 		let mut bb2 = self.B2 * self.B2_ADJ;
 		let mut bb3 = self.B3 * self.B3_ADJ;
-		if bb1 < CASC_MIN_BW { bb1 = CASC_MIN_BW; }
-		if bb2 < CASC_MIN_BW { bb2 = CASC_MIN_BW; }
+		if bb1 < self.min_bw { bb1 = self.min_bw; }
+		if bb2 < self.min_bw { bb2 = self.min_bw; }
 		if bb3 < 40.0 { bb3 = 40.0; }
 
 		// nasal coupling (Hawkins & Stevens 1985)
@@ -813,11 +821,29 @@ mod tests {
 
 	#[test]
 	fn cascade_bandwidths_have_a_floor() {
-		// a B1 or B2 asked below the floor renders exactly as the floor itself
+		// a B1 or B2 asked below the floor renders exactly as the floor itself (both of these end under it)
 		let render = |b1: f32, b2: f32| steady(VOICES[0], 600.0, 1500.0, b1, b2);
-		let floor = render(CASC_MIN_BW, CASC_MIN_BW);
+		let floor = render(10.0, 10.0);
 		assert_eq!(render(20.0, 20.0), floor);
-		assert_ne!(render(CASC_MIN_BW + 200.0, CASC_MIN_BW), floor);
+		assert_ne!(render(CASC_MIN_BW + 200.0, 10.0), floor);
+	}
+
+	#[test]
+	fn high_voices_have_a_higher_bandwidth_floor() {
+		// a high voice's rings have less time to die between pulses: a B1 the table voice keeps is floored there
+		let hi = VOICES[3];
+		assert_eq!(steady(hi, 600.0, 1500.0, 50.0, 10.0), steady(hi, 600.0, 1500.0, 10.0, 10.0));
+		assert_ne!(steady(VOICES[0], 600.0, 1500.0, 50.0, 10.0), steady(VOICES[0], 600.0, 1500.0, 10.0, 10.0));
+	}
+
+	#[test]
+	fn glottal_leakage_never_narrows() {
+		// whatever the source, the bandwidths a vowel asks for only get wider
+		for &rd in &[0.3f32, 0.6, 1.0, 2.0] {
+			let mut v = vtm::new();
+			for _ in 0..50 { v.F0 = 110.0; v.AV = DB_GAIN[60]; v.RD = rd; v.F1 = 750.0; v.F2 = 1250.0; v.B1 = 100.0; v.B2 = 88.0; v.step(); }
+			assert!(v.B1 >= 100.0 && v.B2 >= 88.0, "Rd {}: B1 {} B2 {}", rd, v.B1, v.B2);
+		}
 	}
 
 	#[test]
@@ -939,11 +965,10 @@ mod tests {
 
 	#[test]
 	fn voices_scale_the_formants_they_are_given() {
-		// a voice at 150% renders the table's formants as the table voice renders them 1.5 times higher
-		let render = |voice: Voice, f1: f32, f2: f32| steady(voice, f1, f2, 80.0, 90.0);
+		// a voice at 150% renders the table's formants as the table voice renders them 1.5 times higher and wider
 		let big = Voice { f1: 150.0, f2: 150.0, ..VOICES[0] };
-		assert_eq!(render(big, 400.0, 1000.0), render(VOICES[0], 600.0, 1500.0));
-		assert_ne!(render(big, 400.0, 1000.0), render(VOICES[0], 400.0, 1000.0));
+		assert_eq!(steady(big, 400.0, 1000.0, 80.0, 90.0), steady(VOICES[0], 600.0, 1500.0, 120.0, 135.0));
+		assert_ne!(steady(big, 400.0, 1000.0, 80.0, 90.0), steady(VOICES[0], 600.0, 1500.0, 80.0, 90.0));
 	}
 
 	#[test]
