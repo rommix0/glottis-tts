@@ -110,8 +110,9 @@ const BACK_TRANSITION_MS: f32 = 80.0;
 const RHOTIC_F3: f32 = 200.0;
 
 // where a vowel sits before an r: phone, then F1 and F2 at its start and at its end
-const BEFORE_R: [(u8, f32, f32, f32, f32); 5] = [
+const BEFORE_R: [(u8, f32, f32, f32, f32); 6] = [
 	(13, 420.0, 2060.0, 470.0, 1900.0),	// eh
+	(19, 300.0, 2400.0, 330.0, 2250.0),	// ih: near ee ("near", "here")
 	(1,  706.0, 1250.0, 716.0, 1300.0),	// aa: only a little closer than its own place
 	(4,  548.0,  808.0, 545.0,  808.0),	// ao
 	(38, 310.0,  930.0, 370.0,  890.0),	// uh
@@ -2578,6 +2579,9 @@ mod tests {
 		// aa barely moves ("march" is not "morch")
 		let (aa_r, aa_t) = (vowel_targets(9, 1, 33), vowel_targets(9, 1, 36));
 		assert!(aa_r.0 > aa_t.0 - 80.0 && (aa_r.1 - aa_t.1).abs() < 100.0, "aa before r {:?}, before t {:?}", aa_r, aa_t);
+		// ih closer and further front, toward ee ("near" is not "nit-r")
+		let (ih_r, ih_t) = (vowel_targets(27, 19, 33), vowel_targets(27, 19, 36));
+		assert!(ih_r.0 < ih_t.0 - 60.0 && ih_r.1 > ih_t.1 + 200.0, "ih before r {:?}, before t {:?}", ih_r, ih_t);
 	}
 
 	#[test]
