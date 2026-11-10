@@ -78,10 +78,8 @@ def read_rules(path):
             continue
         pattern, repl = line.split('\t')
         text = unescape(repl.strip()[1:-1])
-        m = re.search(r'\{([^}]*)\}', text)
-        head, plural, tail = (text[:m.start()], m.group(1), text[m.end():]) if m else (text, '', '')
         try:
-            rules.append((expand(pattern), head, plural, tail))
+            rules.append((expand(pattern), text))
         except ValueError as e:
             sys.exit(f'{path}:{n}: {e}')
     return rules
@@ -96,9 +94,9 @@ def rust_str(s):
 
 
 def write_tables(rules, path):
-    entries = [(p, h, pl, t) for alts, h, pl, t in rules for p in alts]
+    entries = [(p, t) for alts, t in rules for p in alts]
     first = [[] for _ in range(256)]
-    for i, (p, _, _, _) in enumerate(entries):
+    for i, (p, _) in enumerate(entries):
         if p[0] == SPACE:
             starts = [0x20, 0x08, 0x0A]
         elif p[0] == EITHER:
@@ -109,9 +107,9 @@ def write_tables(rules, path):
             first[s].append(i)
     lines = ['// fixed-text normalizer rules', '',
              f'// pattern bytes: {SPACE:#04x} any space (space, tab, newline), {EITHER:#04x} then a lowercase letter that',
-             '// matches either case; then the replacement, the plural ending added after a plural number, the rest',
-             f'pub static RULES: [(&[u8], &str, &str, &str); {len(entries)}] = [']
-    lines += [f'\t({rust_bytes(p)}, {rust_str(h)}, {rust_str(pl)}, {rust_str(t)}),' for p, h, pl, t in entries]
+             '// matches either case; then the replacement, where {s} (any {...}) is added only after a plural number',
+             f'pub static RULES: [(&[u8], &str); {len(entries)}] = [']
+    lines += [f'\t({rust_bytes(p)}, {rust_str(t)}),' for p, t in entries]
     lines += ['];', '', '// the rules that can start with each byte, in rule order', 'pub static FIRST: [&[u16]; 256] = [']
     lines += ['\t&[' + ', '.join(map(str, f)) + '],' for f in first]
     lines += ['];', '']

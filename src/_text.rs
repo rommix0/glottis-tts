@@ -859,7 +859,11 @@ impl engine {
 		let lex = Self::lexer_len(buf);
 		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
 		consume(buf, n);
-		let (_, text, plural, rest) = RULES[r];
+		// "bit{s} per second": the part in braces is added only after a plural number
+		let (text, plural, rest) = match RULES[r].1.split_once('{') {
+			Some((text, t)) => { let (plural, rest) = t.split_once('}').unwrap_or((t, "")); (text, plural, rest) }
+			None => (RULES[r].1, "", ""),
+		};
 		self.scratch_pad.write_text(text);
 		if self.is_plural && !plural.is_empty() {
 			self.is_plural = false;
