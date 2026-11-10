@@ -53,6 +53,13 @@ impl engine {
 		cc
 	}
 
+	// a word or words with a space either side
+	fn say(&mut self, w: &str) {
+		self.scratch_pad.write_text(" ");
+		self.scratch_pad.write_text(w);
+		self.scratch_pad.write_text(" ");
+	}
+
 	// NUMBER TO WORD PART
 	fn reset_ntw(&mut self) { self.number = 0; }
 	fn consume_digit(&mut self, x: u8) {
@@ -71,9 +78,7 @@ impl engine {
 		if x == 0 && zero_oh {
 			self.scratch_pad.write_text(" oh ");
 		} else if x < 20 {
-			self.scratch_pad.write_text(" ");
-			self.scratch_pad.write_text(if is_ordinal { ONES_TH[x as usize] } else { ONES[x as usize] });
-			self.scratch_pad.write_text(" ");
+			self.say(if is_ordinal { ONES_TH[x as usize] } else { ONES[x as usize] });
 		} else if x < 100 {
 			let (tens, ones) = (x / 10, x % 10);
 			self.scratch_pad.write_text(" ");
@@ -173,7 +178,8 @@ impl engine {
 		let mut out = Vec::new();
 		while self.is_not_empty() { out.push(self.read()); }
 		self.scratch_pad = saved;
-		String::from_utf8(out).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ")
+		// write_text already keeps one space between words
+		String::from_utf8(out).unwrap_or_default().trim().into()
 	}
 	fn year_words(&mut self, y: u64) -> String {
 		// 1999 nineteen ninety nine, 1905 nineteen oh five, 1900 nineteen hundred, 2005 two thousand five
@@ -195,6 +201,43 @@ impl engine {
 			n += 1;
 		}
 		(v, n)
+	}
+	fn fraction(a: &[u8], mut k: usize) -> (Vec<u8>, usize) {
+		// the digits after a decimal point at a[k], and where they end
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let mut frac = Vec::new();
+		if at(k) == b'.' && at(k + 1).is_ascii_digit() {
+			k += 1;
+			while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
+		}
+		(frac, k)
+	}
+	fn amount(a: &[u8], from: usize) -> (u64, Vec<u8>, usize) {
+		// the number at a[from..] with its thousands commas and decimal digits, and where it ends
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let (mut v, n) = Self::digits(a, from);
+		let mut k = from + n;
+		while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
+			v = v.saturating_mul(1000).saturating_add(Self::digits(a, k + 1).0);
+			k += 4;
+		}
+		let (frac, k) = Self::fraction(a, k);
+		(v, frac, k)
+	}
+	fn scale_after(a: &[u8], k: usize) -> Option<(&'static str, usize)> {
+		// a scale word after spaces at a[k..] ("$20 billion"), and where it ends
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let mut j = k;
+		while is_space(at(j)) { j += 1; }
+		if j == k { return None; }
+		["thousand", "million", "billion", "trillion"].into_iter()
+			.find(|w| a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !at(j + w.len()).is_ascii_alphabetic())
+			.map(|w| (w, j + w.len()))
+	}
+	fn point(&mut self, frac: &[u8]) -> String {
+		// " point five oh" for decimal digits, or nothing
+		let p: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
+		if frac.is_empty() { p } else { format!(" point{}", p) }
 	}
 	fn context_rule(&mut self, buf: &mut cbuf) -> bool {
 		const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august",
@@ -278,7 +321,7 @@ impl engine {
 				let r = 1 + q;
 				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's' && !at(r + 3).is_ascii_alphabetic() {
 					let w = self.words(((at(r) - b'0') * 10) as u64, false, false);
-					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
+					self.say(&Self::plural_last(&w));
 					consume(buf, r + 3);
 					return true;
 				}
@@ -287,7 +330,7 @@ impl engine {
 					let mut k = r;
 					while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; }
 					if Self::is_word(&w) {
-						self.scratch_pad.write_text(&format!(" {} ", w));
+						self.say(&w);
 						consume(buf, k);
 					} else {
 						self.scratch_pad.write_text(" ");
@@ -305,7 +348,7 @@ impl engine {
 				let mut k = 1 + q;
 				while is_space(at(k)) { k += 1; }
 				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { match at(0) { b'?' => "?", b'!' => "!", _ => "." } };
-				self.scratch_pad.write_text(&format!(" {} ", mark));
+				self.say(mark);
 				self.digit_prev = false;
 				self.is_plural = false;
 				consume(buf, 1 + q);
@@ -366,29 +409,11 @@ impl engine {
 		if let Some((len, one, many, sub_one, sub_many)) = currency {
 			if at(len).is_ascii_digit() {
 				// the whole amount, with its thousands commas
-				let (mut v, n) = Self::digits(&a, len);
-				let mut k = len + n;
-				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
-					v = v.saturating_mul(1000).saturating_add(Self::digits(&a, k + 1).0);
-					k += 4;
-				}
-				let mut frac: Vec<u8> = Vec::new();
-				if at(k) == b'.' && at(k + 1).is_ascii_digit() {
-					k += 1;
-					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
-				}
+				let (v, frac, mut k) = Self::amount(&a, len);
 				let num = self.words(v, false, false);
-				let mut j = k;
-				while is_space(at(j)) { j += 1; }
-				let scale = if j > k {
-					["thousand", "million", "billion", "trillion"].into_iter().find(|w| {
-						a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !at(j + w.len()).is_ascii_alphabetic()
-					})
-				} else { None };
-				let text = if let Some(w) = scale {
-					let point: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
-					let point = if frac.is_empty() { point } else { format!(" point{}", point) };
-					k = j + w.len();
+				let text = if let Some((w, end)) = Self::scale_after(&a, k) {
+					let point = self.point(&frac);
+					k = end;
 					format!(" {}{} {} {} ", num, point, w, many)
 				} else {
 					let unit = if v == 1 { one } else { many };
@@ -451,16 +476,7 @@ impl engine {
 				("mph", "mile per hour", "miles per hour", false), ("km/h", "kilometer per hour", "kilometers per hour", false),
 				("km/hr", "kilometer per hour", "kilometers per hour", false)];
 			{
-				let (mut v, mut k) = (v1, n1);
-				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
-					v = v.saturating_mul(1000).saturating_add(Self::digits(&a, k + 1).0);
-					k += 4;
-				}
-				let mut frac: Vec<u8> = Vec::new();
-				if at(k) == b'.' && at(k + 1).is_ascii_digit() {
-					k += 1;
-					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
-				}
+				let (v, frac, k) = Self::amount(&a, 0);
 				let joined = !is_space(at(k));
 				let mut j = k;
 				while is_space(at(j)) { j += 1; }
@@ -470,8 +486,7 @@ impl engine {
 					.max_by_key(|u| u.0.len());
 				if let Some(&(ab, one, many, _)) = unit {
 					let num = self.words(v, false, false);
-					let point: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
-					let point = if frac.is_empty() { point } else { format!(" point{}", point) };
+					let point = self.point(&frac);
 					let name = if v == 1 && frac.is_empty() { one } else { many };
 					self.scratch_pad.write_text(&format!(" {}{} {} ", num, point, name));
 					consume(buf, j + ab.len());
@@ -502,8 +517,12 @@ impl engine {
 					k += 1 + n;
 				}
 				if parts.len() >= 3 && !at(k).is_ascii_alphabetic() {
-					let said: Vec<String> = parts.iter().map(|&v| self.words(v, false, true)).collect();
-					self.scratch_pad.write_text(&format!(" {} ", said.join(" point ")));
+					for (i, &v) in parts.iter().enumerate() {
+						let w = self.words(v, false, true);
+						self.scratch_pad.write_text(if i == 0 { " " } else { " point " });
+						self.scratch_pad.write_text(&w);
+					}
+					self.scratch_pad.write_text(" ");
 					consume(buf, k);
 					self.digit_prev = true;
 					return true;
@@ -544,7 +563,7 @@ impl engine {
 			if let Some(s) = s_at {
 				if v1 % 10 == 0 && ends(s + 1) && ((n1 == 4 && (1100..=2099).contains(&v1)) || (n1 == 2 && v1 >= 10)) {
 					let w = if n1 == 4 { self.year_words(v1) } else { self.words(v1, false, false) };
-					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
+					self.say(&Self::plural_last(&w));
 					consume(buf, s + 1);
 					return true;
 				}
@@ -584,7 +603,7 @@ impl engine {
 			}
 			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' && year {
 				let w = self.year_words(v1);
-				self.scratch_pad.write_text(&format!(" {} ", w));
+				self.say(&w);
 				consume(buf, 4);
 				self.digit_prev = true;
 				self.is_plural = true;
@@ -595,25 +614,12 @@ impl engine {
 		// money with a scale word: $1.5 million, $20 billion
 		if at(0) == b'$' && at(1).is_ascii_digit() {
 			let (v, n) = Self::digits(&a, 1);
-			let mut k = 1 + n;
-			let mut frac = String::new();
-			if at(k) == b'.' && at(k + 1).is_ascii_digit() {
-				k += 1;
-				while at(k).is_ascii_digit() { frac.push_str(&format!(" {}", self.words((at(k) - b'0') as u64, false, true))); k += 1; }
-			}
-			let mut j = k;
-			while is_space(at(j)) { j += 1; }
-			if j > k {
-				for scale in ["thousand", "million", "billion", "trillion"] {
-					let w = a.get(j..j + scale.len()).is_some_and(|s| s.eq_ignore_ascii_case(scale.as_bytes()));
-					if w && !at(j + scale.len()).is_ascii_alphabetic() {
-						let point = if frac.is_empty() { String::new() } else { format!(" point{}", frac) };
-						let num = self.words(v, false, false);
-						self.scratch_pad.write_text(&format!(" {}{} {} dollars ", num, point, scale));
-						consume(buf, j + scale.len());
-						return true;
-					}
-				}
+			let (frac, k) = Self::fraction(&a, 1 + n);
+			if let Some((scale, end)) = Self::scale_after(&a, k) {
+				let (num, point) = (self.words(v, false, false), self.point(&frac));
+				self.scratch_pad.write_text(&format!(" {}{} {} dollars ", num, point, scale));
+				consume(buf, end);
+				return true;
 			}
 		}
 
@@ -681,7 +687,7 @@ impl engine {
 				// a word ends what a number before it started, as any letter does
 				self.digit_prev = false;
 				self.is_plural = false;
-				self.scratch_pad.write_text(&format!(" {} ", w.to_ascii_uppercase()));
+				self.say(&w.to_ascii_uppercase());
 				consume(buf, n);
 				return true;
 			}
@@ -699,13 +705,13 @@ impl engine {
 					let before = Self::prev_word(buf);
 					let ruler = before.as_bytes().first().is_some_and(|c| c.is_ascii_uppercase()) && !CARDINAL_AFTER.contains(&before.to_ascii_lowercase().as_str());
 					let w = if ruler { format!("the {}", self.words(v, true, false)) } else { self.words(v, false, false) };
-					self.scratch_pad.write_text(&format!(" {} ", w));
+					self.say(&w);
 					consume(buf, n);
 					return true;
 				}
 				let low = run.to_ascii_lowercase();
 				if n >= 3 && Self::is_word(&low) {
-					self.scratch_pad.write_text(&format!(" {} ", low));
+					self.say(&low);
 					consume(buf, n);
 					return true;
 				}
@@ -999,7 +1005,7 @@ let mut t5;
                             yystate = 23;
                             continue 'yyl;
                         }
-                        0x30 => {
+                        0x30 ..= 0x39 => {
                             yyt1 = buf.getcurs();
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
@@ -1007,167 +1013,45 @@ let mut t5;
                             yystate = 25;
                             continue 'yyl;
                         }
-                        0x31 ..= 0x39 => {
-                            yyt1 = buf.getcurs();
-                            yyt2 = buf.getcurs();
-                            yyt3 = buf.getcurs();
+                        0x3A => {
                             buf.advance();
                             yystate = 27;
                             continue 'yyl;
                         }
-                        0x3A => {
+                        0x3B => {
                             buf.advance();
                             yystate = 28;
                             continue 'yyl;
                         }
-                        0x3B => {
+                        0x3F => {
                             buf.advance();
                             yystate = 29;
                             continue 'yyl;
                         }
-                        0x3F => {
+                        0x41 => {
                             buf.advance();
                             yystate = 30;
                             continue 'yyl;
                         }
-                        0x41 => {
+                        0x42 ..= 0x4F |
+                        0x51 ..= 0x5A => {
                             buf.advance();
-                            yystate = 31;
-                            continue 'yyl;
-                        }
-                        0x42 => {
-                            buf.advance();
-                            yystate = 33;
-                            continue 'yyl;
-                        }
-                        0x43 => {
-                            buf.advance();
-                            yystate = 35;
-                            continue 'yyl;
-                        }
-                        0x44 => {
-                            buf.advance();
-                            yystate = 37;
-                            continue 'yyl;
-                        }
-                        0x45 => {
-                            buf.advance();
-                            yystate = 39;
-                            continue 'yyl;
-                        }
-                        0x46 => {
-                            buf.advance();
-                            yystate = 41;
-                            continue 'yyl;
-                        }
-                        0x47 => {
-                            buf.advance();
-                            yystate = 43;
-                            continue 'yyl;
-                        }
-                        0x48 => {
-                            buf.advance();
-                            yystate = 45;
-                            continue 'yyl;
-                        }
-                        0x49 => {
-                            buf.advance();
-                            yystate = 47;
-                            continue 'yyl;
-                        }
-                        0x4A => {
-                            buf.advance();
-                            yystate = 49;
-                            continue 'yyl;
-                        }
-                        0x4B => {
-                            buf.advance();
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                        0x4C => {
-                            buf.advance();
-                            yystate = 53;
-                            continue 'yyl;
-                        }
-                        0x4D => {
-                            buf.advance();
-                            yystate = 55;
-                            continue 'yyl;
-                        }
-                        0x4E => {
-                            buf.advance();
-                            yystate = 57;
-                            continue 'yyl;
-                        }
-                        0x4F => {
-                            buf.advance();
-                            yystate = 59;
+                            yystate = 32;
                             continue 'yyl;
                         }
                         0x50 => {
                             buf.advance();
-                            yystate = 61;
-                            continue 'yyl;
-                        }
-                        0x51 => {
-                            buf.advance();
-                            yystate = 63;
-                            continue 'yyl;
-                        }
-                        0x52 => {
-                            buf.advance();
-                            yystate = 65;
-                            continue 'yyl;
-                        }
-                        0x53 => {
-                            buf.advance();
-                            yystate = 67;
-                            continue 'yyl;
-                        }
-                        0x54 => {
-                            buf.advance();
-                            yystate = 69;
-                            continue 'yyl;
-                        }
-                        0x55 => {
-                            buf.advance();
-                            yystate = 71;
-                            continue 'yyl;
-                        }
-                        0x56 => {
-                            buf.advance();
-                            yystate = 73;
-                            continue 'yyl;
-                        }
-                        0x57 => {
-                            buf.advance();
-                            yystate = 75;
-                            continue 'yyl;
-                        }
-                        0x58 => {
-                            buf.advance();
-                            yystate = 77;
-                            continue 'yyl;
-                        }
-                        0x59 => {
-                            buf.advance();
-                            yystate = 79;
-                            continue 'yyl;
-                        }
-                        0x5A => {
-                            buf.advance();
-                            yystate = 81;
+                            yystate = 33;
                             continue 'yyl;
                         }
                         0x5B => {
                             buf.advance();
-                            yystate = 83;
+                            yystate = 34;
                             continue 'yyl;
                         }
                         0x5E => {
                             buf.advance();
-                            yystate = 84;
+                            yystate = 35;
                             continue 'yyl;
                         }
                         0x5F => {
@@ -1175,43 +1059,43 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 85;
+                            yystate = 36;
                             continue 'yyl;
                         }
                         0x61 => {
                             buf.advance();
-                            yystate = 86;
+                            yystate = 37;
                             continue 'yyl;
                         }
                         0x62 ..= 0x6F |
                         0x71 ..= 0x7A => {
                             buf.advance();
-                            yystate = 88;
+                            yystate = 39;
                             continue 'yyl;
                         }
                         0x70 => {
                             buf.advance();
-                            yystate = 89;
+                            yystate = 40;
                             continue 'yyl;
                         }
                         0x7B => {
                             buf.advance();
-                            yystate = 90;
+                            yystate = 41;
                             continue 'yyl;
                         }
                         0x7C => {
                             buf.advance();
-                            yystate = 91;
+                            yystate = 42;
                             continue 'yyl;
                         }
                         0xC2 => {
                             buf.advance();
-                            yystate = 92;
+                            yystate = 43;
                             continue 'yyl;
                         }
                         0xE2 => {
                             buf.advance();
-                            yystate = 93;
+                            yystate = 44;
                             continue 'yyl;
                         }
                         _ => {
@@ -1242,17 +1126,17 @@ let mut t5;
                     match yych {
                         0x21 => {
                             buf.advance();
-                            yystate = 94;
+                            yystate = 45;
                             continue 'yyl;
                         }
                         0x22 => {
                             buf.advance();
-                            yystate = 95;
+                            yystate = 46;
                             continue 'yyl;
                         }
                         0x27 => {
                             buf.advance();
-                            yystate = 96;
+                            yystate = 47;
                             continue 'yyl;
                         }
                         0x28 => {
@@ -1262,52 +1146,52 @@ let mut t5;
                         }
                         0x29 => {
                             buf.advance();
-                            yystate = 97;
+                            yystate = 48;
                             continue 'yyl;
                         }
                         0x2C => {
                             buf.advance();
-                            yystate = 98;
+                            yystate = 49;
                             continue 'yyl;
                         }
                         0x2D => {
                             buf.advance();
-                            yystate = 99;
+                            yystate = 50;
                             continue 'yyl;
                         }
                         0x2E => {
                             buf.advance();
-                            yystate = 101;
+                            yystate = 52;
                             continue 'yyl;
                         }
                         0x3A => {
                             buf.advance();
-                            yystate = 102;
+                            yystate = 53;
                             continue 'yyl;
                         }
                         0x3B => {
                             buf.advance();
-                            yystate = 103;
+                            yystate = 54;
                             continue 'yyl;
                         }
                         0x3F => {
                             buf.advance();
-                            yystate = 104;
+                            yystate = 55;
                             continue 'yyl;
                         }
                         0x5D => {
                             buf.advance();
-                            yystate = 105;
+                            yystate = 56;
                             continue 'yyl;
                         }
                         0x7D => {
                             buf.advance();
-                            yystate = 106;
+                            yystate = 57;
                             continue 'yyl;
                         }
                         0xE2 => {
                             buf.advance();
-                            yystate = 107;
+                            yystate = 58;
                             continue 'yyl;
                         }
                         _ => {
@@ -1323,17 +1207,17 @@ let mut t5;
                     match yych {
                         0x21 => {
                             buf.advance();
-                            yystate = 94;
+                            yystate = 45;
                             continue 'yyl;
                         }
                         0x22 => {
                             buf.advance();
-                            yystate = 95;
+                            yystate = 46;
                             continue 'yyl;
                         }
                         0x27 => {
                             buf.advance();
-                            yystate = 96;
+                            yystate = 47;
                             continue 'yyl;
                         }
                         0x28 => {
@@ -1343,62 +1227,62 @@ let mut t5;
                         }
                         0x29 => {
                             buf.advance();
-                            yystate = 97;
+                            yystate = 48;
                             continue 'yyl;
                         }
                         0x2C => {
                             buf.advance();
-                            yystate = 98;
+                            yystate = 49;
                             continue 'yyl;
                         }
                         0x2D => {
                             buf.advance();
-                            yystate = 99;
+                            yystate = 50;
                             continue 'yyl;
                         }
                         0x2E => {
                             buf.advance();
-                            yystate = 101;
+                            yystate = 52;
                             continue 'yyl;
                         }
                         0x3A => {
                             buf.advance();
-                            yystate = 102;
+                            yystate = 53;
                             continue 'yyl;
                         }
                         0x3B => {
                             buf.advance();
-                            yystate = 103;
+                            yystate = 54;
                             continue 'yyl;
                         }
                         0x3F => {
                             buf.advance();
-                            yystate = 104;
+                            yystate = 55;
                             continue 'yyl;
                         }
                         0x5D => {
                             buf.advance();
-                            yystate = 105;
+                            yystate = 56;
                             continue 'yyl;
                         }
                         0x66 => {
                             buf.advance();
-                            yystate = 108;
+                            yystate = 59;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 109;
+                            yystate = 60;
                             continue 'yyl;
                         }
                         0x7D => {
                             buf.advance();
-                            yystate = 106;
+                            yystate = 57;
                             continue 'yyl;
                         }
                         0xE2 => {
                             buf.advance();
-                            yystate = 107;
+                            yystate = 58;
                             continue 'yyl;
                         }
                         _ => {
@@ -1433,13 +1317,13 @@ let mut t5;
                         0x5F => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 110;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         _ => {
@@ -1462,13 +1346,13 @@ let mut t5;
                         0x5F => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 110;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         _ => {
@@ -1486,7 +1370,7 @@ let mut t5;
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 112;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
@@ -1507,12 +1391,12 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 113;
+                            yystate = 65;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 114;
+                            yystate = 66;
                             continue 'yyl;
                         }
                         _ => {
@@ -1548,7 +1432,7 @@ let mut t5;
                         0x23 ..= 0x24 => {
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 115;
+                            yystate = 67;
                             continue 'yyl;
                         }
                         0x27 |
@@ -1557,14 +1441,14 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 110;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         _ => {
@@ -1584,12 +1468,12 @@ let mut t5;
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 116;
+                            yystate = 68;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 112;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
@@ -1606,7 +1490,7 @@ let mut t5;
                         0x23 ..= 0x24 => {
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 115;
+                            yystate = 67;
                             continue 'yyl;
                         }
                         0x27 |
@@ -1615,20 +1499,20 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 110;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         0x41 ..= 0x5A |
                         0x61 ..= 0x7A => {
                             buf.advance();
-                            yystate = 117;
+                            yystate = 69;
                             continue 'yyl;
                         }
                         _ => {
@@ -1651,13 +1535,13 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 118;
+                            yystate = 70;
                             continue 'yyl;
                         }
                         0x41 ..= 0x5A |
                         0x61 ..= 0x7A => {
                             buf.advance();
-                            yystate = 119;
+                            yystate = 71;
                             continue 'yyl;
                         }
                         _ => {
@@ -1679,34 +1563,34 @@ let mut t5;
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 120;
+                            yystate = 72;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 121;
+                            yystate = 73;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 122;
+                            yystate = 74;
                             continue 'yyl;
                         }
                         0x6E |
                         0x72 => {
                             buf.advance();
-                            yystate = 124;
+                            yystate = 75;
                             continue 'yyl;
                         }
                         0x73 => {
                             buf.advance();
-                            yystate = 125;
+                            yystate = 76;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 126;
+                            yystate = 77;
                             continue 'yyl;
                         }
                         _ => {
@@ -1724,6 +1608,22 @@ let mut t5;
                     t5 = buf.getcurs();
                     {
 				let end = buf.getcurs();
+				// a bare number starting with a zero or past quadrillions: digit by digit
+				buf.setcurs(t3);
+				let zero = buf.read() == b'0';
+				let mut digits = 0;
+				while buf.getcurs() != t4 { digits += buf.read().is_ascii_digit() as usize; buf.advance(); }
+				if t1 == t3 && t4 == t5 && ((zero && digits > 1) || digits >= 19) {
+					self.digit_prev = true;
+					buf.setcurs(t3);
+					while buf.getcurs() != end {
+						self.reset_ntw();
+						self.consume_digit(buf.read());
+						self.ntw(true, false);
+						buf.advance();
+					}
+					break;
+				}
 				if t1 != t2 {
 					buf.setcurs(t1);
 					if buf.read() == b'+' {
@@ -1787,52 +1687,6 @@ let mut t5;
 			}
                 }
                 27 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 127;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 128;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                28 => {
                     yyaccept = 0;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -1840,12 +1694,27 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 118;
+                            yystate = 70;
                             continue 'yyl;
                         }
                         0x30 => {
                             buf.advance();
-                            yystate = 129;
+                            yystate = 78;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 3;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                28 => {
+                    yych = buf.read();
+                    match yych {
+                        0x09 ..= 0x0A |
+                        0x20 => {
+                            buf.advance();
+                            yystate = 70;
                             continue 'yyl;
                         }
                         _ => {
@@ -1855,12 +1724,83 @@ let mut t5;
                     }
                 }
                 29 => {
+				self.digit_prev = false;
+				self.is_plural  = false;
+				self.scratch_pad.write_text(" ? ");
+				break;
+			},
+                30 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2E => {
+                            buf.advance();
+                            yystate = 79;
+                            continue 'yyl;
+                        }
+                        0x4D |
+                        0x6D => {
+                            buf.advance();
+                            yystate = 80;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 31;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                31 => {
+				// a capital letter alone is spelled ("A" stays the article's capital)
+				let dot = Self::prev_byte(buf) == b'.';
+				if dot { buf.recede(); }
+				let c = Self::prev_byte(buf);
+				if dot { buf.advance(); }
+				self.scratch_pad.write_text(" ");
+				self.scratch_pad.write(if c == b'A' { c } else { c.to_ascii_lowercase() });
+				if dot { self.end_after_period(buf); }
+				break;
+			},
+                32 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2E => {
+                            buf.advance();
+                            yystate = 81;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 31;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                33 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2E => {
+                            buf.advance();
+                            yystate = 82;
+                            continue 'yyl;
+                        }
+                        0x4D |
+                        0x6D => {
+                            buf.advance();
+                            yystate = 83;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 31;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                34 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 118;
+                            yystate = 84;
                             continue 'yyl;
                         }
                         _ => {
@@ -1869,81 +1809,45 @@ let mut t5;
                         }
                     }
                 }
-                30 => {
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" ? ");
+                35 => {
+				self.scratch_pad.write_text(" caret ");
 				break;
 			},
-                31 => {
+                36 => {
+                    yyaccept = 0;
+                    yymarker = buf.getcurs();
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 63;
+                            continue 'yyl;
+                        }
+                        0x5F => {
+                            buf.advance();
+                            yystate = 85;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 3;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                37 => {
+                    yyaccept = 7;
+                    yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 130;
+                            yystate = 86;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 131;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 32;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                32 => {
-				self.scratch_pad.write_text(" A");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                33 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 132;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 34;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                34 => {
-				self.scratch_pad.write_text(" b");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                35 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 133;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 36;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                36 => {
-				self.scratch_pad.write_text(" c");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                37 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 134;
+                            yystate = 80;
                             continue 'yyl;
                         }
                         _ => {
@@ -1953,535 +1857,44 @@ let mut t5;
                     }
                 }
                 38 => {
-				self.scratch_pad.write_text(" d");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                39 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 135;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 40;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                40 => {
-				self.scratch_pad.write_text(" e");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                41 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 136;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 42;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                42 => {
-				self.scratch_pad.write_text(" f");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                43 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 137;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 44;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                44 => {
-				self.scratch_pad.write_text(" g");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                45 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 138;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 46;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                46 => {
-				self.scratch_pad.write_text(" h");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                47 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 139;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 48;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                48 => {
-				self.scratch_pad.write_text(" i");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                49 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 140;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 50;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                50 => {
-				self.scratch_pad.write_text(" j");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                51 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 141;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 52;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                52 => {
-				self.scratch_pad.write_text(" k");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                53 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 142;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 54;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                54 => {
-				self.scratch_pad.write_text(" l");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                55 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 143;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 56;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                56 => {
-				self.scratch_pad.write_text(" m");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                57 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 144;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 58;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                58 => {
-				self.scratch_pad.write_text(" n");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                59 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 145;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 60;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                60 => {
-				self.scratch_pad.write_text(" o");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                61 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 146;
-                            continue 'yyl;
-                        }
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 147;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 62;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                62 => {
-				self.scratch_pad.write_text(" p");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                63 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 148;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 64;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                64 => {
-				self.scratch_pad.write_text(" q");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                65 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 149;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 66;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                66 => {
-				self.scratch_pad.write_text(" r");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                67 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 150;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 68;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                68 => {
-				self.scratch_pad.write_text(" s");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                69 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 151;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 70;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                70 => {
-				self.scratch_pad.write_text(" t");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                71 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 152;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 72;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                72 => {
-				self.scratch_pad.write_text(" u");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                73 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 153;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 74;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                74 => {
-				self.scratch_pad.write_text(" v");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                75 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 154;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 76;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                76 => {
-				self.scratch_pad.write_text(" w");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                77 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 155;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 78;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                78 => {
-				self.scratch_pad.write_text(" x");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                79 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 156;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 80;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                80 => {
-				self.scratch_pad.write_text(" y");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                81 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 157;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 82;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                82 => {
-				self.scratch_pad.write_text(" z");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			},
-                83 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 158;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 3;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                84 => {
-				self.scratch_pad.write_text(" caret ");
-				break;
-			},
-                85 => {
-                    yyaccept = 0;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 112;
-                            continue 'yyl;
-                        }
-                        0x5F => {
-                            buf.advance();
-                            yystate = 159;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 3;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                86 => {
-                    yyaccept = 7;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 160;
-                            continue 'yyl;
-                        }
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 131;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 87;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                87 => {
 				self.is_plural  = false;
 				self.digit_prev = false;
 				self.scratch_pad.write(Self::prev_byte(buf));
 				break;
 			},
-                88 => {
-                    yystate = 87;
+                39 => {
+                    yystate = 38;
                     continue 'yyl;
                 }
-                89 => {
+                40 => {
                     yyaccept = 7;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 161;
+                            yystate = 87;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 147;
+                            yystate = 83;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 87;
+                            yystate = 38;
                             continue 'yyl;
                         }
                     }
                 }
-                90 => {
+                41 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 162;
+                            yystate = 88;
                             continue 'yyl;
                         }
                         _ => {
@@ -2490,16 +1903,16 @@ let mut t5;
                         }
                     }
                 }
-                91 => {
+                42 => {
 				self.scratch_pad.write_text(" vertical bar ");
 				break;
 			},
-                92 => {
+                43 => {
                     yych = buf.read();
                     match yych {
                         0xA7 => {
                             buf.advance();
-                            yystate = 163;
+                            yystate = 89;
                             continue 'yyl;
                         }
                         _ => {
@@ -2508,19 +1921,19 @@ let mut t5;
                         }
                     }
                 }
-                93 => {
+                44 => {
                     yyaccept = 0;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x80 => {
                             buf.advance();
-                            yystate = 165;
+                            yystate = 91;
                             continue 'yyl;
                         }
                         0x81 => {
                             buf.advance();
-                            yystate = 166;
+                            yystate = 92;
                             continue 'yyl;
                         }
                         _ => {
@@ -2529,42 +1942,42 @@ let mut t5;
                         }
                     }
                 }
-                94 => {
+                45 => {
 				self.scratch_pad.write_text(" exclamation point ");
 				break;
 			},
-                95 => {
+                46 => {
 				self.scratch_pad.write_text(" double quote ");
 				break;
 			},
-                96 => {
+                47 => {
 				self.scratch_pad.write_text(" single quote ");
 				break;
 			},
-                97 => {
+                48 => {
 				self.scratch_pad.write_text(" right parenthesis ");
 				break;
 			},
-                98 => {
+                49 => {
 				self.scratch_pad.write_text(" comma ");
 				break;
 			},
-                99 => {
+                50 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 167;
+                            yystate = 93;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                100 => {
+                51 => {
                     buf.setcurs(yymarker);
                     match yyaccept {
                         0 => {
@@ -2597,31 +2010,23 @@ let mut t5;
                             continue 'yyl;
                         }
                         7 => {
-                            yystate = 87;
+                            yystate = 38;
                             continue 'yyl;
                         }
                         8 => {
-                            yystate = 123;
+                            yystate = 31;
                             continue 'yyl;
                         }
                         9 => {
-                            yystate = 32;
+                            yystate = 90;
                             continue 'yyl;
                         }
                         10 => {
-                            yystate = 62;
+                            yystate = 104;
                             continue 'yyl;
                         }
                         11 => {
-                            yystate = 164;
-                            continue 'yyl;
-                        }
-                        12 => {
-                            yystate = 204;
-                            continue 'yyl;
-                        }
-                        13 => {
-                            yystate = 281;
+                            yystate = 128;
                             continue 'yyl;
                         }
                         _ => {
@@ -2630,92 +2035,92 @@ let mut t5;
                         }
                     }
                 }
-                101 => {
+                52 => {
 				self.scratch_pad.write_text(" period ");
 				break;
 			},
-                102 => {
+                53 => {
 				self.scratch_pad.write_text(" colon ");
 				break;
 			},
-                103 => {
+                54 => {
 				self.scratch_pad.write_text(" semicolon ");
 				break;
 			},
-                104 => {
+                55 => {
 				self.scratch_pad.write_text(" question mark ");
 				break;
 			},
-                105 => {
+                56 => {
 				self.scratch_pad.write_text(" right square bracket ");
 				break;
 			},
-                106 => {
+                57 => {
 				self.scratch_pad.write_text(" right curly bracket ");
 				break;
 			},
-                107 => {
+                58 => {
                     yych = buf.read();
                     match yych {
                         0x80 => {
                             buf.advance();
-                            yystate = 168;
+                            yystate = 94;
                             continue 'yyl;
                         }
                         0x81 => {
                             buf.advance();
-                            yystate = 169;
+                            yystate = 95;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                108 => {
+                59 => {
                     yych = buf.read();
                     match yych {
                         0x6F => {
                             buf.advance();
-                            yystate = 170;
+                            yystate = 96;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                109 => {
+                60 => {
                     yych = buf.read();
                     match yych {
                         0x68 => {
                             buf.advance();
-                            yystate = 171;
+                            yystate = 97;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                110 => {
+                61 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                111 => {
+                62 => {
                     yyaccept = 6;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -2724,18 +2129,18 @@ let mut t5;
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 110;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 121;
+                            yystate = 73;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         _ => {
@@ -2745,43 +2150,47 @@ let mut t5;
                         }
                     }
                 }
-                112 => {
+                63 => {
                     yyaccept = 6;
                     yymarker = buf.getcurs();
                     yych = buf.read();
+                    yystate = 64;
+                    continue 'yyl;
+                }
+                64 => {
                     match yych {
                         0x27 |
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 127;
+                            yystate = 72;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 121;
+                            yystate = 73;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 172;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         0x6E |
                         0x72 => {
                             buf.advance();
-                            yystate = 124;
+                            yystate = 75;
                             continue 'yyl;
                         }
                         0x73 => {
                             buf.advance();
-                            yystate = 125;
+                            yystate = 76;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 126;
+                            yystate = 77;
                             continue 'yyl;
                         }
                         _ => {
@@ -2791,25 +2200,25 @@ let mut t5;
                         }
                     }
                 }
-                113 => {
+                65 => {
 				self.scratch_pad.write_text(" left parenthesis ");
 				break;
 			},
-                114 => {
+                66 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 173;
+                            yystate = 98;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                115 => {
+                67 => {
                     yych = buf.read();
                     match yych {
                         0x27 |
@@ -2817,164 +2226,48 @@ let mut t5;
                         0x5F => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 110;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 111;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                116 => {
+                68 => {
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 116;
+                            yystate = 68;
                             continue 'yyl;
                         }
-                        0x41 |
-                        0x61 => {
+                        0x41 ..= 0x5A |
+                        0x61 ..= 0x7A => {
+                            yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 174;
-                            continue 'yyl;
-                        }
-                        0x43 => {
-                            buf.advance();
-                            yystate = 175;
-                            continue 'yyl;
-                        }
-                        0x44 |
-                        0x64 => {
-                            buf.advance();
-                            yystate = 176;
-                            continue 'yyl;
-                        }
-                        0x46 |
-                        0x66 => {
-                            buf.advance();
-                            yystate = 177;
-                            continue 'yyl;
-                        }
-                        0x47 |
-                        0x67 => {
-                            buf.advance();
-                            yystate = 178;
-                            continue 'yyl;
-                        }
-                        0x48 => {
-                            buf.advance();
-                            yystate = 179;
-                            continue 'yyl;
-                        }
-                        0x49 => {
-                            buf.advance();
-                            yystate = 180;
-                            continue 'yyl;
-                        }
-                        0x4B |
-                        0x6B => {
-                            buf.advance();
-                            yystate = 181;
-                            continue 'yyl;
-                        }
-                        0x4C => {
-                            buf.advance();
-                            yystate = 182;
-                            continue 'yyl;
-                        }
-                        0x4D => {
-                            buf.advance();
-                            yystate = 183;
-                            continue 'yyl;
-                        }
-                        0x4E |
-                        0x6E => {
-                            buf.advance();
-                            yystate = 184;
-                            continue 'yyl;
-                        }
-                        0x4F => {
-                            buf.advance();
-                            yystate = 185;
-                            continue 'yyl;
-                        }
-                        0x50 |
-                        0x70 => {
-                            buf.advance();
-                            yystate = 186;
-                            continue 'yyl;
-                        }
-                        0x52 |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 187;
-                            continue 'yyl;
-                        }
-                        0x53 |
-                        0x73 => {
-                            buf.advance();
-                            yystate = 188;
-                            continue 'yyl;
-                        }
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 189;
-                            continue 'yyl;
-                        }
-                        0x55 |
-                        0x75 => {
-                            buf.advance();
-                            yystate = 190;
-                            continue 'yyl;
-                        }
-                        0x56 |
-                        0x76 => {
-                            buf.advance();
-                            yystate = 191;
-                            continue 'yyl;
-                        }
-                        0x57 |
-                        0x77 => {
-                            buf.advance();
-                            yystate = 192;
-                            continue 'yyl;
-                        }
-                        0x63 => {
-                            buf.advance();
-                            yystate = 193;
-                            continue 'yyl;
-                        }
-                        0x69 => {
-                            buf.advance();
-                            yystate = 194;
-                            continue 'yyl;
-                        }
-                        0x6D => {
-                            buf.advance();
-                            yystate = 195;
+                            yystate = 99;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                117 => {
+                69 => {
 				buf.recede();
 				self.scratch_pad.write_text(" ");
 				break;
 			},
-                118 => {
+                70 => {
 				self.digit_prev = false;
 				self.is_plural  = false;
 				self.scratch_pad.write_text(" . ");
@@ -2982,157 +2275,41 @@ let mut t5;
 				buf.recede();
 				break;
 			},
-                119 => {
+                71 => {
 				// a dot inside a name: "example.com"
 				buf.recede();
 				self.scratch_pad.write_text(" dot ");
 				break;
 			},
-                120 => {
+                72 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 196;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                121 => {
+                73 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 198;
-                            continue 'yyl;
-                        }
-                        _ => {
                             yystate = 100;
                             continue 'yyl;
                         }
-                    }
-                }
-                122 => {
-                    yyaccept = 8;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 120;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 199;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
                         _ => {
-                            yystate = 123;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                123 => {
-                    t1 = yyt1;
-                    {
-				self.digit_prev = true;
-				let end = buf.getcurs();
-				buf.setcurs(t1);
-				while buf.getcurs() < end {
-					self.reset_ntw();
-					self.consume_digit(buf.read());
-					self.ntw(true, false);
-					buf.advance();
-				}
-				break;
-			}
-                }
-                124 => {
-                    yych = buf.read();
-                    match yych {
-                        0x64 => {
-                            buf.advance();
-                            yystate = 200;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                125 => {
-                    yych = buf.read();
-                    match yych {
-                        0x74 => {
-                            buf.advance();
-                            yystate = 200;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                126 => {
-                    yych = buf.read();
-                    match yych {
-                        0x68 => {
-                            buf.advance();
-                            yystate = 200;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                127 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 172;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                128 => {
+                74 => {
                     yyaccept = 6;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -3141,34 +2318,34 @@ let mut t5;
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 201;
+                            yystate = 72;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 121;
+                            yystate = 73;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 202;
+                            yystate = 101;
                             continue 'yyl;
                         }
                         0x6E |
                         0x72 => {
                             buf.advance();
-                            yystate = 124;
+                            yystate = 75;
                             continue 'yyl;
                         }
                         0x73 => {
                             buf.advance();
-                            yystate = 125;
+                            yystate = 76;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 126;
+                            yystate = 77;
                             continue 'yyl;
                         }
                         _ => {
@@ -3178,38 +2355,80 @@ let mut t5;
                         }
                     }
                 }
-                129 => {
+                75 => {
                     yych = buf.read();
                     match yych {
-                        0x30 => {
+                        0x64 => {
                             buf.advance();
-                            yystate = 203;
+                            yystate = 102;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                130 => {
-                    yyaccept = 9;
+                76 => {
+                    yych = buf.read();
+                    match yych {
+                        0x74 => {
+                            buf.advance();
+                            yystate = 102;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 51;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                77 => {
+                    yych = buf.read();
+                    match yych {
+                        0x68 => {
+                            buf.advance();
+                            yystate = 102;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 51;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                78 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 => {
+                            buf.advance();
+                            yystate = 103;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 51;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                79 => {
+                    yyaccept = 8;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 205;
+                            yystate = 105;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 32;
+                            yystate = 31;
                             continue 'yyl;
                         }
                     }
                 }
-                131 => {
+                80 => {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" A m ");
@@ -3218,80 +2437,28 @@ let mut t5;
 				}
 				break;
 			},
-                132 => {
-                    yystate = 34;
+                81 => {
+                    yystate = 31;
                     continue 'yyl;
                 }
-                133 => {
-                    yystate = 36;
-                    continue 'yyl;
-                }
-                134 => {
-                    yystate = 38;
-                    continue 'yyl;
-                }
-                135 => {
-                    yystate = 40;
-                    continue 'yyl;
-                }
-                136 => {
-                    yystate = 42;
-                    continue 'yyl;
-                }
-                137 => {
-                    yystate = 44;
-                    continue 'yyl;
-                }
-                138 => {
-                    yystate = 46;
-                    continue 'yyl;
-                }
-                139 => {
-                    yystate = 48;
-                    continue 'yyl;
-                }
-                140 => {
-                    yystate = 50;
-                    continue 'yyl;
-                }
-                141 => {
-                    yystate = 52;
-                    continue 'yyl;
-                }
-                142 => {
-                    yystate = 54;
-                    continue 'yyl;
-                }
-                143 => {
-                    yystate = 56;
-                    continue 'yyl;
-                }
-                144 => {
-                    yystate = 58;
-                    continue 'yyl;
-                }
-                145 => {
-                    yystate = 60;
-                    continue 'yyl;
-                }
-                146 => {
-                    yyaccept = 10;
+                82 => {
+                    yyaccept = 8;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 206;
+                            yystate = 106;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 62;
+                            yystate = 31;
                             continue 'yyl;
                         }
                     }
                 }
-                147 => {
+                83 => {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" p m ");
@@ -3300,134 +2467,94 @@ let mut t5;
 				}
 				break;
 			},
-                148 => {
-                    yystate = 64;
-                    continue 'yyl;
-                }
-                149 => {
-                    yystate = 66;
-                    continue 'yyl;
-                }
-                150 => {
-                    yystate = 68;
-                    continue 'yyl;
-                }
-                151 => {
-                    yystate = 70;
-                    continue 'yyl;
-                }
-                152 => {
-                    yystate = 72;
-                    continue 'yyl;
-                }
-                153 => {
-                    yystate = 74;
-                    continue 'yyl;
-                }
-                154 => {
-                    yystate = 76;
-                    continue 'yyl;
-                }
-                155 => {
-                    yystate = 78;
-                    continue 'yyl;
-                }
-                156 => {
-                    yystate = 80;
-                    continue 'yyl;
-                }
-                157 => {
-                    yystate = 82;
-                    continue 'yyl;
-                }
-                158 => {
+                84 => {
 				self.scratch_pad.write_text(" left square bracket ");
 				break;
 			},
-                159 => {
+                85 => {
                     yych = buf.read();
                     match yych {
                         0x61 => {
                             buf.advance();
-                            yystate = 207;
+                            yystate = 107;
                             continue 'yyl;
                         }
                         0x62 => {
                             buf.advance();
-                            yystate = 208;
+                            yystate = 108;
                             continue 'yyl;
                         }
                         0x76 => {
                             buf.advance();
-                            yystate = 209;
+                            yystate = 109;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                160 => {
+                86 => {
                     yych = buf.read();
                     match yych {
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 205;
+                            yystate = 105;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                161 => {
+                87 => {
                     yych = buf.read();
                     match yych {
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 206;
+                            yystate = 106;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                162 => {
+                88 => {
 				self.scratch_pad.write_text(" left curly bracket ");
 				break;
 			},
-                163 => {
-                    yyaccept = 11;
+                89 => {
+                    yyaccept = 9;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0xC2 => {
                             buf.advance();
-                            yystate = 210;
+                            yystate = 110;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 164;
+                            yystate = 90;
                             continue 'yyl;
                         }
                     }
                 }
-                164 => {
+                90 => {
 				self.scratch_pad.write_text(" section ");
 				break;
 			},
-                165 => {
+                91 => {
                     yych = buf.read();
                     match yych {
                         0x98 ..= 0x9B => {
                             buf.advance();
-                            yystate = 211;
+                            yystate = 111;
                             continue 'yyl;
                         }
                         0x9C ..= 0x9F => {
@@ -3441,17 +2568,17 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                166 => {
+                92 => {
                     yych = buf.read();
                     match yych {
                         0x87 ..= 0x88 => {
                             buf.advance();
-                            yystate = 30;
+                            yystate = 29;
                             continue 'yyl;
                         }
                         0x89 => {
@@ -3460,791 +2587,157 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                167 => {
+                93 => {
 				self.scratch_pad.write_text(" minus ");
 				break;
 			},
-                168 => {
+                94 => {
                     yych = buf.read();
                     match yych {
                         0x98 ..= 0x9B => {
                             buf.advance();
-                            yystate = 96;
+                            yystate = 47;
                             continue 'yyl;
                         }
                         0x9C ..= 0x9F => {
                             buf.advance();
-                            yystate = 95;
+                            yystate = 46;
                             continue 'yyl;
                         }
                         0xBC ..= 0xBD => {
                             buf.advance();
-                            yystate = 94;
+                            yystate = 45;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                169 => {
+                95 => {
                     yych = buf.read();
                     match yych {
                         0x87 ..= 0x88 => {
                             buf.advance();
-                            yystate = 104;
+                            yystate = 55;
                             continue 'yyl;
                         }
                         0x89 => {
                             buf.advance();
-                            yystate = 94;
+                            yystate = 45;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                170 => {
+                96 => {
                     yych = buf.read();
                     match yych {
                         0x72 => {
                             buf.advance();
-                            yystate = 212;
+                            yystate = 112;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                171 => {
+                97 => {
                     yych = buf.read();
                     match yych {
                         0x65 => {
                             buf.advance();
-                            yystate = 213;
+                            yystate = 113;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                172 => {
+                98 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 114;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 51;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                99 => {
+                    yych = buf.read();
+                    match yych {
+                        0x41 ..= 0x5A |
+                        0x61 ..= 0x7A => {
+                            buf.advance();
+                            yystate = 115;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 51;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                100 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 100;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 26;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                101 => {
                     yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 201;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 214;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                173 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 215;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                174 => {
-                    yych = buf.read();
-                    match yych {
-                        0x4B |
-                        0x6B => {
-                            buf.advance();
-                            yystate = 216;
-                            continue 'yyl;
-                        }
-                        0x4C |
-                        0x6C => {
-                            buf.advance();
-                            yystate = 217;
-                            continue 'yyl;
-                        }
-                        0x52 |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 218;
-                            continue 'yyl;
-                        }
-                        0x5A |
-                        0x7A => {
-                            buf.advance();
-                            yystate = 219;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                175 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 220;
-                            continue 'yyl;
-                        }
-                        0x4F => {
-                            buf.advance();
-                            yystate = 221;
-                            continue 'yyl;
-                        }
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 222;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                176 => {
-                    yych = buf.read();
-                    match yych {
-                        0x43 |
-                        0x63 => {
-                            buf.advance();
-                            yystate = 223;
-                            continue 'yyl;
-                        }
-                        0x45 |
-                        0x65 => {
-                            buf.advance();
-                            yystate = 224;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                177 => {
-                    yych = buf.read();
-                    match yych {
-                        0x4C |
-                        0x6C => {
-                            buf.advance();
-                            yystate = 225;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                178 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 226;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                179 => {
-                    yych = buf.read();
-                    match yych {
-                        0x49 => {
-                            buf.advance();
-                            yystate = 227;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                180 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 228;
-                            continue 'yyl;
-                        }
-                        0x44 => {
-                            buf.advance();
-                            yystate = 229;
-                            continue 'yyl;
-                        }
-                        0x4C |
-                        0x6C => {
-                            buf.advance();
-                            yystate = 230;
-                            continue 'yyl;
-                        }
-                        0x4E => {
-                            buf.advance();
-                            yystate = 231;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                181 => {
-                    yych = buf.read();
-                    match yych {
-                        0x53 |
-                        0x73 => {
-                            buf.advance();
-                            yystate = 232;
-                            continue 'yyl;
-                        }
-                        0x59 |
-                        0x79 => {
-                            buf.advance();
-                            yystate = 233;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                182 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 => {
-                            buf.advance();
-                            yystate = 234;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                183 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 => {
-                            buf.advance();
-                            yystate = 235;
-                            continue 'yyl;
-                        }
-                        0x44 |
-                        0x64 => {
-                            buf.advance();
-                            yystate = 236;
-                            continue 'yyl;
-                        }
-                        0x45 => {
-                            buf.advance();
-                            yystate = 237;
-                            continue 'yyl;
-                        }
-                        0x49 |
-                        0x69 => {
-                            buf.advance();
-                            yystate = 238;
-                            continue 'yyl;
-                        }
-                        0x4E |
-                        0x6E => {
-                            buf.advance();
-                            yystate = 239;
-                            continue 'yyl;
-                        }
-                        0x4F |
-                        0x6F => {
-                            buf.advance();
-                            yystate = 240;
-                            continue 'yyl;
-                        }
-                        0x53 |
-                        0x73 => {
-                            buf.advance();
-                            yystate = 241;
-                            continue 'yyl;
-                        }
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 242;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                184 => {
-                    yych = buf.read();
-                    match yych {
-                        0x43 |
-                        0x63 => {
-                            buf.advance();
-                            yystate = 243;
-                            continue 'yyl;
-                        }
-                        0x44 |
-                        0x64 => {
-                            buf.advance();
-                            yystate = 244;
-                            continue 'yyl;
-                        }
-                        0x45 |
-                        0x65 => {
-                            buf.advance();
-                            yystate = 245;
-                            continue 'yyl;
-                        }
-                        0x48 |
-                        0x68 => {
-                            buf.advance();
-                            yystate = 246;
-                            continue 'yyl;
-                        }
-                        0x4A |
-                        0x6A => {
-                            buf.advance();
-                            yystate = 247;
-                            continue 'yyl;
-                        }
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 248;
-                            continue 'yyl;
-                        }
-                        0x56 |
-                        0x76 => {
-                            buf.advance();
-                            yystate = 249;
-                            continue 'yyl;
-                        }
-                        0x59 |
-                        0x79 => {
-                            buf.advance();
-                            yystate = 250;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                185 => {
-                    yych = buf.read();
-                    match yych {
-                        0x48 => {
-                            buf.advance();
-                            yystate = 251;
-                            continue 'yyl;
-                        }
-                        0x4B => {
-                            buf.advance();
-                            yystate = 252;
-                            continue 'yyl;
-                        }
-                        0x52 => {
-                            buf.advance();
-                            yystate = 253;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                186 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 254;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                187 => {
-                    yych = buf.read();
-                    match yych {
-                        0x49 |
-                        0x69 => {
-                            buf.advance();
-                            yystate = 255;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                188 => {
-                    yych = buf.read();
-                    match yych {
-                        0x43 |
-                        0x63 => {
-                            buf.advance();
-                            yystate = 256;
-                            continue 'yyl;
-                        }
-                        0x44 |
-                        0x64 => {
-                            buf.advance();
-                            yystate = 257;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                189 => {
-                    yych = buf.read();
-                    match yych {
-                        0x4E |
-                        0x6E => {
-                            buf.advance();
-                            yystate = 258;
-                            continue 'yyl;
-                        }
-                        0x58 |
-                        0x78 => {
-                            buf.advance();
-                            yystate = 259;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                190 => {
-                    yych = buf.read();
-                    match yych {
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 260;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                191 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 261;
-                            continue 'yyl;
-                        }
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 262;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                192 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 263;
-                            continue 'yyl;
-                        }
-                        0x49 |
-                        0x69 => {
-                            buf.advance();
-                            yystate = 264;
-                            continue 'yyl;
-                        }
-                        0x56 |
-                        0x76 => {
-                            buf.advance();
-                            yystate = 265;
-                            continue 'yyl;
-                        }
-                        0x59 |
-                        0x79 => {
-                            buf.advance();
-                            yystate = 266;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                193 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 220;
-                            continue 'yyl;
-                        }
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 222;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                194 => {
-                    yych = buf.read();
-                    match yych {
-                        0x41 |
-                        0x61 => {
-                            buf.advance();
-                            yystate = 228;
-                            continue 'yyl;
-                        }
-                        0x4C |
-                        0x6C => {
-                            buf.advance();
-                            yystate = 230;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                195 => {
-                    yych = buf.read();
-                    match yych {
-                        0x44 |
-                        0x64 => {
-                            buf.advance();
-                            yystate = 236;
-                            continue 'yyl;
-                        }
-                        0x49 |
-                        0x69 => {
-                            buf.advance();
-                            yystate = 238;
-                            continue 'yyl;
-                        }
-                        0x4E |
-                        0x6E => {
-                            buf.advance();
-                            yystate = 239;
-                            continue 'yyl;
-                        }
-                        0x4F |
-                        0x6F => {
-                            buf.advance();
-                            yystate = 240;
-                            continue 'yyl;
-                        }
-                        0x53 |
-                        0x73 => {
-                            buf.advance();
-                            yystate = 241;
-                            continue 'yyl;
-                        }
-                        0x54 |
-                        0x74 => {
-                            buf.advance();
-                            yystate = 242;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                196 => {
-                    yyaccept = 8;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    yystate = 197;
-                    continue 'yyl;
-                }
-                197 => {
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 120;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 196;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 123;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                198 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 198;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                199 => {
-                    yyaccept = 8;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x29 => {
                             buf.advance();
-                            yystate = 267;
+                            yystate = 116;
                             continue 'yyl;
                         }
                         0x2D => {
                             buf.advance();
-                            yystate = 268;
+                            yystate = 117;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 269;
+                            yystate = 118;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 197;
+                            yystate = 64;
                             continue 'yyl;
                         }
                     }
                 }
-                200 => {
+                102 => {
                     t1 = yyt1;
                     {
 				// the suffix is not checked: "21th" reads twenty first
@@ -4260,1553 +2753,377 @@ let mut t5;
 				break;
 			}
                 }
-                201 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 214;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                202 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 270;
-                            continue 'yyl;
-                        }
-                        0x29 => {
-                            buf.advance();
-                            yystate = 267;
-                            continue 'yyl;
-                        }
-                        0x2D => {
-                            buf.advance();
-                            yystate = 268;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 269;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 271;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                203 => {
-                    yyaccept = 12;
+                103 => {
+                    yyaccept = 10;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 272;
+                            yystate = 119;
                             continue 'yyl;
                         }
                         0x41 |
                         0x61 => {
                             buf.advance();
-                            yystate = 273;
+                            yystate = 120;
                             continue 'yyl;
                         }
                         0x50 |
                         0x70 => {
                             buf.advance();
-                            yystate = 274;
+                            yystate = 121;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 204;
+                            yystate = 104;
                             continue 'yyl;
                         }
                     }
                 }
-                204 => {
+                104 => {
 				self.scratch_pad.write_text(" oh clock ");
 				break;
 			},
-                205 => {
+                105 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 275;
+                            yystate = 122;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                206 => {
+                106 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 276;
+                            yystate = 123;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                207 => {
+                107 => {
                     yych = buf.read();
                     match yych {
                         0x75 => {
                             buf.advance();
-                            yystate = 277;
+                            yystate = 124;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                208 => {
+                108 => {
                     yych = buf.read();
                     match yych {
                         0x75 => {
                             buf.advance();
-                            yystate = 278;
+                            yystate = 125;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                209 => {
+                109 => {
                     yych = buf.read();
                     match yych {
                         0x65 => {
                             buf.advance();
-                            yystate = 279;
+                            yystate = 126;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                210 => {
+                110 => {
                     yych = buf.read();
                     match yych {
                         0xA7 => {
                             buf.advance();
-                            yystate = 280;
+                            yystate = 127;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                211 => {
+                111 => {
                     yystate = 14;
                     continue 'yyl;
                 }
-                212 => {
+                112 => {
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 282;
+                            yystate = 129;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                213 => {
+                113 => {
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 283;
+                            yystate = 130;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                214 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 270;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 271;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                215 => {
+                114 => {
                     yych = buf.read();
                     match yych {
                         0x29 => {
                             buf.advance();
-                            yystate = 267;
+                            yystate = 116;
                             continue 'yyl;
                         }
                         0x2D ..= 0x2E => {
                             buf.advance();
-                            yystate = 284;
+                            yystate = 131;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                216 => {
+                115 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 285;
+                            yystate = 132;
                             continue 'yyl;
                         }
                         0x2E => {
                             buf.advance();
-                            yystate = 286;
+                            yystate = 133;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                217 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 287;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 288;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                218 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 289;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 290;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                219 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 291;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 292;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                220 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 293;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 294;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                221 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 295;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 296;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                222 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 297;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 298;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                223 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 299;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 300;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                224 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 301;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 302;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                225 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 303;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 304;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                226 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 305;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 306;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                227 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 307;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 308;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                228 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 309;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 310;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                229 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 311;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 312;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                230 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 313;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 314;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                231 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 315;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 316;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                232 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 317;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 318;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                233 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 319;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 320;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                234 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 321;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 322;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                235 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 323;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 324;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                236 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 325;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 326;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                237 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 327;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 328;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                238 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 329;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 330;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                239 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 331;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 332;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                240 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 333;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 334;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                241 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 335;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 336;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                242 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 337;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 338;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                243 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 339;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 340;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                244 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 341;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 342;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                245 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 343;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 344;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                246 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 345;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 346;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                247 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 347;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 348;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                248 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 349;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 350;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                249 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 351;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 352;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                250 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 353;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 354;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                251 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 355;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 356;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                252 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 357;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 358;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                253 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 359;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 360;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                254 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 361;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 362;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                255 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 363;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 364;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                256 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 365;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 366;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                257 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 367;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 368;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                258 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 369;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 370;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                259 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 371;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 372;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                260 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 373;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 374;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                261 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 375;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 376;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                262 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 377;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 378;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                263 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 379;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 380;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                264 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 381;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 382;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                265 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 383;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 384;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                266 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 385;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            buf.advance();
-                            yystate = 386;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                267 => {
+                116 => {
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 284;
+                            yystate = 131;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                268 => {
+                117 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 387;
+                            yystate = 134;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                269 => {
+                118 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 388;
+                            yystate = 135;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                270 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 271;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                271 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 389;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 390;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                272 => {
+                119 => {
                     yych = buf.read();
                     match yych {
                         0x41 |
                         0x61 => {
                             buf.advance();
-                            yystate = 273;
+                            yystate = 120;
                             continue 'yyl;
                         }
                         0x50 |
                         0x70 => {
                             buf.advance();
-                            yystate = 274;
+                            yystate = 121;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                273 => {
+                120 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 391;
+                            yystate = 136;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 392;
+                            yystate = 137;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                274 => {
+                121 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 394;
+                            yystate = 139;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 395;
+                            yystate = 140;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                275 => {
+                122 => {
 				// a time of day; its period may also end the sentence
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" A m ");
 				self.end_after_period(buf);
 				break;
 			},
-                276 => {
+                123 => {
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" p m ");
 				self.end_after_period(buf);
 				break;
 			},
-                277 => {
+                124 => {
                     yych = buf.read();
                     match yych {
                         0x74 => {
                             buf.advance();
-                            yystate = 397;
+                            yystate = 142;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                278 => {
+                125 => {
                     yych = buf.read();
                     match yych {
                         0x69 => {
                             buf.advance();
-                            yystate = 398;
+                            yystate = 143;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                279 => {
+                126 => {
                     yych = buf.read();
                     match yych {
                         0x72 => {
                             buf.advance();
-                            yystate = 399;
+                            yystate = 144;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                280 => {
-                    yyaccept = 13;
+                127 => {
+                    yyaccept = 11;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0xC2 => {
                             buf.advance();
-                            yystate = 210;
+                            yystate = 110;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 281;
+                            yystate = 128;
                             continue 'yyl;
                         }
                     }
                 }
-                281 => {
+                128 => {
 				self.scratch_pad.write_text(" sections ");
 				break;
 			},
-                282 => {
+                129 => {
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 282;
+                            yystate = 129;
                             continue 'yyl;
                         }
                         0x61 |
@@ -5815,21 +3132,21 @@ let mut t5;
                         0x6F |
                         0x75 => {
                             buf.advance();
-                            yystate = 400;
+                            yystate = 145;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                283 => {
+                130 => {
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 283;
+                            yystate = 130;
                             continue 'yyl;
                         }
                         0x61 |
@@ -5838,1018 +3155,102 @@ let mut t5;
                         0x6F |
                         0x75 => {
                             buf.advance();
-                            yystate = 401;
+                            yystate = 146;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                284 => {
+                131 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 402;
+                            yystate = 147;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                285 => {
-				self.scratch_pad.write_text(" alaska ");
+                132 => {
+                    t1 = yyt1;
+                    t2 = yyt2;
+                    {
+				// a state after a comma: "Austin, TX" reads texas. true: capitals only, since "or", "in", "me" and the like are
+				// words. Any other two letters are just the comma
+				const STATES: [(&[u8; 2], bool, &str); 51] = [
+					(b"AK", false, "alaska"), (b"AL", false, "alabama"), (b"AR", false, "arkansas"), (b"AZ", false, "arizona"),
+					(b"CA", false, "california"), (b"CO", true, "colorado"), (b"CT", false, "connecticut"), (b"DC", false, "district of columbia"),
+					(b"DE", false, "delaware"), (b"FL", false, "florida"), (b"GA", false, "georgia"), (b"HI", true, "hawaii"),
+					(b"IA", false, "iowa"), (b"ID", true, "idaho"), (b"IL", false, "illinois"), (b"IN", true, "indiana"),
+					(b"KS", false, "kansas"), (b"KY", false, "kentucky"), (b"LA", true, "louisiana"), (b"MA", true, "massachusetts"),
+					(b"MD", false, "maryland"), (b"ME", true, "maine"), (b"MI", false, "michigan"), (b"MN", false, "minnesota"),
+					(b"MO", false, "missouri"), (b"MS", false, "mississippi"), (b"MT", false, "montana"), (b"NC", false, "north carolina"),
+					(b"ND", false, "north dakota"), (b"NE", false, "nebraska"), (b"NH", false, "new hampshire"), (b"NJ", false, "new jersey"),
+					(b"NM", false, "new mexico"), (b"NV", false, "nevada"), (b"NY", false, "new york"), (b"OH", true, "ohio"),
+					(b"OK", true, "oklahoma"), (b"OR", true, "oregon"), (b"PA", false, "pennsylvania"), (b"RI", false, "rhode island"),
+					(b"SC", false, "south carolina"), (b"SD", false, "south dakota"), (b"TN", false, "tennessee"), (b"TX", false, "texas"),
+					(b"UT", false, "utah"), (b"VA", false, "virginia"), (b"VT", false, "vermont"), (b"WA", false, "washington"),
+					(b"WI", false, "wisconsin"), (b"WV", false, "west virginia"), (b"WY", false, "wyoming"),
+				];
+				let end = buf.getcurs();
+				buf.setcurs(t2);
+				let pair = [buf.read(), { buf.advance(); buf.read() }];
+				if let Some(st) = STATES.iter().find(|st| if st.1 { *st.0 == pair } else { st.0.eq_ignore_ascii_case(&pair) }) {
+					buf.setcurs(end);
+					self.say(st.2);
+				} else {
+					// as the comma rule
+					buf.setcurs(t1);
+					buf.advance();
+					self.digit_prev = false;
+					self.is_plural  = false;
+					self.scratch_pad.write_text(" , ");
+				}
 				break;
-			},
-                286 => {
+			}
+                }
+                133 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 285;
+                            yystate = 132;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                287 => {
-				self.scratch_pad.write_text(" alabama ");
-				break;
-			},
-                288 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 287;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                289 => {
-				self.scratch_pad.write_text(" arkansas ");
-				break;
-			},
-                290 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 289;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                291 => {
-				self.scratch_pad.write_text(" arizona ");
-				break;
-			},
-                292 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 291;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                293 => {
-				self.scratch_pad.write_text(" california ");
-				break;
-			},
-                294 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 293;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                295 => {
-				self.scratch_pad.write_text(" colorado ");
-				break;
-			},
-                296 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 295;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                297 => {
-				self.scratch_pad.write_text(" connecticut ");
-				break;
-			},
-                298 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 297;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                299 => {
-				self.scratch_pad.write_text(" district of columbia ");
-				break;
-			},
-                300 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 299;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                301 => {
-				self.scratch_pad.write_text(" delaware ");
-				break;
-			},
-                302 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 301;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                303 => {
-				self.scratch_pad.write_text(" florida ");
-				break;
-			},
-                304 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 303;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                305 => {
-				self.scratch_pad.write_text(" georgia ");
-				break;
-			},
-                306 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 305;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                307 => {
-				self.scratch_pad.write_text(" hawaii ");
-				break;
-			},
-                308 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 307;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                309 => {
-				self.scratch_pad.write_text(" iowa ");
-				break;
-			},
-                310 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 309;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                311 => {
-				self.scratch_pad.write_text(" idaho ");
-				break;
-			},
-                312 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 311;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                313 => {
-				self.scratch_pad.write_text(" illinois ");
-				break;
-			},
-                314 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 313;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                315 => {
-				self.scratch_pad.write_text(" indiana ");
-				break;
-			},
-                316 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 315;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                317 => {
-				self.scratch_pad.write_text(" kansas ");
-				break;
-			},
-                318 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 317;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                319 => {
-				self.scratch_pad.write_text(" kentucky ");
-				break;
-			},
-                320 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 319;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                321 => {
-				self.scratch_pad.write_text(" louisiana ");
-				break;
-			},
-                322 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 321;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                323 => {
-				self.scratch_pad.write_text(" massachusetts ");
-				break;
-			},
-                324 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 323;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                325 => {
-				self.scratch_pad.write_text(" maryland ");
-				break;
-			},
-                326 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 325;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                327 => {
-				self.scratch_pad.write_text(" maine ");
-				break;
-			},
-                328 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 327;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                329 => {
-				self.scratch_pad.write_text(" michigan ");
-				break;
-			},
-                330 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 329;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                331 => {
-				self.scratch_pad.write_text(" minnesota ");
-				break;
-			},
-                332 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 331;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                333 => {
-				self.scratch_pad.write_text(" missouri ");
-				break;
-			},
-                334 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 333;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                335 => {
-				self.scratch_pad.write_text(" mississippi ");
-				break;
-			},
-                336 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 335;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                337 => {
-				self.scratch_pad.write_text(" montana ");
-				break;
-			},
-                338 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 337;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                339 => {
-				self.scratch_pad.write_text(" north carolina ");
-				break;
-			},
-                340 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 339;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                341 => {
-				self.scratch_pad.write_text(" north dakota ");
-				break;
-			},
-                342 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 341;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                343 => {
-				self.scratch_pad.write_text(" nebraska ");
-				break;
-			},
-                344 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 343;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                345 => {
-				self.scratch_pad.write_text(" new hampshire ");
-				break;
-			},
-                346 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 345;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                347 => {
-				self.scratch_pad.write_text(" new jersey ");
-				break;
-			},
-                348 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 347;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                349 => {
-				self.scratch_pad.write_text(" new mexico ");
-				break;
-			},
-                350 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 349;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                351 => {
-				self.scratch_pad.write_text(" nevada ");
-				break;
-			},
-                352 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 351;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                353 => {
-				self.scratch_pad.write_text(" new york ");
-				break;
-			},
-                354 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 353;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                355 => {
-				self.scratch_pad.write_text(" ohio ");
-				break;
-			},
-                356 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 355;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                357 => {
-				self.scratch_pad.write_text(" oklahoma ");
-				break;
-			},
-                358 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 357;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                359 => {
-				self.scratch_pad.write_text(" oregon ");
-				break;
-			},
-                360 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 359;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                361 => {
-				self.scratch_pad.write_text(" pennsylvania ");
-				break;
-			},
-                362 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 361;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                363 => {
-				self.scratch_pad.write_text(" rhode island ");
-				break;
-			},
-                364 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 363;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                365 => {
-				self.scratch_pad.write_text(" south carolina ");
-				break;
-			},
-                366 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 365;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                367 => {
-				self.scratch_pad.write_text(" south dakota ");
-				break;
-			},
-                368 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 367;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                369 => {
-				self.scratch_pad.write_text(" tennessee ");
-				break;
-			},
-                370 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 369;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                371 => {
-				self.scratch_pad.write_text(" texas ");
-				break;
-			},
-                372 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 371;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                373 => {
-				self.scratch_pad.write_text(" utah ");
-				break;
-			},
-                374 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 373;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                375 => {
-				self.scratch_pad.write_text(" virginia ");
-				break;
-			},
-                376 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 375;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                377 => {
-				self.scratch_pad.write_text(" vermont ");
-				break;
-			},
-                378 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 377;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                379 => {
-				self.scratch_pad.write_text(" washington ");
-				break;
-			},
-                380 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 379;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                381 => {
-				self.scratch_pad.write_text(" wisconsin ");
-				break;
-			},
-                382 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 381;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                383 => {
-				self.scratch_pad.write_text(" west virginia ");
-				break;
-			},
-                384 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 383;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                385 => {
-				self.scratch_pad.write_text(" wyoming ");
-				break;
-			},
-                386 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 385;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                387 => {
+                134 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 403;
+                            yystate = 148;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                388 => {
+                135 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 404;
+                            yystate = 149;
                             continue 'yyl;
                         }
                         _ => {
@@ -6858,220 +3259,160 @@ let mut t5;
                         }
                     }
                 }
-                389 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 390;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                390 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 405;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 406;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                391 => {
+                136 => {
                     yych = buf.read();
                     match yych {
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 392;
+                            yystate = 137;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                392 => {
+                137 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 407;
+                            yystate = 150;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 393;
+                            yystate = 138;
                             continue 'yyl;
                         }
                     }
                 }
-                393 => {
+                138 => {
 				self.scratch_pad.write_text(" A m ");
 				break;
 			},
-                394 => {
+                139 => {
                     yych = buf.read();
                     match yych {
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 395;
+                            yystate = 140;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                395 => {
+                140 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 408;
+                            yystate = 151;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 396;
+                            yystate = 141;
                             continue 'yyl;
                         }
                     }
                 }
-                396 => {
+                141 => {
 				self.scratch_pad.write_text(" p m ");
 				break;
 			},
-                397 => {
+                142 => {
                     yych = buf.read();
                     match yych {
                         0x68 => {
                             buf.advance();
-                            yystate = 409;
+                            yystate = 152;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                398 => {
+                143 => {
                     yych = buf.read();
                     match yych {
                         0x6C => {
                             buf.advance();
-                            yystate = 410;
+                            yystate = 153;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                399 => {
+                144 => {
                     yych = buf.read();
                     match yych {
                         0x73 => {
                             buf.advance();
-                            yystate = 411;
+                            yystate = 154;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                400 => {
+                145 => {
 				// "fer" becomes "for" before word-initial vowels
 				buf.recede();
 				self.scratch_pad.write_text(" FOR ");
 				break;
 			},
-                401 => {
+                146 => {
 				// "thee" before a vowel ("thee apple")
 				buf.recede();
 				self.scratch_pad.write_text(" thee ");
 				break;
 			},
-                402 => {
+                147 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 412;
+                            yystate = 155;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                403 => {
+                148 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 413;
+                            yystate = 156;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                404 => {
+                149 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 414;
+                            yystate = 157;
                             continue 'yyl;
                         }
                         _ => {
@@ -7080,162 +3421,102 @@ let mut t5;
                         }
                     }
                 }
-                405 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 406;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                406 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 415;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 416;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                407 => {
-                    yystate = 393;
+                150 => {
+                    yystate = 138;
                     continue 'yyl;
                 }
-                408 => {
-                    yystate = 396;
+                151 => {
+                    yystate = 141;
                     continue 'yyl;
                 }
-                409 => {
+                152 => {
                     yych = buf.read();
                     match yych {
                         0x6F => {
                             buf.advance();
-                            yystate = 417;
+                            yystate = 158;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                410 => {
+                153 => {
                     yych = buf.read();
                     match yych {
                         0x64 => {
                             buf.advance();
-                            yystate = 418;
+                            yystate = 159;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                411 => {
+                154 => {
                     yych = buf.read();
                     match yych {
                         0x69 => {
                             buf.advance();
-                            yystate = 419;
+                            yystate = 160;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                412 => {
+                155 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 420;
+                            yystate = 161;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                413 => {
+                156 => {
                     yych = buf.read();
                     match yych {
                         0x2D ..= 0x2E => {
                             buf.advance();
-                            yystate = 421;
+                            yystate = 162;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 422;
+                            yystate = 163;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                414 => {
-                    yyaccept = 14;
+                157 => {
+                    yyaccept = 12;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x2D ..= 0x2E => {
                             buf.advance();
-                            yystate = 421;
+                            yystate = 162;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 424;
+                            yystate = 165;
                             continue 'yyl;
                         }
                         _ => {
@@ -7244,141 +3525,81 @@ let mut t5;
                         }
                     }
                 }
-                415 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 416;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                416 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 425;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 426;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                417 => {
+                158 => {
                     yych = buf.read();
                     match yych {
                         0x72 => {
                             buf.advance();
-                            yystate = 427;
+                            yystate = 166;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                418 => {
+                159 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 428;
+                            yystate = 167;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                419 => {
+                160 => {
                     yych = buf.read();
                     match yych {
                         0x6F => {
                             buf.advance();
-                            yystate = 429;
+                            yystate = 168;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                420 => {
+                161 => {
                     yych = buf.read();
                     match yych {
                         0x2D ..= 0x2E => {
                             buf.advance();
-                            yystate = 421;
+                            yystate = 162;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                421 => {
+                162 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 430;
+                            yystate = 169;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                422 => {
-                    yystate = 423;
+                163 => {
+                    yystate = 164;
                     continue 'yyl;
                 }
-                423 => {
+                164 => {
                     t1 = yyt1;
                     {
 				self.digit_prev = true;
@@ -7397,864 +3618,228 @@ let mut t5;
 				break;
 			}
                 }
-                424 => {
+                165 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 198;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 423;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                425 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 426;
-                            continue 'yyl;
-                        }
-                        _ => {
                             yystate = 100;
                             continue 'yyl;
                         }
-                    }
-                }
-                426 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 431;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 432;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
                         _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
+                            yystate = 164;
                             continue 'yyl;
                         }
                     }
                 }
-                427 => {
+                166 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 433;
+                            yystate = 170;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                428 => {
+                167 => {
                     yych = buf.read();
                     match yych {
                         0x64 => {
                             buf.advance();
-                            yystate = 434;
+                            yystate = 171;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                429 => {
+                168 => {
                     yych = buf.read();
                     match yych {
                         0x6E => {
                             buf.advance();
-                            yystate = 435;
+                            yystate = 172;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                430 => {
+                169 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 436;
+                            yystate = 173;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                431 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 432;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                432 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 437;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 438;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                433 => {
+                170 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 439;
+                            yystate = 174;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                434 => {
+                171 => {
                     yych = buf.read();
                     match yych {
                         0x61 => {
                             buf.advance();
-                            yystate = 440;
+                            yystate = 175;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                435 => {
+                172 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 441;
+                            yystate = 176;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                436 => {
+                173 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 442;
+                            yystate = 177;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                437 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 438;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                438 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 443;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 444;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                439 => {
+                174 => {
 				self.scratch_pad.write_text(" anthony c bartman ");
 				break;
 			},
-                440 => {
+                175 => {
                     yych = buf.read();
                     match yych {
                         0x74 => {
                             buf.advance();
-                            yystate = 445;
+                            yystate = 178;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                441 => {
+                176 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 446;
+                            yystate = 179;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                442 => {
+                177 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 422;
+                            yystate = 163;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                443 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 444;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                444 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 447;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 448;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                445 => {
+                178 => {
                     yych = buf.read();
                     match yych {
                         0x65 => {
                             buf.advance();
-                            yystate = 449;
+                            yystate = 180;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                446 => {
+                179 => {
 				self.scratch_pad.write_text(" version one point one ");
 				break;
 			},
-                447 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 448;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                448 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 450;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 451;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                449 => {
+                180 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 452;
+                            yystate = 181;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                450 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 451;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                451 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 453;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 454;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                452 => {
+                181 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 455;
+                            yystate = 182;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 100;
+                            yystate = 51;
                             continue 'yyl;
                         }
                     }
                 }
-                453 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 454;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                454 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 456;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 457;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                455 => {
+                182 => {
 				self.scratch_pad.write_text(" august twenty ninth , twenty twenty six ");
 				break;
 			},
-                456 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 457;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                457 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 458;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 459;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                458 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 459;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                459 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 460;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 461;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                460 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 461;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                461 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 462;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 121;
-                            continue 'yyl;
-                        }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 463;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 124;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 125;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 126;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                462 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 463;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                463 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
-                    yych = buf.read();
-                    match yych {
-                        0x27 |
-                        0x2C |
-                        0x2E |
-                        0x30 ..= 0x39 |
-                        0x5F |
-                        0x6E |
-                        0x72 ..= 0x74 => {
-                            yystate = 197;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
                 _ => panic!("internal lexer error"),
             }
         }

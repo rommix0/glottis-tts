@@ -20,7 +20,7 @@ pub mod _dur;
 pub mod _f0;
 
 use alloc::{format, string::String, vec, vec::Vec};
-use core::future::Future;
+use core::{fmt::Write, future::Future};
 use _utils::cbuf;
 use _dread::dictreader;
 use _utt::{Utterance, Boundary, PAU};
@@ -214,8 +214,13 @@ impl Speaker {
 			for i in segs.clone() {
 				let s = &utt.segs[i];
 				if self.trace {
-					let tg: Vec<String> = self.contour.targets_of(stream[i]).map(|t| format!("{:?}@{:.2}:{:+.1}/{:+.1}", t.kind, t.frac, t.st, t.base)).collect();
-					out.trace(&format!("TRACE {} {} seg={} dur={:.0} rules={} targets={}", s.phone, s.stress, stream[i], s.dur_ms, s.rules.join(","), tg.join(" ")));
+					let mut line = format!("TRACE {} {} seg={} dur={:.0} rules={}", s.phone, s.stress, stream[i], s.dur_ms, s.rules.first().copied().unwrap_or(""));
+					for r in s.rules.iter().skip(1) { line.push(','); line.push_str(r); }
+					line.push_str(" targets=");
+					for (k, t) in self.contour.targets_of(stream[i]).enumerate() {
+						let _ = write!(line, "{}{:?}@{:.2}:{:+.1}/{:+.1}", if k == 0 { "" } else { " " }, t.kind, t.frac, t.st, t.base);
+					}
+					out.trace(&line);
 				}
 				self.play(out, s.phone, s.dur_ms, s.stress != 0, stream[i], utt.words[s.word].segs.start == i).await?;
 			}

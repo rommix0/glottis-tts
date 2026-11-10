@@ -52,6 +52,13 @@ impl engine {
 		cc
 	}
 
+	// a word or words with a space either side
+	fn say(&mut self, w: &str) {
+		self.scratch_pad.write_text(" ");
+		self.scratch_pad.write_text(w);
+		self.scratch_pad.write_text(" ");
+	}
+
 	// NUMBER TO WORD PART
 	fn reset_ntw(&mut self) { self.number = 0; }
 	fn consume_digit(&mut self, x: u8) {
@@ -70,9 +77,7 @@ impl engine {
 		if x == 0 && zero_oh {
 			self.scratch_pad.write_text(" oh ");
 		} else if x < 20 {
-			self.scratch_pad.write_text(" ");
-			self.scratch_pad.write_text(if is_ordinal { ONES_TH[x as usize] } else { ONES[x as usize] });
-			self.scratch_pad.write_text(" ");
+			self.say(if is_ordinal { ONES_TH[x as usize] } else { ONES[x as usize] });
 		} else if x < 100 {
 			let (tens, ones) = (x / 10, x % 10);
 			self.scratch_pad.write_text(" ");
@@ -172,7 +177,8 @@ impl engine {
 		let mut out = Vec::new();
 		while self.is_not_empty() { out.push(self.read()); }
 		self.scratch_pad = saved;
-		String::from_utf8(out).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ")
+		// write_text already keeps one space between words
+		String::from_utf8(out).unwrap_or_default().trim().into()
 	}
 	fn year_words(&mut self, y: u64) -> String {
 		// 1999 nineteen ninety nine, 1905 nineteen oh five, 1900 nineteen hundred, 2005 two thousand five
@@ -194,6 +200,43 @@ impl engine {
 			n += 1;
 		}
 		(v, n)
+	}
+	fn fraction(a: &[u8], mut k: usize) -> (Vec<u8>, usize) {
+		// the digits after a decimal point at a[k], and where they end
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let mut frac = Vec::new();
+		if at(k) == b'.' && at(k + 1).is_ascii_digit() {
+			k += 1;
+			while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
+		}
+		(frac, k)
+	}
+	fn amount(a: &[u8], from: usize) -> (u64, Vec<u8>, usize) {
+		// the number at a[from..] with its thousands commas and decimal digits, and where it ends
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let (mut v, n) = Self::digits(a, from);
+		let mut k = from + n;
+		while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
+			v = v.saturating_mul(1000).saturating_add(Self::digits(a, k + 1).0);
+			k += 4;
+		}
+		let (frac, k) = Self::fraction(a, k);
+		(v, frac, k)
+	}
+	fn scale_after(a: &[u8], k: usize) -> Option<(&'static str, usize)> {
+		// a scale word after spaces at a[k..] ("$20 billion"), and where it ends
+		let at = |i: usize| a.get(i).copied().unwrap_or(0);
+		let mut j = k;
+		while is_space(at(j)) { j += 1; }
+		if j == k { return None; }
+		["thousand", "million", "billion", "trillion"].into_iter()
+			.find(|w| a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !at(j + w.len()).is_ascii_alphabetic())
+			.map(|w| (w, j + w.len()))
+	}
+	fn point(&mut self, frac: &[u8]) -> String {
+		// " point five oh" for decimal digits, or nothing
+		let p: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
+		if frac.is_empty() { p } else { format!(" point{}", p) }
 	}
 	fn context_rule(&mut self, buf: &mut cbuf) -> bool {
 		const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august",
@@ -277,7 +320,7 @@ impl engine {
 				let r = 1 + q;
 				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's' && !at(r + 3).is_ascii_alphabetic() {
 					let w = self.words(((at(r) - b'0') * 10) as u64, false, false);
-					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
+					self.say(&Self::plural_last(&w));
 					consume(buf, r + 3);
 					return true;
 				}
@@ -286,7 +329,7 @@ impl engine {
 					let mut k = r;
 					while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; }
 					if Self::is_word(&w) {
-						self.scratch_pad.write_text(&format!(" {} ", w));
+						self.say(&w);
 						consume(buf, k);
 					} else {
 						self.scratch_pad.write_text(" ");
@@ -304,7 +347,7 @@ impl engine {
 				let mut k = 1 + q;
 				while is_space(at(k)) { k += 1; }
 				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { match at(0) { b'?' => "?", b'!' => "!", _ => "." } };
-				self.scratch_pad.write_text(&format!(" {} ", mark));
+				self.say(mark);
 				self.digit_prev = false;
 				self.is_plural = false;
 				consume(buf, 1 + q);
@@ -365,29 +408,11 @@ impl engine {
 		if let Some((len, one, many, sub_one, sub_many)) = currency {
 			if at(len).is_ascii_digit() {
 				// the whole amount, with its thousands commas
-				let (mut v, n) = Self::digits(&a, len);
-				let mut k = len + n;
-				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
-					v = v.saturating_mul(1000).saturating_add(Self::digits(&a, k + 1).0);
-					k += 4;
-				}
-				let mut frac: Vec<u8> = Vec::new();
-				if at(k) == b'.' && at(k + 1).is_ascii_digit() {
-					k += 1;
-					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
-				}
+				let (v, frac, mut k) = Self::amount(&a, len);
 				let num = self.words(v, false, false);
-				let mut j = k;
-				while is_space(at(j)) { j += 1; }
-				let scale = if j > k {
-					["thousand", "million", "billion", "trillion"].into_iter().find(|w| {
-						a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !at(j + w.len()).is_ascii_alphabetic()
-					})
-				} else { None };
-				let text = if let Some(w) = scale {
-					let point: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
-					let point = if frac.is_empty() { point } else { format!(" point{}", point) };
-					k = j + w.len();
+				let text = if let Some((w, end)) = Self::scale_after(&a, k) {
+					let point = self.point(&frac);
+					k = end;
 					format!(" {}{} {} {} ", num, point, w, many)
 				} else {
 					let unit = if v == 1 { one } else { many };
@@ -450,16 +475,7 @@ impl engine {
 				("mph", "mile per hour", "miles per hour", false), ("km/h", "kilometer per hour", "kilometers per hour", false),
 				("km/hr", "kilometer per hour", "kilometers per hour", false)];
 			{
-				let (mut v, mut k) = (v1, n1);
-				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
-					v = v.saturating_mul(1000).saturating_add(Self::digits(&a, k + 1).0);
-					k += 4;
-				}
-				let mut frac: Vec<u8> = Vec::new();
-				if at(k) == b'.' && at(k + 1).is_ascii_digit() {
-					k += 1;
-					while at(k).is_ascii_digit() { frac.push(at(k) - b'0'); k += 1; }
-				}
+				let (v, frac, k) = Self::amount(&a, 0);
 				let joined = !is_space(at(k));
 				let mut j = k;
 				while is_space(at(j)) { j += 1; }
@@ -469,8 +485,7 @@ impl engine {
 					.max_by_key(|u| u.0.len());
 				if let Some(&(ab, one, many, _)) = unit {
 					let num = self.words(v, false, false);
-					let point: String = frac.iter().map(|&d| format!(" {}", self.words(d as u64, false, true))).collect();
-					let point = if frac.is_empty() { point } else { format!(" point{}", point) };
+					let point = self.point(&frac);
 					let name = if v == 1 && frac.is_empty() { one } else { many };
 					self.scratch_pad.write_text(&format!(" {}{} {} ", num, point, name));
 					consume(buf, j + ab.len());
@@ -501,8 +516,12 @@ impl engine {
 					k += 1 + n;
 				}
 				if parts.len() >= 3 && !at(k).is_ascii_alphabetic() {
-					let said: Vec<String> = parts.iter().map(|&v| self.words(v, false, true)).collect();
-					self.scratch_pad.write_text(&format!(" {} ", said.join(" point ")));
+					for (i, &v) in parts.iter().enumerate() {
+						let w = self.words(v, false, true);
+						self.scratch_pad.write_text(if i == 0 { " " } else { " point " });
+						self.scratch_pad.write_text(&w);
+					}
+					self.scratch_pad.write_text(" ");
 					consume(buf, k);
 					self.digit_prev = true;
 					return true;
@@ -543,7 +562,7 @@ impl engine {
 			if let Some(s) = s_at {
 				if v1 % 10 == 0 && ends(s + 1) && ((n1 == 4 && (1100..=2099).contains(&v1)) || (n1 == 2 && v1 >= 10)) {
 					let w = if n1 == 4 { self.year_words(v1) } else { self.words(v1, false, false) };
-					self.scratch_pad.write_text(&format!(" {} ", Self::plural_last(&w)));
+					self.say(&Self::plural_last(&w));
 					consume(buf, s + 1);
 					return true;
 				}
@@ -583,7 +602,7 @@ impl engine {
 			}
 			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' && year {
 				let w = self.year_words(v1);
-				self.scratch_pad.write_text(&format!(" {} ", w));
+				self.say(&w);
 				consume(buf, 4);
 				self.digit_prev = true;
 				self.is_plural = true;
@@ -594,25 +613,12 @@ impl engine {
 		// money with a scale word: $1.5 million, $20 billion
 		if at(0) == b'$' && at(1).is_ascii_digit() {
 			let (v, n) = Self::digits(&a, 1);
-			let mut k = 1 + n;
-			let mut frac = String::new();
-			if at(k) == b'.' && at(k + 1).is_ascii_digit() {
-				k += 1;
-				while at(k).is_ascii_digit() { frac.push_str(&format!(" {}", self.words((at(k) - b'0') as u64, false, true))); k += 1; }
-			}
-			let mut j = k;
-			while is_space(at(j)) { j += 1; }
-			if j > k {
-				for scale in ["thousand", "million", "billion", "trillion"] {
-					let w = a.get(j..j + scale.len()).is_some_and(|s| s.eq_ignore_ascii_case(scale.as_bytes()));
-					if w && !at(j + scale.len()).is_ascii_alphabetic() {
-						let point = if frac.is_empty() { String::new() } else { format!(" point{}", frac) };
-						let num = self.words(v, false, false);
-						self.scratch_pad.write_text(&format!(" {}{} {} dollars ", num, point, scale));
-						consume(buf, j + scale.len());
-						return true;
-					}
-				}
+			let (frac, k) = Self::fraction(&a, 1 + n);
+			if let Some((scale, end)) = Self::scale_after(&a, k) {
+				let (num, point) = (self.words(v, false, false), self.point(&frac));
+				self.scratch_pad.write_text(&format!(" {}{} {} dollars ", num, point, scale));
+				consume(buf, end);
+				return true;
 			}
 		}
 
@@ -680,7 +686,7 @@ impl engine {
 				// a word ends what a number before it started, as any letter does
 				self.digit_prev = false;
 				self.is_plural = false;
-				self.scratch_pad.write_text(&format!(" {} ", w.to_ascii_uppercase()));
+				self.say(&w.to_ascii_uppercase());
 				consume(buf, n);
 				return true;
 			}
@@ -698,13 +704,13 @@ impl engine {
 					let before = Self::prev_word(buf);
 					let ruler = before.as_bytes().first().is_some_and(|c| c.is_ascii_uppercase()) && !CARDINAL_AFTER.contains(&before.to_ascii_lowercase().as_str());
 					let w = if ruler { format!("the {}", self.words(v, true, false)) } else { self.words(v, false, false) };
-					self.scratch_pad.write_text(&format!(" {} ", w));
+					self.say(&w);
 					consume(buf, n);
 					return true;
 				}
 				let low = run.to_ascii_lowercase();
 				if n >= 3 && Self::is_word(&low) {
-					self.scratch_pad.write_text(&format!(" {} ", low));
+					self.say(&low);
 					consume(buf, n);
 					return true;
 				}
@@ -919,8 +925,6 @@ impl engine {
 			letter      = [a-zA-Z];
 			vowel       = [aeiou];
 			wbound      = space;
-			state_start = comma [ ]+;
-			state_end   = period? space;
 
 			/* GRAMMAR FOR NUMBERS */
 			digit       = [0-9];
@@ -957,208 +961,38 @@ impl engine {
 			/* STATE ABBREVIATIONS */
 			/*---------------------*/
 
-			state_start 'AK' state_end {
-				self.scratch_pad.write_text(" alaska ");
-				break;
-			}
-			state_start 'AL' state_end {
-				self.scratch_pad.write_text(" alabama ");
-				break;
-			}
-			state_start 'AR' state_end {
-				self.scratch_pad.write_text(" arkansas ");
-				break;
-			}
-			state_start 'AZ' state_end {
-				self.scratch_pad.write_text(" arizona ");
-				break;
-			}
-			state_start 'CA' state_end {
-				self.scratch_pad.write_text(" california ");
-				break;
-			}
-			state_start "CO" state_end {
-				self.scratch_pad.write_text(" colorado ");
-				break;
-			}
-			state_start 'CT' state_end {
-				self.scratch_pad.write_text(" connecticut ");
-				break;
-			}
-			state_start 'DC' state_end {
-				self.scratch_pad.write_text(" district of columbia ");
-				break;
-			}
-			state_start 'DE' state_end {
-				self.scratch_pad.write_text(" delaware ");
-				break;
-			}
-			state_start 'FL' state_end {
-				self.scratch_pad.write_text(" florida ");
-				break;
-			}
-			state_start 'GA' state_end {
-				self.scratch_pad.write_text(" georgia ");
-				break;
-			}
-			state_start "HI" state_end {
-				self.scratch_pad.write_text(" hawaii ");
-				break;
-			}
-			state_start 'IA' state_end {
-				self.scratch_pad.write_text(" iowa ");
-				break;
-			}
-			state_start "ID" state_end {
-				self.scratch_pad.write_text(" idaho ");
-				break;
-			}
-			state_start 'IL' state_end {
-				self.scratch_pad.write_text(" illinois ");
-				break;
-			}
-			state_start "IN" state_end {
-				self.scratch_pad.write_text(" indiana ");
-				break;
-			}
-			state_start 'KS' state_end {
-				self.scratch_pad.write_text(" kansas ");
-				break;
-			}
-			state_start 'KY' state_end {
-				self.scratch_pad.write_text(" kentucky ");
-				break;
-			}
-			state_start "LA" state_end {
-				self.scratch_pad.write_text(" louisiana ");
-				break;
-			}
-			state_start "MA" state_end {
-				self.scratch_pad.write_text(" massachusetts ");
-				break;
-			}
-			state_start 'MD' state_end {
-				self.scratch_pad.write_text(" maryland ");
-				break;
-			}
-			state_start "ME" state_end {
-				self.scratch_pad.write_text(" maine ");
-				break;
-			}
-			state_start 'MI' state_end {
-				self.scratch_pad.write_text(" michigan ");
-				break;
-			}
-			state_start 'MN' state_end {
-				self.scratch_pad.write_text(" minnesota ");
-				break;
-			}
-			state_start 'MO' state_end {
-				self.scratch_pad.write_text(" missouri ");
-				break;
-			}
-			state_start 'MS' state_end {
-				self.scratch_pad.write_text(" mississippi ");
-				break;
-			}
-			state_start 'MT' state_end {
-				self.scratch_pad.write_text(" montana ");
-				break;
-			}
-			state_start 'NC' state_end {
-				self.scratch_pad.write_text(" north carolina ");
-				break;
-			}
-			state_start 'ND' state_end {
-				self.scratch_pad.write_text(" north dakota ");
-				break;
-			}
-			state_start 'NE' state_end {
-				self.scratch_pad.write_text(" nebraska ");
-				break;
-			}
-			state_start 'NH' state_end {
-				self.scratch_pad.write_text(" new hampshire ");
-				break;
-			}
-			state_start 'NJ' state_end {
-				self.scratch_pad.write_text(" new jersey ");
-				break;
-			}
-			state_start 'NM' state_end {
-				self.scratch_pad.write_text(" new mexico ");
-				break;
-			}
-			state_start 'NV' state_end {
-				self.scratch_pad.write_text(" nevada ");
-				break;
-			}
-			state_start 'NY' state_end {
-				self.scratch_pad.write_text(" new york ");
-				break;
-			}
-			state_start "OH" state_end {
-				self.scratch_pad.write_text(" ohio ");
-				break;
-			}
-			state_start "OK" state_end {
-				self.scratch_pad.write_text(" oklahoma ");
-				break;
-			}
-			state_start "OR" state_end {
-				self.scratch_pad.write_text(" oregon ");
-				break;
-			}
-			state_start 'PA' state_end {
-				self.scratch_pad.write_text(" pennsylvania ");
-				break;
-			}
-			state_start 'RI' state_end {
-				self.scratch_pad.write_text(" rhode island ");
-				break;
-			}
-			state_start 'SC' state_end {
-				self.scratch_pad.write_text(" south carolina ");
-				break;
-			}
-			state_start 'SD' state_end {
-				self.scratch_pad.write_text(" south dakota ");
-				break;
-			}
-			state_start 'TN' state_end {
-				self.scratch_pad.write_text(" tennessee ");
-				break;
-			}
-			state_start 'TX' state_end {
-				self.scratch_pad.write_text(" texas ");
-				break;
-			}
-			state_start 'UT' state_end {
-				self.scratch_pad.write_text(" utah ");
-				break;
-			}
-			state_start 'VA' state_end {
-				self.scratch_pad.write_text(" virginia ");
-				break;
-			}
-			state_start 'VT' state_end {
-				self.scratch_pad.write_text(" vermont ");
-				break;
-			}
-			state_start 'WA' state_end {
-				self.scratch_pad.write_text(" washington ");
-				break;
-			}
-			state_start 'WI' state_end {
-				self.scratch_pad.write_text(" wisconsin ");
-				break;
-			}
-			state_start 'WV' state_end {
-				self.scratch_pad.write_text(" west virginia ");
-				break;
-			}
-			state_start 'WY' state_end {
-				self.scratch_pad.write_text(" wyoming ");
+			@t1 comma [ ]+ @t2 letter letter period? space {
+				// a state after a comma: "Austin, TX" reads texas. true: capitals only, since "or", "in", "me" and the like are
+				// words. Any other two letters are just the comma
+				const STATES: [(&[u8; 2], bool, &str); 51] = [
+					(b"AK", false, "alaska"), (b"AL", false, "alabama"), (b"AR", false, "arkansas"), (b"AZ", false, "arizona"),
+					(b"CA", false, "california"), (b"CO", true, "colorado"), (b"CT", false, "connecticut"), (b"DC", false, "district of columbia"),
+					(b"DE", false, "delaware"), (b"FL", false, "florida"), (b"GA", false, "georgia"), (b"HI", true, "hawaii"),
+					(b"IA", false, "iowa"), (b"ID", true, "idaho"), (b"IL", false, "illinois"), (b"IN", true, "indiana"),
+					(b"KS", false, "kansas"), (b"KY", false, "kentucky"), (b"LA", true, "louisiana"), (b"MA", true, "massachusetts"),
+					(b"MD", false, "maryland"), (b"ME", true, "maine"), (b"MI", false, "michigan"), (b"MN", false, "minnesota"),
+					(b"MO", false, "missouri"), (b"MS", false, "mississippi"), (b"MT", false, "montana"), (b"NC", false, "north carolina"),
+					(b"ND", false, "north dakota"), (b"NE", false, "nebraska"), (b"NH", false, "new hampshire"), (b"NJ", false, "new jersey"),
+					(b"NM", false, "new mexico"), (b"NV", false, "nevada"), (b"NY", false, "new york"), (b"OH", true, "ohio"),
+					(b"OK", true, "oklahoma"), (b"OR", true, "oregon"), (b"PA", false, "pennsylvania"), (b"RI", false, "rhode island"),
+					(b"SC", false, "south carolina"), (b"SD", false, "south dakota"), (b"TN", false, "tennessee"), (b"TX", false, "texas"),
+					(b"UT", false, "utah"), (b"VA", false, "virginia"), (b"VT", false, "vermont"), (b"WA", false, "washington"),
+					(b"WI", false, "wisconsin"), (b"WV", false, "west virginia"), (b"WY", false, "wyoming"),
+				];
+				let end = buf.getcurs();
+				buf.setcurs(t2);
+				let pair = [buf.read(), { buf.advance(); buf.read() }];
+				if let Some(st) = STATES.iter().find(|st| if st.1 { *st.0 == pair } else { st.0.eq_ignore_ascii_case(&pair) }) {
+					buf.setcurs(end);
+					self.say(st.2);
+				} else {
+					// as the comma rule
+					buf.setcurs(t1);
+					buf.advance();
+					self.digit_prev = false;
+					self.is_plural  = false;
+					self.scratch_pad.write_text(" , ");
+				}
 				break;
 			}
 
@@ -1347,134 +1181,15 @@ impl engine {
 			/*-----------------*/
 
 			/* DEAL WITH UPPERCASE LETTERS FIRST */
-			"A" period? {
-				self.scratch_pad.write_text(" A");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"B" period? {
-				self.scratch_pad.write_text(" b");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"C" period? {
-				self.scratch_pad.write_text(" c");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"D" period? {
-				self.scratch_pad.write_text(" d");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"E" period? {
-				self.scratch_pad.write_text(" e");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"F" period? {
-				self.scratch_pad.write_text(" f");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"G" period? {
-				self.scratch_pad.write_text(" g");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"H" period? {
-				self.scratch_pad.write_text(" h");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"I" period? {
-				self.scratch_pad.write_text(" i");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"J" period? {
-				self.scratch_pad.write_text(" j");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"K" period? {
-				self.scratch_pad.write_text(" k");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"L" period? {
-				self.scratch_pad.write_text(" l");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"M" period? {
-				self.scratch_pad.write_text(" m");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"N" period? {
-				self.scratch_pad.write_text(" n");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"O" period? {
-				self.scratch_pad.write_text(" o");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"P" period? {
-				self.scratch_pad.write_text(" p");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"Q" period? {
-				self.scratch_pad.write_text(" q");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"R" period? {
-				self.scratch_pad.write_text(" r");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"S" period? {
-				self.scratch_pad.write_text(" s");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"T" period? {
-				self.scratch_pad.write_text(" t");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"U" period? {
-				self.scratch_pad.write_text(" u");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"V" period? {
-				self.scratch_pad.write_text(" v");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"W" period? {
-				self.scratch_pad.write_text(" w");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"X" period? {
-				self.scratch_pad.write_text(" x");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"Y" period? {
-				self.scratch_pad.write_text(" y");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
-				break;
-			}
-			"Z" period? {
-				self.scratch_pad.write_text(" z");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf); }
+			[A-Z] period? {
+				// a capital letter alone is spelled ("A" stays the article's capital)
+				let dot = Self::prev_byte(buf) == b'.';
+				if dot { buf.recede(); }
+				let c = Self::prev_byte(buf);
+				if dot { buf.advance(); }
+				self.scratch_pad.write_text(" ");
+				self.scratch_pad.write(if c == b'A' { c } else { c.to_ascii_lowercase() });
+				if dot { self.end_after_period(buf); }
 				break;
 			}
 
@@ -1483,20 +1198,6 @@ impl engine {
 				self.is_plural  = false;
 				self.digit_prev = false;
 				self.scratch_pad.write(Self::prev_byte(buf));
-				break;
-			}
-
-			/* ROUTINE FOR NUMBERS STARTING WITH ZEROES OR PAST QUADRILLIONS: DIGIT BY DIGIT */
-			@t1 ("0" whole_num | whole_num{19,}) {
-				self.digit_prev = true;
-				let end = buf.getcurs();
-				buf.setcurs(t1);
-				while buf.getcurs() < end {
-					self.reset_ntw();
-					self.consume_digit(buf.read());
-					self.ntw(true, false);
-					buf.advance();
-				}
 				break;
 			}
 
@@ -1536,6 +1237,22 @@ impl engine {
 			/* ROUTINES FOR PROCESSING MOST NUMBERS */
 			@t1 plusminus? @t2 numspecial? @t3 whole_num @t4 decimal? @t5 {
 				let end = buf.getcurs();
+				// a bare number starting with a zero or past quadrillions: digit by digit
+				buf.setcurs(t3);
+				let zero = buf.read() == b'0';
+				let mut digits = 0;
+				while buf.getcurs() != t4 { digits += buf.read().is_ascii_digit() as usize; buf.advance(); }
+				if t1 == t3 && t4 == t5 && ((zero && digits > 1) || digits >= 19) {
+					self.digit_prev = true;
+					buf.setcurs(t3);
+					while buf.getcurs() != end {
+						self.reset_ntw();
+						self.consume_digit(buf.read());
+						self.ntw(true, false);
+						buf.advance();
+					}
+					break;
+				}
 				if t1 != t2 {
 					buf.setcurs(t1);
 					if buf.read() == b'+' {

@@ -67,9 +67,8 @@ impl dictreader {
 		// an entry matches the word as given or in lowercase. On a match pos is at its phones
 		if !self.is_valid { return false; }
 		let n = self.wordlen as usize;
-		let lower = self.word.map(|c| c.to_ascii_lowercase());
 		let mut entry = [0u8; 32];
-		let mut pos = getLetterOffset(lower[0]);
+		let mut pos = getLetterOffset(self.word[0].to_ascii_lowercase());
 		loop {
 			let head = dictdat[pos];
 			if head == 0xFF { return false; }
@@ -82,7 +81,7 @@ impl dictreader {
 				len += 1;
 				if c & 0x80 != 0 { break; }
 			}
-			if len == n && (entry[..n] == self.word[..n] || entry[..n] == lower[..n]) {
+			if len == n && (entry[..n] == self.word[..n] || entry[..n].iter().zip(&self.word).all(|(&e, w)| e == w.to_ascii_lowercase())) {
 				self.funcword = head & 0x20 != 0;
 				self.pos = pos;
 				self.done = false;
