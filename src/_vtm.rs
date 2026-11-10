@@ -121,7 +121,7 @@ pub struct Voice {
 pub const VOICES: [Voice; 8] = [
 	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },	// 0 table voice
 	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },	// 1 large head
-	Voice { f0: 190.0, range: 115.0, f1: 122.0, f2: 117.0, f3: 115.0, fhi: 112.0, rd: 140.0, br: 4.0, db: -1.4, fl:  25.0, jit: 0.2, shim: 0.2 },	// 2 female
+	Voice { f0: 150.0, range:  85.0, f1: 136.0, f2: 113.0, f3: 117.0, fhi: 111.0, rd: 240.0, br: 8.0, db:  2.2, fl:  25.0, jit: 0.2, shim: 0.2 },	// 2 female
 	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -3.1, fl:  25.0, jit: 0.2, shim: 0.2 },	// 3 child
 	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.1, fl:  25.0, jit: 0.6, shim: 0.4 },	// 4 giant
 	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  2.6, fl:  25.0, jit: 0.2, shim: 0.2 },	// 5 deep voice, tiny head
