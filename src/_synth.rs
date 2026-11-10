@@ -151,7 +151,7 @@ const VOICE_SWITCH_MS: f32 = 10.0;
 const NASAL_RELEASE_MS: f32 = 30.0;
 
 // a vowel's nasal coupling next to a nasal: up to NASAL_VOWEL_K, over NASAL_ANTIC_MS before it and NASAL_CARRY_MS after
-const NASAL_VOWEL_K: f32 = 0.3;
+const NASAL_VOWEL_K: f32 = 0.2;
 const NASAL_ANTIC_MS: f32 = 80.0;
 const NASAL_CARRY_MS: f32 = 40.0;
 
