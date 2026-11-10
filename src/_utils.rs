@@ -54,6 +54,8 @@ impl cbuf {
 	}
 	pub fn write_text(&mut self, txt: &str) {
 		for x in txt.bytes() {
+			// a NUL in the text would end it early: it is the stream's end marker
+			let x = if x == 0 { 0x20 } else { x };
 			if self.prev != 0x20 || x != 0x20 { self.write(x); }
 		}
 	}

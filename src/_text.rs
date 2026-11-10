@@ -56,7 +56,8 @@ impl engine {
 	// NUMBER TO WORD PART
 	fn reset_ntw(&mut self) { self.number = 0; }
 	fn consume_digit(&mut self, x: u8) {
-		if x.is_ascii_digit() { self.number = self.number * 10 + (x - b'0') as u64; }
+		// ponytail: saturates past u64 (20+ digits), which then reads the wrong digits; keep the digit text if that matters
+		if x.is_ascii_digit() { self.number = self.number.saturating_mul(10).saturating_add((x - b'0') as u64); }
 	}
 	fn process_number(&mut self, x: u64, zero_oh: bool, is_ordinal: bool) {
 		const ONES: [&str; 20] = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
@@ -98,6 +99,11 @@ impl engine {
 				self.process_number(unders, zero_oh, is_ordinal);
 			}
 			self.scratch_pad.write_text(" ");
+		} else {
+			// past the largest scale: digit by digit
+			let mut p = 1u64;
+			while x / p >= 10 { p *= 10; }
+			while p > 0 { self.process_number(x / p % 10, false, false); p /= 10; }
 		}
 	}
 	fn ntw(&mut self, zero_oh: bool, is_ordinal: bool) {
@@ -363,7 +369,7 @@ impl engine {
 				let (mut v, n) = Self::digits(&a, len);
 				let mut k = len + n;
 				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
-					v = v * 1000 + Self::digits(&a, k + 1).0;
+					v = v.saturating_mul(1000).saturating_add(Self::digits(&a, k + 1).0);
 					k += 4;
 				}
 				let mut frac: Vec<u8> = Vec::new();
@@ -447,7 +453,7 @@ impl engine {
 			{
 				let (mut v, mut k) = (v1, n1);
 				while at(k) == b',' && (1..=3).all(|i| at(k + i).is_ascii_digit()) && !at(k + 4).is_ascii_digit() {
-					v = v * 1000 + Self::digits(&a, k + 1).0;
+					v = v.saturating_mul(1000).saturating_add(Self::digits(&a, k + 1).0);
 					k += 4;
 				}
 				let mut frac: Vec<u8> = Vec::new();

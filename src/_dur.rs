@@ -96,8 +96,11 @@ pub fn pause_after(end: Boundary, rate: f32) -> f32 {
 		Boundary::Minor => MINOR_PAUSE_MS,
 		_ => SENTENCE_PAUSE_MS
 	};
-	ms / (rate * TEMPO)
+	ms / tempo(rate)
 }
+
+// the speaking rate times TEMPO, the rate held to 0.5..2 (a NaN is the normal rate)
+fn tempo(rate: f32) -> f32 { if rate.is_nan() { TEMPO } else { rate.clamp(0.5, 2.0) * TEMPO } }
 
 pub fn assign(utt: &mut Utterance, rate: f32) {
 	for i in 0..utt.segs.len() {
@@ -145,7 +148,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 		if word.function { apply("function-word", FUNCTION_WORD); }
 
 		let pd = phone_dur(p);
-		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / (rate * TEMPO);
+		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / tempo(rate);
 		utt.segs[i].rules = rules;
 	}
 }

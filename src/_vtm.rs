@@ -72,6 +72,7 @@ const PARR_GAIN: f32 = 7.5;
 
 // init constants and nasal murmur
 const RA_REF:   f32 = 3.8;
+const RD_MIN:   f32 = 0.3;
 const F1_INIT:  f32 = 500.0;
 const B1_INIT:  f32 = 60.0;
 const F2_INIT:  f32 = 1500.0;
@@ -372,8 +373,8 @@ const PULSE_RING: usize = 16;
 struct LfSource {
 	pos_in_period: f32,
 	last_inc: f32,				// period fraction the last sample advanced by
-	exc: [f32; PULSE_RING],		// excitation still to play, by absolute sample index
-	n: usize,					// absolute sample index
+	exc: [f32; PULSE_RING],		// excitation still to play, by sample index
+	n: usize,					// sample index, modulo PULSE_RING
 	glottal: Biquad,
 	tilt: LpPole,
 	flut_clock: u32,
@@ -428,6 +429,8 @@ impl LfSource {
 	fn calc_fant(&mut self, f0: f32, rd: f32) {
 		// get Fant 1997 parameters
 		let t0 = 1.0 / f0;
+		// under Rd 0.21 the return phase Ra goes negative and the tilt filter blows up
+		let rd = rd.max(RD_MIN);
 		self.ra = (-1.0 + 4.8  * rd) / 100.0;
 		let rk = (22.4 + 11.8 * rd) / 100.0;
 		let rg_denom = 0.44 * rd - 4.0 * self.ra * (0.5 + 1.2 * rk);
@@ -490,7 +493,8 @@ impl LfSource {
 		let slot = self.n % PULSE_RING;
 		let impulse = self.exc[slot];
 		self.exc[slot] = 0.0;
-		self.n += 1;
+		// kept within the ring: as an f32 a growing count loses the pulse's fraction of a sample
+		self.n = (self.n + 1) % PULSE_RING;
 
 		let sample = self.tilt.step(self.glottal.step(impulse));
 
@@ -677,7 +681,7 @@ impl vtm {
 		// adjust bandwidths to improve sound quality
 
 		// F0-proximity bandwidth adjust
-		self.B1 += 200.0 * libm::powf(self.F0 / self.F1 - 0.5, 2.0);
+		self.B1 += 200.0 * libm::powf((self.F0 / self.F1 - 0.5).max(0.0), 2.0);
 
 		// glottal leakage adjust (B1, B2): an open glottis only adds loss, so it never narrows a bandwidth
 		let DB1 = (250.0 * libm::powf(self.F1 / 500.0, 2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0).max(0.0);
@@ -832,8 +836,21 @@ mod tests {
 	fn high_voices_have_a_higher_bandwidth_floor() {
 		// a high voice's rings have less time to die between pulses: a B1 the table voice keeps is floored there
 		let hi = VOICES[3];
-		assert_eq!(steady(hi, 600.0, 1500.0, 50.0, 10.0), steady(hi, 600.0, 1500.0, 10.0, 10.0));
-		assert_ne!(steady(VOICES[0], 600.0, 1500.0, 50.0, 10.0), steady(VOICES[0], 600.0, 1500.0, 10.0, 10.0));
+		assert_eq!(steady(hi, 600.0, 1500.0, 65.0, 10.0), steady(hi, 600.0, 1500.0, 10.0, 10.0));
+		assert_ne!(steady(VOICES[0], 600.0, 1500.0, 65.0, 10.0), steady(VOICES[0], 600.0, 1500.0, 10.0, 10.0));
+	}
+
+	#[test]
+	fn pitch_far_below_f1_leaves_b1_alone() {
+		// B1 widens as F0 comes up toward F1, not as it moves away from it
+		let b1 = |f0: f32| {
+			let mut v = vtm::new();
+			v.F0 = f0; v.AV = DB_GAIN[60]; v.RD = 0.6; v.F1 = 750.0; v.F2 = 1250.0; v.B1 = 100.0; v.B2 = 88.0;
+			v.step();
+			v.B1
+		};
+		assert_eq!(b1(100.0), 100.0);
+		assert!(b1(500.0) > 100.0);
 	}
 
 	#[test]

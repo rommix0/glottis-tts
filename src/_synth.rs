@@ -176,6 +176,7 @@ const LIQUID_DEVOICE: f32 = 0.8;
 // aspiration is loud against a close front vowel: cut per kHz of the vowel's F2-F1 gap above ASP_FRONT_FROM_HZ
 const ASP_FRONT_DB_PER_KHZ: f32 = 6.5;
 const ASP_FRONT_FROM_HZ: f32 = 700.0;
+fn asp_front_cut(f1: f32, f2: f32) -> f32 { ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0 }
 
 // h: breath level (AH) before a vowel, cut like aspiration before front vowels, crossfading with the vowel's voicing
 const H_DB: f32 = 12.0;
@@ -702,7 +703,7 @@ impl engine {
 		self.C_B_src   = self.tbl[offset_src+1] as u8;
 		self.RD_A_src  = self.tbl[offset_src+2] as f32 / 100.0;
 		self.RD_B_src  = self.tbl[offset_src+3] as f32 / 100.0;
-		self.NZP_A_src = if self.pft_c & 0x10 != 0 { 1.0 } else { 0.0 };	// nasal coupling: 1 for a nasal consonant
+		self.NZP_A_src = if feats(row) & 0x10 != 0 { 1.0 } else { 0.0 };	// nasal coupling: 1 for a nasal consonant
 		self.F1_A_src  = self.tbl[offset_src+5] as f32;
 		self.F2_A_src  = self.tbl[offset_src+6] as f32;
 		self.F3_A_src  = self.tbl[offset_src+7] as f32;
@@ -766,12 +767,12 @@ impl engine {
 				}
 			}
 
-			// VELAR PINCHING RULE
-			if self.pft_l1 & 0x100 != 0 {
-				self.F2_A_src += 80.0 * factor;
+			// VELAR PINCHING RULE (more on a front vowel's F2)
+			if self.pft_l1 & 0x100 != 0 && self.phn_l1 != 41 {
+				self.F2_A_src += if self.pft_c & 0x4 != 0 { 130.0 } else { 80.0 } * factor;
 				self.F3_A_src -= 100.0 * factor;
 			}
-			if self.pft_r1 & 0x100 != 0 {
+			if self.pft_r1 & 0x100 != 0 && self.phn_r1 != 41 {
 				// a back vowel's F2 stays put before a velar
 				if self.F2_B_src > 1500.0 { self.F2_B_src += 80.0 * factor; }
 				self.F3_B_src -= 100.0 * factor;
@@ -786,11 +787,12 @@ impl engine {
 			}
 
 			// SONORANT ADJUSTMENT
-			if self.pft_l1 & 0x1C00 != 0 {
+			// after r and w; an l and a y keep their F3 high
+			if matches!(self.phn_l1, 32 | 33 | 41) {
 				self.F3_A_src -= 150.0 * factor;
 			}
-			if self.pft_r1 & 0x1000 != 0 {
-				// before w and y; an l keeps its F3 high, an r has its own rule
+			if self.phn_r1 == 41 {
+				// before w; an l and a y keep their F3 high, an r has its own rule
 				self.F3_B_src -= 150.0 * factor;
 			}
 
@@ -817,13 +819,6 @@ impl engine {
 				}
 			}
 
-			// FRONT VOWEL ADJUSTMENT
-			if self.pft_c & 0x4 != 0 {
-				if self.pft_l1 & 0x100 != 0 {
-					self.F2_A_src += 50.0 * factor;
-				}
-			}
-
 			// VOWEL RHOTICIZATION
 			if self.pft_r1 & 0x800 != 0 {
 				// the vowel takes on r-coloring as it moves into the r, not from its start, by the same amount
@@ -845,12 +840,6 @@ impl engine {
 				}
 			}
 
-			// WIDEN BANDWIDTH AFTER UNVOICED PLOSIVE
-			if self.pft_l1 & 0x42 == 0x40 {
-				self.B1_A_src += 125.0 * factor;
-				self.B2_A_src += 50.0 * factor;
-			}
-
 			// BACK VOWEL ALVEOLARIZATION
 			// not before an r, where the vowel has its own place
 			if self.pft_c == 0x000B && self.pft_r1 & 0x800 == 0 {
@@ -864,19 +853,22 @@ impl engine {
 			}
 
 		} else {
+			// F2 and the velars' F3 are left to loci(), which places them from the neighbouring vowels
 			// NASAL ADJUSTMENT AFTER FRONT VOWEL
 			if self.pft_c & 0x10 != 0 && self.pft_l1 & 0x5 == 0x5 {
-				self.F2_A_src -= 125.0;
-				self.F2_B_src -= 125.0;
 				self.F3_A_src -= 100.0;
 				self.F3_B_src -= 100.0;
 			}
-			// VELAR FRONTING/LABIALIZATION RULE
-			if self.pft_c & 0x300 != 0 && self.pft_r1 & 0x5 == 0x5 {
-				self.F2_A_src += 150.0;
-				self.F2_B_src += 150.0;
-				self.F3_A_src += 175.0;
-				self.F3_B_src += 175.0;
+			// BEFORE A FRONT VOWEL: w moves up toward it; a sibilant's F3 (which A3 follows) rises
+			if self.pft_r1 & 0x5 == 0x5 {
+				if self.phn_c == 41 {
+					self.F2_A_src += 150.0;
+					self.F2_B_src += 150.0;
+				}
+				if self.phn_c == 41 || self.pft_c & 0x200 != 0 {
+					self.F3_A_src += 175.0;
+					self.F3_B_src += 175.0;
+				}
 			}
 			// NASAL BANDWIDTH ADJUSTMENT
 			if self.pft_c & 0x10 != 0 {
@@ -917,16 +909,14 @@ impl engine {
 	fn reduce(&mut self) {
 		// move vowel targets toward the neutral vowel (AX) as the vowel gets shorter
 		if self.pft_c & 0x1 == 0 || self.phn_c == 6 || self.phn_c == 20 { return; }
-		let d_ms = self.pdr_c as f32 * 1000.0 / m_sr as f32;
+		[self.F1_A_src, self.F2_A_src, self.F3_A_src] = self.reduced([self.F1_A_src, self.F2_A_src, self.F3_A_src], self.pdr_c);
+		[self.F1_B_src, self.F2_B_src, self.F3_B_src] = self.reduced([self.F1_B_src, self.F2_B_src, self.F3_B_src], self.pdr_c);
+	}
+	fn reduced(&self, f: [f32; 3], dur: i32) -> [f32; 3] {
+		// F1-F3 of a vowel lasting dur samples, moved toward the neutral vowel's
 		let ax_row = 6 * 31;
-		let (n1, n2, n3) = (self.tbl[ax_row + 5] as f32, self.tbl[ax_row + 6] as f32, self.tbl[ax_row + 7] as f32);
-		let k = reduce_k(d_ms);
-		self.F1_A_src = n1 + (self.F1_A_src - n1) * k;
-		self.F2_A_src = n2 + (self.F2_A_src - n2) * k;
-		self.F3_A_src = n3 + (self.F3_A_src - n3) * k;
-		self.F1_B_src = n1 + (self.F1_B_src - n1) * k;
-		self.F2_B_src = n2 + (self.F2_B_src - n2) * k;
-		self.F3_B_src = n3 + (self.F3_B_src - n3) * k;
+		let k = reduce_k(dur as f32 * 1000.0 / m_sr as f32);
+		[0, 1, 2].map(|i| { let n = self.tbl[ax_row + 5 + i] as f32; n + (f[i] - n) * k })
 	}
 	fn quiet_next_db(&self) -> f32 {
 		// how much quieter above F2 the next vowel or sonorant is than an open vowel (dB; 0 if none or louder)
@@ -939,11 +929,7 @@ impl engine {
 		let row = self.phn_r1 as usize * 31;
 		let target = [self.tbl[row + 5] as f32, self.tbl[row + 6] as f32, self.tbl[row + 7] as f32];
 		if self.phn_r1 == 6 || self.phn_r1 == 20 { return target; }
-		let d_ms = self.pdr_r1 as f32 * 1000.0 / m_sr as f32;
-		let ax_row = 6 * 31;
-		let nv = [self.tbl[ax_row + 5] as f32, self.tbl[ax_row + 6] as f32, self.tbl[ax_row + 7] as f32];
-		let k = reduce_k(d_ms);
-		[0, 1, 2].map(|i| nv[i] + (target[i] - nv[i]) * k)
+		self.reduced(target, self.pdr_r1)
 	}
 	fn loci(&mut self, prev_f2: f32) {
 		let prev_vowel = self.pft_l1 & 0x1 != 0;
@@ -954,7 +940,7 @@ impl engine {
 				let [f1, f2, f3] = self.next_vowel_formants();
 				(self.F1_A_src, self.F2_A_src, self.F3_A_src) = (f1, f2, f3);
 				(self.F1_B_src, self.F2_B_src, self.F3_B_src) = (f1, f2, f3);
-				self.AH_src = H_DB - ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0;
+				self.AH_src = H_DB - asp_front_cut(f1, f2);
 			}
 			return;
 		}
@@ -968,19 +954,18 @@ impl engine {
 		if next_vowel && (self.phn_c == 16 || self.phn_c == 40) { (self.F3_A_src, self.F3_B_src) = (next_f3, next_f3); }
 		let left  = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
+		// F2 (and F3 for k and g) at an edge whose vowel has F2 v; k and g sit above a front vowel's F2, with F3 coming
+		// down toward it
+		let phn = self.phn_c;
+		let edge = |v: f32, f3: f32| {
+			let f2 = f2_offset + f2_slope * v.max(floor);
+			if matches!(phn, 17 | 23) { (f2.max(v + VELAR_F2_ABOVE), VELAR_F3.1 + VELAR_F3.0 * v) } else { (f2, f3) }
+		};
 		// a side with no vowel holds the other side's value
-		if let Some(v) = left.or(right) { self.F2_A_src = f2_offset + f2_slope * v.max(floor); }
-		if let Some(v) = right.or(left) { self.F2_B_src = f2_offset + f2_slope * v.max(floor); }
-		if self.pft_c & 0x100 != 0 {
-			// velars: F3 comes down toward F2 by front vowels; ng's pinches to just above its F2
-			let (f3_slope, f3_offset) = VELAR_F3;
-			if self.phn_c == 28 {
-				(self.F3_A_src, self.F3_B_src) = (self.F2_A_src + NG_PINCH_HZ, self.F2_B_src + NG_PINCH_HZ);
-			} else {
-				if let Some(v) = left.or(right) { self.F2_A_src = self.F2_A_src.max(v + VELAR_F2_ABOVE); self.F3_A_src = f3_offset + f3_slope * v; }
-				if let Some(v) = right.or(left) { self.F2_B_src = self.F2_B_src.max(v + VELAR_F2_ABOVE); self.F3_B_src = f3_offset + f3_slope * v; }
-			}
-		}
+		if let Some(v) = left.or(right) { (self.F2_A_src, self.F3_A_src) = edge(v, self.F3_A_src); }
+		if let Some(v) = right.or(left) { (self.F2_B_src, self.F3_B_src) = edge(v, self.F3_B_src); }
+		// ng's F3 pinches to just above its F2
+		if phn == 28 { (self.F3_A_src, self.F3_B_src) = (self.F2_A_src + NG_PINCH_HZ, self.F2_B_src + NG_PINCH_HZ); }
 	}
 	fn load_registers(&mut self) {
 		// load for the first time
@@ -1258,6 +1243,7 @@ impl engine {
 			// the previous phone's formant targets at its end, before fetch replaces them
 			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
 			let prev_rd = self.RD_B_src;
+			let (prev_b, prev_av) = ([self.B1_B_src, self.B2_B_src, self.B3_B_src], self.AV_src);
 
 			self.fetch();
 
@@ -1273,10 +1259,16 @@ impl engine {
 			// the phrase-end release is the last phone's voice dying away, so it keeps that voice's Rd
 			if matches!(self.phn_c, 48 | 49) {
 				(self.RD_A_src, self.RD_B_src) = (prev_rd, prev_rd);
-				// at the end of a phrase an r keeps its tongue in place while the voice dies away
-				if matches!(self.phn_l1, 32 | 33 | 14 | 7) {
+				// at the end of a phrase an r or a nasal keeps its tongue in place while the voice dies away
+				if matches!(self.phn_l1, 32 | 33 | 14 | 7) || self.pft_l1 & 0x10 != 0 {
 					[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
 					[self.F1_B_src, self.F2_B_src, self.F3_B_src] = prev_f;
+				}
+				// and a nasal its velum, damping and level
+				if self.pft_l1 & 0x10 != 0 {
+					[self.B1_A_src, self.B2_A_src, self.B3_A_src] = prev_b;
+					[self.B1_B_src, self.B2_B_src, self.B3_B_src] = prev_b;
+					self.AV_src = prev_av;
 				}
 			}
 
@@ -1365,7 +1357,7 @@ impl engine {
 					// softer before a front, close vowel, or one quiet above F2
 					let front = if self.pft_r1 & 0x1 != 0 {
 						let [f1, f2, _] = self.next_vowel_formants();
-						ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - ASP_FRONT_FROM_HZ).max(0.0) / 1000.0
+						asp_front_cut(f1, f2)
 					} else { 0.0 };
 					level -= front.max(if self.phn_c == 36 && self.pft_r1 & 0x1 == 0 { 0.0 } else { ASP_FOLLOW * self.quiet_next_db() });
 					if schwa_t(self.phn_c, self.pwi_c, self.phn_r1, self.pst_r1) { level -= SCHWA_T_ASP_DB; }
@@ -2568,6 +2560,26 @@ mod tests {
 	}
 
 	#[test]
+	fn only_low_f3_neighbours_lower_a_vowels_f3() {
+		// l and y have a high F3, so a vowel next to them keeps its own ("lee", "you"); after r and w it starts lower
+		let start = |c: u8| loaded(&[(PAU, 50, false), (6, 100, false), (c, 80, false), (21, 150, true), (36, 80, false), (6, 100, false)], 21);
+		let f3 = |c: u8| start(c).F3_A_src;
+		for c in [24u8, 42] { assert!((f3(c) - f3(11)).abs() < 1.0, "iy starts at F3 {} after {}, {} after d", f3(c), c, f3(11)); }
+		for c in [32u8, 41] { assert!(f3(c) < f3(11) - 100.0, "iy starts at F3 {} after {}, {} after d", f3(c), c, f3(11)); }
+		let end = |c: u8| loaded(&[(PAU, 50, false), (16, 100, false), (21, 150, true), (c, 80, false), (6, 100, false)], 21).F3_B_src;
+		assert!((end(42) - end(36)).abs() < 1.0, "iy ends at F3 {} before y, {} before t", end(42), end(36));
+		// w is labial-velar, but no velar: it gets the lip rounding and no velar pinch
+		assert!((start(41).F2_A_src - start(9).F2_A_src).abs() < 1.0, "iy F2 {} after w, {} after b", start(41).F2_A_src, start(9).F2_A_src);
+	}
+
+	#[test]
+	fn a_vowel_after_a_voiceless_stop_is_damped_only_by_the_aspiration() {
+		// the open glottis is modelled while it is open (aspiration); the vowel's own targets are those after d
+		let b = |c: u8| { let e = loaded(&[(PAU, 50, false), (6, 100, false), (c, 80, false), (1, 150, true), (36, 80, false), (6, 100, false)], 1); (e.B1_A_src, e.B2_A_src) };
+		assert_eq!(b(36), b(11));
+	}
+
+	#[test]
 	fn vowels_have_their_own_place_before_r() {
 		// eh higher and further front, the back vowels higher and further back; uw is not fronted by the t or the r
 		let (eh_r, eh_t) = (vowel_targets(9, 13, 33), vowel_targets(9, 13, 36));
@@ -2662,6 +2674,19 @@ mod tests {
 		assert_eq!(n_ah, 0.0, "breath in the release after N");
 		assert!(a_ah > 0.0, "no breath in the release after AA");
 		assert!(n_av > 0.0, "the N's voice stops at the release");
+	}
+
+	#[test]
+	fn a_final_nasal_stays_nasal_as_it_dies_away() {
+		// the release keeps the nasal's coupling, formants and bandwidths ("come in.", "mine.", "sing.")
+		for n in [27u8, 26, 28] {
+			let mut at: Vec<(u8, [f32; 5])> = Vec::new();
+			drive(&[(PAU, 50, false), (1, 150, true), (n, 100, false), (48, 150, false), (0, 50, false)],
+				|e, _| at.push((e.phn_c, [e.NZP_reg, e.F2_reg, e.F3_reg, e.B1_reg, e.B2_reg])));
+			let end_of = |p: u8| at.iter().filter(|x| x.0 == p).last().unwrap().1;
+			let (nasal, release) = (end_of(n), end_of(48));
+			for k in 0..5 { assert!((nasal[k] - release[k]).abs() <= 0.01 * nasal[k].abs() + 1e-3, "{}: {:?} -> {:?}", n, nasal, release); }
+		}
 	}
 
 	// per sample (phone, counter, F1, F2, the F2 being moved toward) while rendering (phone, ms, stressed)

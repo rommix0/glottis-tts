@@ -422,6 +422,26 @@ mod tests {
 	}
 
 	#[test]
+	fn odd_input_neither_panics_nor_drops_text() {
+		let say = |text: &str, rate: f32| {
+			let mut out = Collect { x: Vec::new(), segs: Vec::new() };
+			let mut sp = Speaker::new();
+			sp.rate = rate;
+			block_on(async { sp.speak(text, &mut out).await?; sp.finish(&mut out).await }).unwrap();
+			assert!(out.x.iter().all(|x| x.is_finite()), "{:?} at rate {}", text, rate);
+			out.x.len()
+		};
+		// numbers past u64, and past the largest scale word
+		say("$99999999999999999999.99 and 1,000,000,000,000,000,000,000 km, 18446744073709551617th.", 1.0);
+		assert!(say("$1000000000000000000", 1.0) > say("$1", 1.0) * 3, "a huge amount is read, not just its currency");
+		// a rate out of range is held to 0.5..2
+		assert_eq!(say("It is a test.", 0.0), say("It is a test.", 0.5));
+		assert_eq!(say("It is a test.", -1.0), say("It is a test.", 0.5));
+		// a NUL is a space, not the end of the text
+		assert_eq!(say("Hello there.\0 Good bye.", 1.0), say("Hello there.  Good bye.", 1.0));
+	}
+
+	#[test]
 	fn synthesize_writes_the_float_output_rounded() {
 		let text = "It is.";
 		let mut floats = Collect { x: Vec::new(), segs: Vec::new() };
