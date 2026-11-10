@@ -1164,7 +1164,7 @@ impl engine {
 			/*---------------------*/
 
 			fun_tag "version" fun_tag {
-				self.scratch_pad.write_text(" version one point one ");
+				self.scratch_pad.write_text(" version one point five ");
 				break;
 			}
 			fun_tag "author" fun_tag {
@@ -1172,7 +1172,7 @@ impl engine {
 				break;
 			}
 			fun_tag "build_date" fun_tag {
-				self.scratch_pad.write_text(" august twenty ninth , twenty twenty six ");
+				self.scratch_pad.write_text(" november tenth , twenty twenty six ");
 				break;
 			}
 

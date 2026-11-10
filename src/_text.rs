@@ -3805,7 +3805,7 @@ let mut t5;
                     }
                 }
                 179 => {
-				self.scratch_pad.write_text(" version one point one ");
+				self.scratch_pad.write_text(" version one point five ");
 				break;
 			},
                 180 => {
@@ -3837,7 +3837,7 @@ let mut t5;
                     }
                 }
                 182 => {
-				self.scratch_pad.write_text(" august twenty ninth , twenty twenty six ");
+				self.scratch_pad.write_text(" november tenth , twenty twenty six ");
 				break;
 			},
                 _ => panic!("internal lexer error"),
