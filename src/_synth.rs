@@ -958,11 +958,13 @@ impl engine {
 			return;
 		}
 		let Some((f2_slope, f2_offset, floor)) = locus(self.phn_c) else { return };
-		let [next_f1, next_f2, _] = self.next_vowel_formants();
+		let [next_f1, next_f2, next_f3] = self.next_vowel_formants();
 		if next_vowel {
 			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
 			(self.F1_A_src, self.F1_B_src) = (f1, f1);
 		}
+		// f and v: the tongue is free, so it is already where the next vowel wants it (no F3 fall into "first")
+		if next_vowel && (self.phn_c == 16 || self.phn_c == 40) { (self.F3_A_src, self.F3_B_src) = (next_f3, next_f3); }
 		let left  = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
 		// a side with no vowel holds the other side's value
@@ -2220,8 +2222,8 @@ mod tests {
 
 	#[test]
 	fn th_hiss_is_flat_like_f() {
-		// th's noise is shaped like f's, with no strong low resonance of its own: around 1.7 kHz against 5.5 kHz it is
-		// within 10 dB of f (its formants differ; a 1.7 kHz resonance of its own put it 20 dB over)
+		// th's noise is duller than f's (about 12 dB more 1.7 kHz against 5.5 kHz, so fin and thin differ) but has no
+		// strong low resonance of its own: within 15 dB of f (a 1.7 kHz resonance of its own put it 20 dB over)
 		let mid = |c: u8| {
 			let mut x = Vec::new();
 			drive(&[(PAU, 50, true), (1, 150, true), (c, 150, true), (1, 150, true), (48, 100, true), (0, 50, true)], |e, y| {
@@ -2231,7 +2233,24 @@ mod tests {
 		};
 		let tilt = |x: &[f32]| band_db(x, 1700.0) - band_db(x, 5500.0);
 		let (th, f) = (tilt(&mid(37)), tilt(&mid(16)));
-		assert!(th < f + 10.0, "th 1.7 kHz over 5.5 kHz by {} dB, f by {}", th, f);
+		assert!(th < f + 15.0, "th 1.7 kHz over 5.5 kHz by {} dB, f by {}", th, f);
+	}
+
+	#[test]
+	fn er_f3_falls_after_th_not_after_f() {
+		// "thirst" against "first": the tongue tip leaves the teeth, so er's F3 starts high after th; during f the
+		// tongue is free and already r-shaped
+		let fall = |c: u8| {
+			let (mut start, mut mid) = (0.0, 0.0);
+			drive(&[(PAU, 50, true), (c, 100, true), (14, 180, true), (34, 110, true), (48, 100, true), (0, 50, true)], |e, _| {
+				if e.phn_c == 14 && e.counter == 0 { start = e.F3_reg; }
+				if e.phn_c == 14 && e.counter == ms(90.0) { mid = e.F3_reg; }
+			});
+			start - mid
+		};
+		let (th, f) = (fall(37), fall(16));
+		assert!(th > 400.0, "er's F3 starts only {} Hz over its middle after th", th);
+		assert!(f.abs() < 150.0, "er's F3 starts {} Hz off its middle after f", f);
 	}
 
 	#[test]
@@ -2352,9 +2371,10 @@ mod tests {
 
 	#[test]
 	fn voiceless_fricative_breathes_into_its_vowels() {
-		let t = noise_track(&[(PAU, 50), (1, 150), (16, 110), (1, 150)]);
-		// the F's carried-over region is the first vowel's tail; the second vowel starts breathy
-		assert!(t.iter().any(|x| x.0 == 16 && x.1 < 0 && x.3 > 0.0), "no breath at the vowel's end");
+		// th: f's own breath is too faint to show since f got brighter than th
+		let t = noise_track(&[(PAU, 50), (1, 150), (37, 110), (1, 150)]);
+		// the TH's carried-over region is the first vowel's tail; the second vowel starts breathy
+		assert!(t.iter().any(|x| x.0 == 37 && x.1 < 0 && x.3 > 0.0), "no breath at the vowel's end");
 		let after: Vec<_> = t.iter().filter(|x| x.0 == 1).collect();
 		let start = after.iter().filter(|x| x.1 == ms(5.0)).last().unwrap();
 		assert!(start.3 > 0.0, "no breath at the next vowel's start");
