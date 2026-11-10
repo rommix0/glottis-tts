@@ -2,7 +2,7 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-11/4/2026          |
+| DATE:   8/11/2026-11/9/2026          |
 ---------------------------------------*/
 
 use crate::_vtm::{vtm, Voice, DB_GAIN};
@@ -160,6 +160,7 @@ const NASAL_CARRY_MS: f32 = 40.0;
 const ASP_DB: f32 = 15.5;
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.8;
+
 // a word-internal t before an unstressed schwa ("button", "Clinton") is softer still: this share of that aspiration,
 // this much quieter
 const SCHWA_T_ASP: f32 = 0.5;
