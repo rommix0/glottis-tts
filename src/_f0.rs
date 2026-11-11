@@ -115,7 +115,7 @@ impl Shape {
 	}
 }
 
-// ms of speech after which the contour's clock is moved back (an f32 then still counts in steps of about 0.06 ms)
+// move the contour's clock back after this many ms of speech (an f32 there still counts in ~0.06 ms steps)
 const CLOCK_LIMIT_MS: f32 = 600_000.0;
 
 pub struct Contour {
@@ -130,8 +130,8 @@ pub struct Contour {
 	start_hint:  usize,		// and in starts
 }
 
-// the first item of v that before() says is not before the place sought, as partition_point gives; samples come in
-// order, so the answer for the last one usually still holds and is checked before searching
+// partition_point over v, but try the last answer first:
+// samples come in order, so it usually still holds
 fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
 	let k = (*last).min(v.len());
 	let k = if (k == 0 || before(&v[k - 1])) && (k == v.len() || !before(&v[k])) {
@@ -170,9 +170,8 @@ impl Contour {
 		self.bumps.extend(lay.bumps);
 	}
 
-	// the synthesizer is at most a phone or two behind, so nothing before the previous utterance is asked for
-	// again: drop it; past CLOCK_LIMIT_MS move the clock back to where that utterance starts, so an f32 still
-	// counts it finely
+	// drop everything before the previous utterance (the synth is never more than a phone or two behind).
+	// past CLOCK_LIMIT_MS, rebase the clock to that utterance's start so f32 keeps its precision
 	fn drop_old(&mut self, first_seg: usize) {
 		let keep = self.prev_seg;
 		let back = if self.clock > CLOCK_LIMIT_MS { self.prev_ms } else { 0.0 };
@@ -186,7 +185,7 @@ impl Contour {
 		(self.prev_seg, self.prev_ms) = (first_seg, self.clock);
 	}
 
-	// the short offsets at a position, in semitones
+	// sum the short offsets at a position, in semitones
 	fn bump_at(&mut self, seg: usize, frac: f32) -> f32 {
 		let k = find(&self.bumps, &mut self.bump_hint, |b| b.seg < seg);
 		self.bumps[k..].iter().take_while(|b| b.seg == seg).map(|b| b.shape.at(b.age0 + frac * b.dur)).sum()
@@ -219,8 +218,8 @@ impl Contour {
 	}
 }
 
-// targets closer than MERGE_MS within a phrase: keep the later one
-// (phrases are apart by their pause, which utterance time leaves out)
+// merge targets closer than MERGE_MS, keeping the later one
+// (only within a phrase: utterance time leaves out the pause between phrases)
 fn merge_close(mut placed: Vec<(usize, f32, Target)>) -> Vec<(usize, f32, Target)> {
 	placed.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
 	let mut kept: Vec<(usize, f32, Target)> = Vec::new();
@@ -233,7 +232,7 @@ fn merge_close(mut placed: Vec<(usize, f32, Target)>) -> Vec<(usize, f32, Target
 	kept
 }
 
-// an utterance being added to the contour: its segment times, and the targets and offsets placed on them
+// an utterance being added: its segment times and the targets and offsets placed on them
 struct Layout<'a> {
 	utt:    &'a Utterance,
 	stream: &'a [usize],				// stream[i] is the stream index of utt.segs[i]
@@ -258,7 +257,7 @@ impl<'a> Layout<'a> {
 
 	fn time(&self, i: usize, frac: f32) -> f32 { self.t0[i] + frac * self.utt.segs[i].dur_ms }
 
-	// the accented syllable nucleus of each content word
+	// find the accented syllable nucleus of a content word
 	fn accent_of(&self, w: usize) -> Option<usize> {
 		let word = &self.utt.words[w];
 		if word.function { return None; }
@@ -295,7 +294,7 @@ impl<'a> Layout<'a> {
 		}
 	}
 
-	// phrase k's start, accents and end
+	// place phrase k's start, accents and end
 	fn place_phrase(&mut self, k: usize, first_height: &mut f32, last_accent_seg: Option<usize>) {
 		let utt = self.utt;
 		let ph = &utt.phrases[k];
@@ -360,7 +359,7 @@ impl<'a> Layout<'a> {
 		}
 	}
 
-	// trough on the baseline halfway between the peaks, each (segment, time, height)
+	// place a trough halfway between two peaks (segment, time, height), sagging above the baseline when close
 	fn place_trough(&mut self, k: usize, prev: (usize, f32, f32), next: (usize, f32, f32)) {
 		let ((prev_i, prev_t, prev_h), (n, tp, height)) = (prev, next);
 		let tm = (prev_t + tp) / 2.0;
@@ -406,8 +405,8 @@ impl<'a> Layout<'a> {
 		self.bumps.sort_by_key(|b| b.seg);
 	}
 
-	// a sonorant or vowel after an obstruent (not a flap), until the next obstruent or the phrase end: after a
-	// voiceless one raised and decaying; a voiced one lowers F0 through itself, back up in the next sound
+	// microprosody on a sonorant or vowel after an obstruent (not a flap), up to the next obstruent or phrase end.
+	// after a voiceless one it starts raised and decays; a voiced one lowers F0 through itself, back up after
 	fn add_microprosody(&mut self, i: usize) {
 		let n = self.utt.segs.len();
 		let (p, prev) = (self.phone(i), self.prev_phone(i));
@@ -427,8 +426,7 @@ impl<'a> Layout<'a> {
 		}
 	}
 
-	// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays
-	// low through it
+	// word-final t after a sonorant and before a consonant (same phrase): F0 falls into it and stays low
 	fn add_t_dip(&mut self, i: usize) {
 		let n = self.utt.segs.len();
 		let (p, prev) = (self.phone(i), self.prev_phone(i));
@@ -443,7 +441,7 @@ impl<'a> Layout<'a> {
 		}
 	}
 
-	// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
+	// glottal onset on a stressed vowel starting a content word, after a sonorant or a pause
 	fn add_glottal_onset(&mut self, i: usize) {
 		let utt = self.utt;
 		let n = utt.segs.len();
@@ -488,7 +486,7 @@ mod tests {
 		contour(Utterance::build(&toks, &texts))
 	}
 
-	// u timed at rate 1 and its pitch contour
+	// time u at rate 1 and build its pitch contour
 	fn contour(mut u: Utterance) -> (Utterance, Contour) {
 		crate::_dur::assign(&mut u, 1.0);
 		let stream: Vec<usize> = (0..u.segs.len()).collect();
@@ -501,8 +499,8 @@ mod tests {
 
 	#[test]
 	fn contour_stays_small_over_a_long_stream() {
-		// sentence after sentence, only the last two are kept and the clock is moved back past CLOCK_LIMIT_MS; the
-		// newest sentence's pitch is the same as on a fresh contour
+		// feed sentence after sentence: only the last two are kept and the clock rebases past CLOCK_LIMIT_MS,
+		// and the newest sentence's pitch matches a fresh contour
 		let (u, mut fresh) = utt(&[BAA, DEE, GO, MA, NEE], &[(4, PERIOD)], "w");
 		let n = u.segs.len();
 		let ms: f32 = u.segs.iter().map(|s| s.dur_ms).sum();
@@ -767,8 +765,7 @@ mod tests {
 
 	#[test]
 	fn stressed_vowel_starting_a_content_word_has_a_glottal_onset() {
-		// "mow it" with "it" a content word: after the vowel F0 falls into the catch over ONSET_LEAD_MS, then
-		// comes back
+		// "mow it" with a content "it": after ow, F0 falls into the catch over ONSET_LEAD_MS, then comes back
 		let (u, mut c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
 		let d = u.segs[2].dur_ms;
 		assert_eq!(c.bump_at(2, 0.0), 0.0);

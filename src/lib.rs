@@ -30,14 +30,14 @@ use _phone::*;
 // master samples rate
 pub const SAMPLE_RATE: u32 = _vtm::m_sr;
 
-// where the application takes the speech, one signed 16-bit sample at a time; it may wait
-// (to keep pace with an audio device), and its error ends the synthesis
+// the app's sample writer: takes the speech one signed 16-bit sample at a time.
+// it may wait (to keep pace with an audio device); an error from it stops the synthesis
 pub trait WriteSample {
 	type Error: core::error::Error;
 	fn write_sample(&mut self, sample: i16) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
-// so the application can lend its writer and keep it afterwards
+// lets the app pass &mut writer and keep it afterwards
 impl<W: WriteSample> WriteSample for &mut W {
 	type Error = W::Error;
 	fn write_sample(&mut self, sample: i16) -> impl Future<Output = Result<(), Self::Error>> {
@@ -50,21 +50,21 @@ pub async fn synthesize<W: WriteSample>(text: String, writer: W) -> Result<(), W
 	Speaker::new().synthesize(&text, writer).await
 }
 
-// where the speech goes as the synthesizer makes it, for tools that want more than synthesize gives: the float
-// samples, the segment each belongs to, and the trace
+// speech output for tools that want more than synthesize gives:
+// float samples, the segment each belongs to, and the trace
 pub trait SpeechSink {
 	type Error;
 
-	// one sample (-1 to 1), and the stream index of the segment playing
+	// take one sample (-1 to 1) and the stream index of the segment playing
 	fn sample(&mut self, x: f32, seg: usize) -> impl Future<Output = Result<(), Self::Error>>;
-	// one line of the trace
+	// take one line of the trace
 	fn trace(&mut self, _line: &str) {}
 }
 
-// a float sample as a signed 16-bit one
+// convert a float sample to signed 16-bit, clamped to -1..1 first
 pub fn to_i16(x: f32) -> i16 { libm::roundf(x.clamp(-1.0, 1.0) * 32767.0) as i16 }
 
-// a WriteSample as a SpeechSink
+// wraps a WriteSample as a SpeechSink
 struct Pcm<W>(W);
 impl<W: WriteSample> SpeechSink for Pcm<W> {
 	type Error = W::Error;
@@ -73,15 +73,14 @@ impl<W: WriteSample> SpeechSink for Pcm<W> {
 	}
 }
 
-// the token for one phone alone, with the most stress a vowel can carry
+// token for a single phone, fully stressed if a vowel
 pub fn phone_token(p: u8) -> Option<u8> {
 	if p == SIL { return None; }
 	(0..=255u8).filter(|&t| matches!(_utils::PHNIDToPhoneme(t), (a, 0, _, _) if a == p))
 		.max_by_key(|&t| _utils::PHNIDToPhoneme(t).2)
 }
 
-// a word drawn out in writing, as it is said: a vowel written three or more times counts once ("nooooo", "whaaat"),
-// a consonant twice ("shhhhh", "hmmm")
+// undo letters stretched for effect: 3+ of a vowel becomes 1 ("nooooo"), of a consonant becomes 2 ("shhhhh")
 fn drawn_out(w: &[u8]) -> Vec<u8> {
 	let mut out = Vec::with_capacity(w.len());
 	let mut i = 0;
@@ -102,7 +101,7 @@ fn drawn_out(w: &[u8]) -> Vec<u8> {
 	out
 }
 
-// a word the dictionary lacks, built from a known stem and suffixes (letters and apostrophes only)
+// build a word the dictionary lacks from a known stem and suffixes (letters and apostrophes only)
 fn morph_word(word: &str, dict_reader: &mut dictreader) -> Option<Vec<u8>> {
 	if word.len() < 4 || !word.bytes().all(|b| b.is_ascii_alphabetic() || b == b'\'') { return None; }
 	let mut lookup = |w: &str| {
@@ -120,7 +119,7 @@ fn morph_word(word: &str, dict_reader: &mut dictreader) -> Option<Vec<u8>> {
 	_morph::compose(&word.to_ascii_lowercase(), &mut lookup, 2)
 }
 
-// the text normalizer's output for a whole input
+// run the text normalizer over the whole input
 pub fn normalize(text: &str) -> String {
 	let mut buf = cbuf::new();
 	buf.write(0x20);
@@ -137,7 +136,7 @@ pub fn normalize(text: &str) -> String {
 	String::from_utf8_lossy(&out).into_owned()
 }
 
-// the engines that run across sentences
+// speaker state that carries over from sentence to sentence
 pub struct Speaker {
 	pub synth: _synth::engine,
 	pub rate:  f32,			// speaking rate, 0.5 to 2
@@ -187,7 +186,7 @@ impl Speaker {
 					// the sentence already ended with its release and pause
 					self.play(out, PAU, 50.0, false, seg, true).await?;
 				} else {
-					// unpunctuated end of input: this is its release
+					// no punctuation at the end of input, so play the release here
 					self.play(out, 48, 100.0, false, seg, true).await?;
 				}
 			} else {
@@ -250,7 +249,7 @@ impl Speaker {
 		}
 	}
 
-	// stream indices: the segments of each phrase, then its release and pause
+	// number the segments in play order: each phrase's segments, then its release and pause
 	fn stream_indices(&mut self, utt: &Utterance) -> (Vec<usize>, Vec<(usize, usize)>) {
 		let mut stream: Vec<usize> = vec![0; utt.segs.len()];
 		let mut ends: Vec<(usize, usize)> = Vec::new();		// (release, pause) per phrase
@@ -266,7 +265,7 @@ impl Speaker {
 		(stream, ends)
 	}
 
-	// one segment's plan: phone, stress, duration, rules and pitch targets
+	// trace one segment's plan: phone, stress, duration, rules and pitch targets
 	fn trace_seg<O: SpeechSink>(&self, s: &Seg, seg: usize, out: &mut O) {
 		let mut line = format!(
 			"TRACE {} {} seg={} dur={:.0} rules={}",
@@ -440,7 +439,7 @@ mod tests {
 		}
 	}
 
-	// the samples and the playing segment of each
+	// collects the samples and the segment playing at each
 	struct Collect { x: Vec<f32>, segs: Vec<usize> }
 	impl SpeechSink for Collect {
 		type Error = Infallible;
@@ -459,14 +458,14 @@ mod tests {
 		out
 	}
 
-	// what an application's writer keeps
+	// a writer that keeps the samples, like an app's would
 	struct Ints(Vec<i16>);
 	impl WriteSample for Ints {
 		type Error = Infallible;
 		async fn write_sample(&mut self, sample: i16) -> Result<(), Infallible> { self.0.push(sample); Ok(()) }
 	}
 
-	// a writer that makes the synthesizer wait once before every sample, as one keeping pace with a device would
+	// a writer that waits once before every sample, like one keeping pace with a device
 	struct Slow(Vec<i16>);
 	struct WaitOnce(bool);
 	impl Future for WaitOnce {
@@ -575,8 +574,9 @@ mod tests {
 
 	#[test]
 	fn playback_follows_the_schedule() {
-		// it is , cat . : every segment plays in turn, starting where the durations before it add up to, less the
-		// transition the phone before it carries in
+		// it is , cat .
+		// each segment plays in turn, starting at the sum of the durations before it,
+		// less the transition the phone before it carries in
 		let (tokens, texts) = ([95, 53, 76, 95, 53, 87, 91, 90, 56, 16, 76, 92], ["it", "is", "cat"]);
 		let segs: Vec<u32> = render(&tokens, &texts).segs.iter().map(|&s| s as u32).collect();
 
@@ -630,10 +630,10 @@ mod tests {
 		}
 	}
 
-	// the normalizer's output with spaces collapsed
+	// normalize, then collapse the spaces
 	fn says(t: &str) -> String { normalize(t).split_whitespace().collect::<Vec<_>>().join(" ") }
 
-	// each text says its want somewhere
+	// check each text's output contains its want
 	fn says_all(cases: &[(&str, &str)]) {
 		for &(t, want) in cases { assert!(says(t).contains(want), "{} -> {}", t, says(t)); }
 	}
@@ -651,7 +651,7 @@ mod tests {
 		says_all(&[("It is 100 km away.", "one hundred kilometers"), ("It is 1 km away.", "one kilometer away")]);
 		// a rule that starts with a space starts at a tab or newline too
 		says_all(&[("5\tbps now.", "five bits per second now"), ("5\nbps now.", "five bits per second now")]);
-		// a spaced "in" is inches before punctuation or a size word, the preposition before anything else
+		// a spaced "in" means inches before punctuation or a size word, else it's the preposition
 		says_all(&[("12 ft, 6 in, 2 lb.", "six inches , two pounds"), ("It is 5 in. long.", "five inches long ."),
 			("At 6 in the morning.", "six in the morning"), ("1 in 10 people.", "one in ten people")]);
 	}
@@ -666,7 +666,7 @@ mod tests {
 	fn a_named_sign_is_said_once() {
 		says_all(&[("Negative -42 and positive +5.", "negative forty two and positive five"),
 			("It was minus -3 today.", "minus three today"), ("It fell to -3 today.", "to negative three today"),
-			// after a number, "minus" is the operator, and a sign set off by a space or "+" is no range
+			// after a number, "minus" is the operator; a sign after a space or "+" doesn't make a range
 			("5 minus -3 is 8.", "five minus negative three is eight"), ("2 + -3 is 5.", "two plus negative three"),
 			("Between 5 -3 and 4.", "five negative three"), ("They tied 0-0 today.", "zero to zero"),
 			("A 0-5 run.", "zero through five")]);
@@ -801,8 +801,8 @@ mod tests {
 			("the 2020 election", "twenty twenty election"), ("1066 people came", "one thousand sixty six people"),
 			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"),
 			("1999 was good", "nineteen ninety nine was")]);
-		// counts: a falling or counted "X to Y", after a count word, and the second number of a range read like
-		// the first
+		// counts: a falling or counted "X to Y" and a number after a count word;
+		// the second number of a range is read like the first
 		says_all(&[("The vote was 2015 to 1987.", "two thousand fifteen to one thousand nine hundred eighty seven"),
 			("We had 1300 to 1400 visitors.", "one thousand three hundred to one thousand four hundred visitors"),
 			("It cost exactly 1250.", "exactly one thousand two hundred fifty"),

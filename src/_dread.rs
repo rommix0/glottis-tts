@@ -63,8 +63,8 @@ impl dictreader {
 		x & 0x7F
 	}
 	pub fn search(&mut self) -> bool {
-		// a naive scan through the word's letter partition, rebuilding each entry's word from the one before;
-		// an entry matches the word as given or in lowercase. On a match pos is at its phones
+		// naive scan of the word's letter partition, rebuilding each entry's word from the one before.
+		// an entry matches the word as given or in lowercase; on a match pos is left at its phones
 		if !self.is_valid { return false; }
 		let n = self.wordlen as usize;
 		let mut entry = [0u8; 32];

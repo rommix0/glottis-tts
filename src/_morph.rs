@@ -1,13 +1,13 @@
-// suffix matching: a word the dictionary lacks may be a known stem with an inflection or a common suffix; its
-// phones are then the stem's and the suffix's. A stem is known when the dictionary has it, or when it is a CMUdict
-// word the letter-to-sound tree says right (the KNOWN hashes). Mirrors compose() in tools/build_lexicon.py.
+// suffix matching: say a word the dictionary lacks as a known stem plus an inflection or common suffix.
+// a stem is known if the dictionary has it, or if it's a word the letter-to-sound tree says right
+// (the KNOWN hashes). mirrors compose() in tools/build_lexicon.py
 use crate::_known::*;
 use crate::_lts;
 use alloc::{format, string::{String, ToString}, vec, vec::Vec};
 
 const MIN_STEM: usize = 3;
 
-// how a suffix spelled the stem before it, and the suffix's phones
+// how a suffix changes the stem's spelling (Way), and the suffix's phones (Ending)
 #[derive(Clone, Copy)]
 enum Way { Same, AddE, AddY, IToY, Undouble, Sibilant }
 #[derive(Clone, Copy)]
@@ -67,7 +67,7 @@ fn ending(e: Ending, stem: &[u8]) -> Vec<u8> {
 	}
 }
 
-// a stem's phones: the dictionary's, or the tree's for a known word
+// look up a stem's phones: the dictionary's, or the tree's for a known word
 fn lookup(w: &str, dict: &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> Option<Vec<u8>> {
 	if let Some(p) = dict(w) && !p.is_empty() { return Some(p); }
 	if known(w) {
@@ -77,7 +77,7 @@ fn lookup(w: &str, dict: &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> Option<Vec<
 	None
 }
 
-// phone classes for a lowercase word built from a known stem and up to `depth` suffixes, or None
+// build phone classes for a lowercase word from a known stem and up to `depth` suffixes, or None
 pub fn compose(w: &str, dict: &mut dyn FnMut(&str) -> Option<Vec<u8>>, depth: u32) -> Option<Vec<u8>> {
 	let p = lookup(w, dict);
 	if p.is_some() || depth == 0 { return p; }

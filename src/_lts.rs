@@ -1,7 +1,8 @@
-// letter-to-sound: two decision trees pick each letter's phone class, left to right, from the 4 letters either
-// side, whether those are vowels and the classes given to the 2 letters before; the second also sees the first
-// tree's classes for the 2 letters after. The word then gets exactly one primary stress.
-// The trees' tables are in _lts_tree.rs, built by tools/build_lexicon.py, whose decode() is this file in Python.
+// letter-to-sound: two decision trees pick a phone class for each letter, left to right.
+// each looks at the 4 letters either side, which of them are vowels, and the classes of the 2 letters before;
+// the second tree also sees the first tree's classes for the 2 letters after.
+// then the word gets exactly one primary stress.
+// tree tables are in _lts_tree.rs, built by tools/build_lexicon.py (its decode() is this file in Python)
 use crate::_lts_tree::*;
 use alloc::vec::Vec;
 
@@ -19,7 +20,8 @@ pub fn letter_code(x: u8) -> u8 {
 
 fn is_vowel(code: u8) -> bool { (2..=6).contains(&code) }
 
-// the leaf's [255, class, primary likelihood, likeliest primary class]; a node's left child is the node after it
+// walk the tree to a leaf: [255, class, primary likelihood, likeliest primary class].
+// a node's left child is the node right after it
 fn leaf(root: usize, f: &[u8; FEATURES]) -> [u8; 4] {
 	let mut i = root;
 	loop {
@@ -29,8 +31,8 @@ fn leaf(root: usize, f: &[u8; FEATURES]) -> [u8; 4] {
 	}
 }
 
-// the letters around x, the classes given before it, which of those letters are vowels and (second tree) the first
-// tree's classes after it
+// features for letter x: the letters around it, which of them are vowels, the classes given before it,
+// and (second tree only) the first tree's classes after it
 fn features(codes: &[u8], x: usize, hist: [u8; 2], ahead: Option<&[u8]>) -> [u8; FEATURES] {
 	let n = codes.len();
 	let mut f = [0u8; FEATURES];
@@ -48,8 +50,8 @@ fn features(codes: &[u8], x: usize, hist: [u8; 2], ahead: Option<&[u8]>) -> [u8;
 	f
 }
 
-// phone classes for a word given as letter codes: silent letters dropped,
-// a class repeated on the next letter played once
+// phone classes for a word given as letter codes; drop silent letters,
+// and play a class repeated on the next letter only once
 pub fn word(codes: &[u8]) -> Vec<u8> {
 	let n = codes.len();
 	let mut ahead = Vec::with_capacity(n);

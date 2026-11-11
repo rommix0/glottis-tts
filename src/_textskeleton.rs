@@ -56,13 +56,13 @@ impl engine {
 		cc
 	}
 
-	// a word or words with a space either side
+	// write a word or words with a space either side
 	fn say(&mut self, w: &str) {
 		self.scratch_pad.write_text(" ");
 		self.scratch_pad.write_text(w);
 		self.scratch_pad.write_text(" ");
 	}
-	// a pause or sentence mark, which ends any number's plural and "after a digit"
+	// write a pause or sentence mark; clears the number's plural and "after a digit"
 	fn pause(&mut self, mark: &str) {
 		self.digit_prev = false;
 		self.is_plural = false;
@@ -140,7 +140,7 @@ impl engine {
 	// CONTEXT RULE PART
 	// rules that look further around than a fixed pattern: run before the fixed-text rules and the lexer
 	fn ahead(buf: &mut cbuf, max: usize) -> Vec<u8> {
-		// up to max bytes from the cursor, stopping at the end of the text; the cursor stays put
+		// peek up to max bytes ahead (stops at the end of the text) without moving the cursor
 		let start = buf.getcurs();
 		let mut out = Vec::new();
 		while out.len() < max {
@@ -159,7 +159,7 @@ impl engine {
 		c
 	}
 	fn prev_word(buf: &mut cbuf) -> String {
-		// the word before the cursor (skipping spaces, tabs and newlines), as written
+		// get the word before the cursor (skipping spaces, tabs and newlines), as written
 		let start = buf.getcurs();
 		buf.recede();
 		while is_space(buf.read()) { buf.recede(); }
@@ -173,7 +173,7 @@ impl engine {
 		String::from_utf8(w).unwrap_or_default()
 	}
 	fn number_before_prev_word(buf: &mut cbuf) -> bool {
-		// whether a four-digit number comes right before the word before the cursor ("1987 to")
+		// is there a four-digit number right before the previous word ("1987 to")
 		let start = buf.getcurs();
 		buf.recede();
 		while buf.read() == b' ' { buf.recede(); }
@@ -186,14 +186,14 @@ impl engine {
 		found
 	}
 	fn is_word(w: &str) -> bool {
-		// the dictionary has it, or it is a CMUdict word the letter-to-sound tree says right
+		// the dictionary has it, or it is a word the letter-to-sound tree says right
 		if crate::_morph::known(w) { return true; }
 		let mut r = dictreader::new();
 		for b in w.bytes() { r.readIn(b); }
 		r.search()
 	}
 	fn words(&mut self, n: u64, ordinal: bool, zero_oh: bool) -> String {
-		// what the number reader says for n
+		// spell out n as the number reader would
 		let saved = core::mem::replace(&mut self.scratch_pad, cbuf::new());
 		self.process_number(n, zero_oh, ordinal);
 		let mut out = Vec::new();
@@ -230,7 +230,7 @@ impl engine {
 		(v, n)
 	}
 	fn fraction(a: &[u8], mut k: usize) -> (Vec<u8>, usize) {
-		// the digits after a decimal point at a[k], and where they end
+		// read the digits after a decimal point at a[k], and where they end
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
 		let mut frac = Vec::new();
 		if at(k) == b'.' && at(k + 1).is_ascii_digit() {
@@ -240,7 +240,7 @@ impl engine {
 		(frac, k)
 	}
 	fn amount(a: &[u8], from: usize) -> (u64, Vec<u8>, usize) {
-		// the number at a[from..] with its thousands commas and decimal digits, and where it ends
+		// read the number at a[from..] (thousands commas, decimal digits), and where it ends
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
 		let (mut v, n) = Self::digits(a, from);
 		let mut k = from + n;
@@ -252,7 +252,7 @@ impl engine {
 		(v, frac, k)
 	}
 	fn scale_after(a: &[u8], k: usize) -> Option<(&'static str, usize)> {
-		// a scale word after spaces at a[k..] ("$20 billion"), and where it ends
+		// find a scale word after spaces at a[k..] ("$20 billion"), and where it ends
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
 		let mut j = k;
 		while is_space(at(j)) { j += 1; }
@@ -289,8 +289,8 @@ impl engine {
 		const NOT_PLURAL: [&str; 18] = ["was", "is", "has", "as", "its", "his", "hers", "ours", "yours", "theirs",
 			"this", "thus", "plus", "minus", "always", "perhaps", "besides", "unless"];
 		const PLURAL: [&str; 8] = ["people", "men", "women", "children", "feet", "teeth", "mice", "geese"];
-		// words whose reading follows the word before them: (word, the capitalized reading is the verb, the reading
-		// with no telling word before is the verb); the other reading is the noun or adjective
+		// homographs read by the word before: (word, capitalized reading is the verb, verb when nothing tells).
+		// the other reading is the noun or adjective
 		const STRESS_PAIRS: &[(&str, bool, bool)] = &[
 			("address", true, false), ("affect", true, true), ("affects", true, true), ("attribute", false, false),
 			("attributes", true, false), ("compound", true, false), ("conduct", true, false),
@@ -343,7 +343,7 @@ impl engine {
 		if a.is_empty() { return false; }
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
 		let prev = Self::prev_byte(buf);
-		// the word after a[from..] past spaces (none if no space comes first), and whether it is a plural noun
+		// next word after spaces at a[from..] (none if no space comes first), and a plural noun test
 		let word_after = |from: usize| {
 			let mut k = from;
 			while is_space(at(k)) { k += 1; }
@@ -405,7 +405,7 @@ impl engine {
 			}
 		}
 
-		// a sentence mark inside a closing double quote: a period goes on as a comma when the sentence does
+		// a sentence mark inside a closing double quote: a period becomes a comma if the sentence goes on
 		if matches!(at(0), b'.' | b'?' | b'!') {
 			let q = if at(1) == b'"' { 1 } else if a[1..].starts_with(&[0xE2, 0x80, 0x9D]) { 3 } else { 0 };
 			if q > 0 {
@@ -422,7 +422,7 @@ impl engine {
 			}
 		}
 
-		// a run of question and exclamation marks (or one interrobang) is one mark: a question if any of them asks
+		// a run of ? and ! (or one interrobang) is one mark: ? if any of them asks, else !
 		if !is_space(prev) {
 			let (mut k, mut marks, mut asks, mut double_mark) = (0, 0, false, false);
 			loop {
@@ -464,7 +464,7 @@ impl engine {
 			return true;
 		}
 
-		// a web address's scheme is spelled
+		// spell out a web address's scheme
 		if !prev.is_ascii_alphabetic() {
 			let low = a.to_ascii_lowercase();
 			for (scheme, say) in [(&b"https://"[..], " h t t p s colon slash slash "),
@@ -564,8 +564,8 @@ impl engine {
 					return true;
 				}
 			}
-			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined
-			// to it)
+			// a unit after a number, with or without a space: 5ft, 2 hrs, 2.5kg
+			// (last field: only when joined to the number)
 			const UNITS: [(&str, &str, &str, bool); 26] = [
 				("ft", "foot", "feet", false), ("in", "inch", "inches", true), ("yd", "yard", "yards", false),
 				("yds", "yard", "yards", false), ("mi", "mile", "miles", false), ("hr", "hour", "hours", false),
@@ -610,7 +610,7 @@ impl engine {
 					let point = self.point(&frac);
 					let name = if v == 1 && frac.is_empty() { one } else { many };
 					self.scratch_pad.write_text(&format!(" {}{} {} ", num, point, name));
-					// the abbreviation's own period, when the sentence goes on in lower case ("5 ft. long")
+					// eat the abbreviation's period too when the sentence goes on in lower case ("5 ft. long")
 					let mut k = j + ab.len() + 1;
 					while is_space(at(k)) { k += 1; }
 					let dot = at(j + ab.len()) == b'.' && k > j + ab.len() + 1 && at(k).is_ascii_lowercase();
@@ -717,10 +717,10 @@ impl engine {
 					return true;
 				}
 			}
-			// a year: four plain digits from 1100 to 2099, or from 1001 after a word that leads a year ("in 2015 votes
-			// were cast", "in 1066"); not when a plural noun follows ("2015 votes"), after a count word ("over 1500"),
-			// or falling to the next number ("the vote was 2015 to 1987"); after "to", "and"... read like the one
-			// before
+			// a year: four plain digits from 1100 to 2099, or from 1001 after a word that leads one
+			// ("in 1066", "in 2015 votes were cast"). otherwise not before a plural noun ("2015 votes"),
+			// after a count word ("over 1500") or falling to the next number ("the vote was 2015 to 1987").
+			// after "to", "and"... read it like the number before
 			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
 			let before = if is_space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
 			let cue = YEAR_AFTER.contains(&before.as_str());
@@ -823,8 +823,8 @@ impl engine {
 			let next2 = if next.is_empty() || at(k) == b'\'' { String::new() } else { word_after(k).0 };
 			let det_next = DETERMINERS.contains(&next.as_str());
 			let pair = STRESS_PAIRS.iter().find(|p| p.0 == w);
-			// these cues read only the words either side, so they miss a verb or noun further off ("the wind
-			// that blew", "bow of the ship", "every minute counts")
+			// the cues only look one word either side, so they miss a verb or noun further off
+			// ("the wind that blew", "bow of the ship")
 			let cap = if !plain { None } else if let Some(&(_, cap_verb, default_verb)) = pair {
 				let verb = if w.ends_with('s') { BEFORE_VERB_S.contains(&b) } else { BEFORE_VERB.contains(&b) };
 				let noun = !verb && BEFORE_NOUN.contains(&b);
@@ -862,7 +862,7 @@ impl engine {
 				}
 			};
 			if cap == Some(true) {
-				// a word ends what a number before it started, as any letter does
+				// a word clears the number state before it (plural, after a digit), like any letter
 				self.digit_prev = false;
 				self.is_plural = false;
 				self.say(&w.to_ascii_uppercase());
@@ -893,8 +893,8 @@ impl engine {
 					return true;
 				}
 				let low = run.to_ascii_lowercase();
-				// two capitals read as a word inside a run of all-capital words ("THIS IS IT"), not among lowercase
-				// words ("the UK"); an acronym next to another all-capital word is read as a word too ("THE US ARMY")
+				// read two capitals as a word next to an all-capital word ("THIS IS IT", "THE US ARMY"),
+				// spell them among lowercase words ("the UK")
 				let caps = |w: &[u8]| w.len() >= 2 && w.iter().all(u8::is_ascii_uppercase);
 				let k = n + a[n..].iter().take_while(|c| is_space(**c)).count();
 				let next = &a[k..k + a[k..].iter().take_while(|c| c.is_ascii_alphabetic()).count()];
@@ -934,7 +934,7 @@ impl engine {
 
 	// FIXED-TEXT RULE PART
 	fn match_len(buf: &mut cbuf, pat: &[u8]) -> Option<usize> {
-		// how many bytes of the input at the cursor the pattern matches, if it does; the cursor stays put
+		// count the bytes the pattern matches at the cursor (None if no match), without moving the cursor
 		let start = buf.getcurs();
 		let (mut i, mut n) = (0, 0);
 		let hit = loop {
@@ -1019,8 +1019,8 @@ impl engine {
 		n
 	}
 	fn end_after_period(&mut self, buf: &mut cbuf, before_capital: bool) {
-		// a period eaten by an abbreviation also ends the sentence when only spaces follow it, or (before_capital)
-		// when a capital starts the next word
+		// let an abbreviation's period also end the sentence when only spaces follow,
+		// or (before_capital) when the next word starts with a capital
 		let start = buf.getcurs();
 		while is_space(buf.read()) { buf.advance(); }
 		let c = buf.read();
@@ -1028,7 +1028,7 @@ impl engine {
 		if c == 0x00 || (before_capital && c.is_ascii_uppercase()) { self.scratch_pad.write_text(" . "); }
 	}
 	fn behind(buf: &mut cbuf, max: usize) -> Vec<u8> {
-		// up to max bytes before the cursor, in text order, stopping at the start of the text; the cursor stays put
+		// peek up to max bytes behind, in text order (stops at the start of the text) without moving the cursor
 		let start = buf.getcurs();
 		let mut out = Vec::new();
 		while out.len() < max {
@@ -1042,9 +1042,9 @@ impl engine {
 		out
 	}
 	fn initial(buf: &mut cbuf) -> bool {
-		// whether the capital and period before the cursor are a name's initial ("John F. Kennedy",
-		// "J. R. R. Tolkien"): an initial next to it, or a capitalized word before it inside the sentence. A name
-		// starting a sentence is taken for a sentence end ("John F. Kennedy spoke." reads "john f . kennedy")
+		// are the capital and period before the cursor a name's initial ("John F. Kennedy", "J. R. R. Tolkien")?
+		// yes if an initial is next to it, or a capitalized word comes before it inside the sentence.
+		// a name starting a sentence reads as a sentence end ("John F. Kennedy spoke." reads "john f . kennedy")
 		let a = Self::ahead(buf, 8);
 		let k = a.iter().take_while(|c| is_space(**c)).count();
 		if a.get(k).is_some_and(u8::is_ascii_uppercase) && a.get(k + 1) == Some(&b'.') { return true; }
@@ -1063,8 +1063,7 @@ impl engine {
 		capital && i > 0 && (at(i - 1).is_ascii_alphabetic() || at(i - 1) == b',')
 	}
 	fn fold(buf: &mut cbuf) {
-		// accented Latin letters to plain ones ("café" cafe, "Straße" strasse): the whole text, before any of it is
-		// read
+		// fold accented Latin letters to plain ones ("café" cafe, "Straße" strasse), whole text, before any is read
 		const FOLD: [(&str, &str); 21] = [("ÀÁÂÃÄÅ", "A"), ("àáâãäå", "a"), ("Ç", "C"), ("ç", "c"),
 			("ÈÉÊË", "E"), ("èéêë", "e"), ("ÌÍÎÏ", "I"), ("ìíîï", "i"), ("Ñ", "N"), ("ñ", "n"),
 			("ÒÓÔÕÖØ", "O"), ("òóôõöø", "o"), ("ÙÚÛÜ", "U"), ("ùúûü", "u"), ("Ý", "Y"),
@@ -1084,7 +1083,7 @@ impl engine {
 		*buf = out;
 	}
 	fn table_best(buf: &mut cbuf) -> Option<(usize, usize)> {
-		// the longest fixed-text rule matching at the cursor, the earlier on a tie: (length, rule)
+		// find the longest fixed-text rule at the cursor, the earlier on a tie: (length, rule)
 		let first = buf.read();
 		let mut best: Option<(usize, usize)> = None;
 		for &r in FIRST[first as usize] {
@@ -1095,8 +1094,8 @@ impl engine {
 		best
 	}
 	fn table_rule(&mut self, buf: &mut cbuf) -> bool {
-		// the longest fixed-text rule at the cursor writes its replacement, unless a lexer rule matches longer
-		// there; the lexer's " for"/" the" rules come first, so they also win a tie
+		// write the replacement of the longest fixed-text rule at the cursor, unless a lexer rule matches longer.
+		// the lexer's " for"/" the" rules come first, so they also win a tie
 		let first = buf.read();
 		let Some((n, r)) = Self::table_best(buf) else { return false };
 		// a rule that starts (ends) with a letter starts (ends) a word: no "kg" inside "background" or "kgb"
@@ -1217,8 +1216,8 @@ impl engine {
 			/*---------------------*/
 
 			@t1 comma [ ]+ @t2 letter letter period? space {
-				// a state after a comma, in capitals: "Austin, TX" reads texas, while "or", "pa" and "al" are words.
-				// Any other two letters are just the comma
+				// a state in capitals after a comma: "Austin, TX" reads texas; lowercase "or", "pa", "al" stay words.
+				// any other two letters: just the comma
 				const STATES: [(&[u8; 2], &str); 51] = [
 					(b"AK", "alaska"), (b"AL", "alabama"), (b"AR", "arkansas"), (b"AZ", "arizona"),
 					(b"CA", "california"), (b"CO", "colorado"), (b"CT", "connecticut"), (b"DC", "district of columbia"),
@@ -1544,8 +1543,8 @@ impl engine {
 				}
 				if t1 != t2 {
 					buf.setcurs(t1);
-					// the word before, when the text already names the sign ("Negative -42", "plus +5"); a "minus" or
-					// "plus" after a number is the operator ("5 minus -3")
+					// skip the sign if the word before already names it ("Negative -42", "plus +5");
+					// "minus" or "plus" after a number is the operator ("5 minus -3")
 					let said = Self::prev_word(buf).to_ascii_lowercase();
 					let operator = {
 						let b = Self::behind(buf, 48);
@@ -1556,9 +1555,9 @@ impl engine {
 					if buf.read() == b'+' {
 						if !named("positive", "plus") { self.scratch_pad.write_text(" positive "); }
 					} else if self.digit_prev && Self::prev_byte(buf).is_ascii_digit() {
-						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5);
-						// not after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read
-						// digit by digit
+						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5).
+						// always a range after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7)
+						// or a number read digit by digit
 						let b = Self::behind(buf, 24);
 						let mut i = b.len();
 						while i > 0 && (b[i - 1].is_ascii_digit() || b[i - 1] == b',') { i -= 1; }

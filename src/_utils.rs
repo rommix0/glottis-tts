@@ -20,8 +20,8 @@ impl cbuf {
 	}
 	pub fn is_not_empty(&self) -> bool { self.head != self.tail }
 	fn grow(&mut self) {
-		// double the buffer, keeping the queued bytes in order from the start; cursors saved before this are
-		// stale, so a buffer only grows while it is filled, before it is read with saved cursors
+		// double the buffer, moving the queued bytes to the start in order.
+		// this makes saved cursors stale, so only grow while filling, before reading with saved cursors
 		let mut b = vec![0u8; 2 * self.size as usize];
 		let mut n = 0;
 		let mut t = self.tail;
@@ -54,7 +54,7 @@ impl cbuf {
 	}
 	pub fn write_text(&mut self, txt: &str) {
 		for x in txt.bytes() {
-			// a NUL in the text would end it early: it is the stream's end marker
+			// NUL is the stream's end marker, so turn one in the text into a space
 			let x = if x == 0 { 0x20 } else { x };
 			if self.prev != 0x20 || x != 0x20 { self.write(x); }
 		}

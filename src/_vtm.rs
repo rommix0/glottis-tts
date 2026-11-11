@@ -18,14 +18,14 @@ pub const m_sr: u32 = 22050;
 // soft clip default
 const CLIP_LIMIT: f32 = 0.85;
 
-// lip radiation coefficient, tuned at LIP_TUNED_SR; a per-sample filter tilts brighter at a lower rate, and
-// LIP_MATCH is the share of that extra tilt taken back (0: none, 1: the tuned response)
+// lip radiation coefficient, tuned at LIP_TUNED_SR. at a lower rate the filter tilts brighter;
+// LIP_MATCH is how much of that extra tilt to take back (0 none, 1 back to the tuned response)
 const LIP_D: f32 = 0.5;
 const LIP_TUNED_SR: f32 = 32000.0;
 const LIP_MATCH: f32 = 0.5;
 
-// jitter and shimmer are drawn uniformly up to this many times their average cycle-to-cycle change (2/3 of the
-// largest draw), so the voice profile's numbers are that average
+// jitter and shimmer draw uniformly up to this many times their average pulse-to-pulse change,
+// so the voice profile's numbers are averages (the average is 2/3 of the largest draw)
 const PERTURB_SPREAD: f32 = 1.5;
 
 // output trim, keeps peaks under the soft clip
@@ -44,7 +44,7 @@ const CASC_MIN_BW: f32 = 60.0;
 pub const G_MAX: f32 = 87.0;
 pub const DB_PER_HALF: f32 = 6.0;
 
-// gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6), every 6 dB halving it
+// gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6)
 pub const DB_GAIN: [f32; 88] = [
 	4.3158372e-05, 4.8443635e-05, 5.437614e-05, 6.1035156e-05,
 	6.8509646e-05, 7.689948e-05, 8.6316744e-05, 9.688727e-05,
@@ -74,12 +74,12 @@ pub const DB_GAIN: [f32; 88] = [
 const MIN_D: f32 = 350.0;
 const MUL_B: f32 = 2.5;
 fn bw_widen(gap: f32) -> f32 { if gap < MIN_D { MUL_B * ((MIN_D - gap) / MIN_D) + 1.0 } else { 1.0 } }
-// B1-B3's widening for F1-F3 and F4: each formant by its nearer neighbour (F1 only has F2)
+// widening for B1-B3, each formant by its nearest neighbour (F1 only has F2, F3 has F2 and F4)
 fn bw_widen3(f1: f32, f2: f32, f3: f32, f4: f32) -> [f32; 3] {
 	let b2 = bw_widen((f2 - f3).abs());
 	[bw_widen((f1 - f2).abs()), b2, bw_widen((f3 - f4).abs()).max(b2)]
 }
-// a fixed upper formant (F4 and up) at the voice's scale
+// build a fixed upper formant (F4 and up) at the voice's scale
 fn upper_formant(v: &Voice, hz: f32, bw: f32) -> resonator {
 	resonator::new((hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32), bw * (v.fhi / 100.0), false)
 }
@@ -167,12 +167,12 @@ pub const VOICES: [Voice; 8] = [
 		rd: 110.0, br: 2.0, db:  1.1, fl: 250.0, jit: 1.5, shim: 1.0 },
 ];
 
-// how loud white noise comes out of the cascade and the lips at a voice's scale, with its output level: aspiration's
-// loudness. A bigger scale lets more noise through, while the voice's level only matches its vowels
+// measure aspiration's loudness at a voice's scale: white noise through the cascade and lips, times the output level.
+// a bigger scale lets more noise through, but the voice's db only evens out its vowels
 fn asp_level(v: &Voice) -> f32 {
 	let top = F_MAX_SR * m_sr as f32;
 	let (s1, s2, s3) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0);
-	// F1-F3 as wide as in a release and widened as fix_bw does, the fixed upper formants as set_voice builds them
+	// F1-F3 as wide as in a release, widened like fix_bw; upper formants as set_voice builds them
 	let (f1, f2, f3) = (400.0 * s1, 1600.0 * s2, 2600.0 * s3);
 	let [a1, a2, a3] = bw_widen3(f1, f2, f3, F4_INIT * (v.fhi / 100.0));
 	let mut rs = [
@@ -196,7 +196,7 @@ struct noise { nxt: u32 }
 impl noise {
 	fn new() -> noise { noise { nxt: 0x2545F491 } }
 	fn xorshift(&mut self) {
-		// 32-bit state: repeats after 2^32 - 1 samples instead of 3 s
+		// 32-bit state so it repeats after 2^32 - 1 samples, not within seconds
 		self.nxt ^= self.nxt << 13;
 		self.nxt ^= self.nxt >> 17;
 		self.nxt ^= self.nxt << 5;
@@ -278,8 +278,8 @@ const COS_TABLE: [f32; COS_STEPS + 1] = [
 	-1.0,
 ];
 
-// cos(2 pi hz / m_sr) from COS_TABLE, a straight line between entries: the resonator lands within 0.4 Hz of hz from
-// 150 Hz to F_MAX_SR, about 1 Hz off at 50 Hz (the line strays most where the cosine is flattest)
+// cos(2 pi hz / m_sr) from COS_TABLE, interpolated linearly.
+// within 0.4 Hz from 150 Hz up to F_MAX_SR, about 1 Hz off at 50 Hz where the cosine is flattest
 fn cos_hz(hz: f32) -> f32 {
 	let n = COS_STEPS as f32;
 	let mut t = (hz * (2.0 * n / m_sr as f32)).max(0.0);
@@ -328,9 +328,8 @@ const EXP_TABLE: [f32; EXP_STEPS + 1] = [
 	0.60653067,
 ];
 
-// a resonator's pole radius for bandwidth bw, from EXP_TABLE with a straight line between entries:
-// within 0.01 Hz of bw; wider than the table reaches (3.5 kHz at 22050 Hz, only the fixed upper resonators)
-// it is worked out exactly
+// pole radius for bandwidth bw from EXP_TABLE, interpolated linearly (within 0.01 Hz).
+// past the table's end (3.5 kHz at 22050 Hz, only the fixed upper resonators) work it out exactly
 fn pole_radius(bw: f32) -> f32 {
 	let x = PI * bw.max(0.0) / m_sr as f32;
 	if x >= EXP_TOP { return libm::expf(-x); }
@@ -379,7 +378,7 @@ impl resonator {
 		self.bw = bw;
 	}
 	fn step(&mut self, x: f32, bf: f32, bw: f32) -> f32 {
-		// a fixed resonator (stepped with 0, 0) keeps the coefficients it was made with; a 0 keeps that value
+		// a 0 keeps the current value; a fixed resonator (stepped with 0, 0) keeps its coefficients
 		if bf > 0.0 || bw > 0.0 {
 			let bf = if bf == 0.0 { self.bf } else { bf };
 			let bw = if bw == 0.0 { self.bw } else { bw };
@@ -429,8 +428,7 @@ impl LpPole {
 	}
 }
 
-// a glottal pulse is spread over this many samples either side of its exact time, so the voice plays
-// this many samples late
+// a glottal pulse spreads this many samples either side of its exact time, so the voice plays that late
 const PULSE_HALF: usize = 4;
 const PULSE_RING: usize = 16;
 
@@ -475,7 +473,7 @@ impl LfSource {
 		self.rng.nxt as f32 / u32::MAX as f32 * 2.0 - 1.0
 	}
 	fn add_pulse(&mut self, ago: f32, amp: f32) {
-		// a band-limited unit impulse at (n - ago), written PULSE_HALF samples ahead of what plays now
+		// write a band-limited unit impulse at (n - ago), PULSE_HALF samples ahead of what plays now
 		let h = PULSE_HALF as f32;
 		let t = (self.n + PULSE_HALF) as f32 - ago;
 		let first = libm::floorf(t) as usize + 1 - PULSE_HALF;
@@ -528,7 +526,7 @@ impl LfSource {
 	fn calc_flutter(&mut self, f0: f32, flutter: f32) -> f32 {
 		// KLGLOTT88 pitch flutter algorithm
 		if flutter <= 0.0 { return 0.0; }
-		// the sines barely move in a millisecond: worked out at each end of one, a straight line between
+		// the sines barely move in a millisecond: compute them at each end, interpolate in between
 		let step = m_sr / 1000;
 		let n = self.flut_clock % step;
 		if n == 0 {
@@ -564,7 +562,7 @@ impl LfSource {
 		let slot = self.n % PULSE_RING;
 		let impulse = self.exc[slot];
 		self.exc[slot] = 0.0;
-		// kept within the ring: as an f32 a growing count loses the pulse's fraction of a sample
+		// wrap at the ring size, or a growing count loses the pulse's sub-sample fraction as an f32
 		self.n = (self.n + 1) % PULSE_RING;
 
 		let sample = self.tilt.step(self.glottal.step(impulse));
@@ -628,9 +626,9 @@ pub struct vtm {
 	xp1:      f32,
 	fric_y1:  f32,		// frication noise lowpass state
 	voice:    Voice,	// voice profile
-	asp_gain: f32,		// aspiration noise, so it is as loud as the table voice's
+	asp_gain: f32,		// aspiration gain, matches the table voice's loudness
 	vgain:    f32,		// the voice profile's output level, linear
-	// the cascade's B1/B2 floor: wider for a higher-pitched voice, whose rings have less time to die
+	// cascade B1/B2 floor, wider for a higher voice (its rings have less time to die)
 	min_bw:   f32,
 	fric_a:   f32,		// frication lowpass coefficient
 	lip_d:    f32,		// lip radiation coefficient at this rate
@@ -700,7 +698,7 @@ impl vtm {
 			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
 			out_g:   libm::powf(10.0, OUT_DB / 20.0),
 		};
-		// voice 0 in full: its jitter and shimmer live in the glottal source, which only set_voice reaches
+		// set voice 0 fully: jitter and shimmer live in the glottal source, which only set_voice reaches
 		tract.set_voice(VOICES[0]);
 		tract
 	}
@@ -746,7 +744,7 @@ impl vtm {
 	fn db2lin(gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
 		if gain >= G_MAX { return 1.0; }
-		// between whole dB, a straight line: within 0.01 dB of the curve
+		// interpolate between whole dB: within 0.01 dB of the curve
 		let i = gain as usize;
 		DB_GAIN[i] + (DB_GAIN[i + 1] - DB_GAIN[i]) * (gain - i as f32)
 	}
@@ -762,14 +760,14 @@ impl vtm {
 		self.B1 += DB1;
 		self.B2 += DB2;
 
-		// formants close together; F3 widens for a close F2 as well as F4, or the F2-F3 pair rings as one narrow peak
-		// (front vowels in voice 6)
+		// widen formants that are close together. F3 also widens for a close F2,
+		// or the F2-F3 pair rings as one narrow peak (front vowels in voice 6)
 		[self.B1_ADJ, self.B2_ADJ, self.B3_ADJ] = bw_widen3(self.F1, self.F2, self.F3, self.VR4.bf);
 	}
 	fn nasal_zero(&self, scale: f32, k: f32) -> f32 {
-		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole
-		// for an oral sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at
-		// a vowel's nasalized edge
+		// place the nasal zero for coupling k (0 oral, 1 nasal consonant):
+		// oral sits on the nasal pole (they cancel), nasal sits on F1 (the pole is then the murmur),
+		// a vowel's nasalized edge is in between
 		FN_INIT + k * ((self.F1 / scale) - FN_INIT)
 	}
 	fn parallel(&mut self, x: f32) -> f32 {
@@ -825,7 +823,7 @@ impl vtm {
 		x.signum() * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
 	}
 	fn radiate(&mut self, x: f32) -> f32 {
-		// lip radiation with its coefficient moved toward the tuned rate's response, at the same low-frequency gain
+		// lip radiation, coefficient pulled toward the tuned rate's response, same low-frequency gain
 		let d = self.lip_d;
 		self.lip(x, d) * (1.0 - LIP_D) / (1.0 - d)
 	}
@@ -884,7 +882,7 @@ mod tests {
 		}
 	}
 
-	// 4000 samples of a steady vowel with these F1, F2, B1, B2 in voice
+	// render 4000 samples of a steady vowel with these F1, F2, B1, B2 in voice
 	fn steady(voice: Voice, f1: f32, f2: f32, b1: f32, b2: f32) -> Vec<f32> {
 		let mut v = vtm::new();
 		v.set_voice(voice);
@@ -898,8 +896,7 @@ mod tests {
 
 	#[test]
 	fn aspiration_is_as_loud_in_every_voice() {
-		// the breath after a final stop: white noise through wide formants, which a bigger voice scale let
-		// through louder
+		// the breath after a final stop: white noise through wide formants. a bigger voice scale lets more through
 		let level = |voice: Voice| {
 			let mut v = vtm::new();
 			v.set_voice(voice);
@@ -911,7 +908,7 @@ mod tests {
 			}).collect();
 			10.0 * libm::log10f(x[2000..].iter().map(|s| s * s).sum::<f32>() / 10000.0)
 		};
-		// within a couple of dB (the matching works on fixed reference formants); voices 2 and 5 were 10 dB over
+		// within a couple of dB (the matching uses fixed reference formants)
 		let table = level(VOICES[0]);
 		for (i, &voice) in VOICES.iter().enumerate() {
 			assert!((level(voice) - table).abs() < 2.5, "voice {}: {:.1} dB against {:.1}", i, level(voice), table);
@@ -920,7 +917,7 @@ mod tests {
 
 	#[test]
 	fn close_f2_and_f3_both_widen() {
-		// voice 6's ix: F2 up and F3 down to 194 Hz apart, which rang as one narrow peak while only B2 widened
+		// voice 6's ix: F2 and F3 194 Hz apart. widening only B2 leaves them ringing as one narrow peak
 		let mut v = vtm::new();
 		v.F1 = 280.0; v.F2 = 2080.0; v.F3 = 2274.0;
 		v.fix_bw();
@@ -930,7 +927,7 @@ mod tests {
 
 	#[test]
 	fn cascade_bandwidths_have_a_floor() {
-		// a B1 or B2 asked below the floor renders exactly as the floor itself (both of these end under it)
+		// a B1 or B2 below the floor renders the same as the floor (both of these end up under it)
 		let render = |b1: f32, b2: f32| steady(VOICES[0], 600.0, 1500.0, b1, b2);
 		let floor = render(10.0, 10.0);
 		assert_eq!(render(20.0, 20.0), floor);
@@ -939,7 +936,7 @@ mod tests {
 
 	#[test]
 	fn high_voices_have_a_higher_bandwidth_floor() {
-		// a high voice's rings have less time to die between pulses: a B1 the table voice keeps is floored there
+		// a high voice's rings have less time to die between pulses, so it floors a B1 the table voice keeps
 		let hi = VOICES[3];
 		assert_eq!(steady(hi, 600.0, 1500.0, 65.0, 10.0), steady(hi, 600.0, 1500.0, 10.0, 10.0));
 		assert_ne!(steady(VOICES[0], 600.0, 1500.0, 65.0, 10.0), steady(VOICES[0], 600.0, 1500.0, 10.0, 10.0));
@@ -979,8 +976,8 @@ mod tests {
 
 	#[test]
 	fn lip_radiation_tilts_less_than_its_raw_coefficient() {
-		// at this rate the raw coefficient lifts the highs more than it did where it was tuned; radiate() trims that
-		// part of the way back and leaves the low end where it was
+		// at this rate the raw coefficient lifts the highs more than at its tuned rate.
+		// radiate() takes part of that back and leaves the low end alone
 		let gain = |hz: f32, f: &dyn Fn(&mut vtm, f32) -> f32| {
 			let mut v = vtm::new();
 			let mut peak = 0.0f32;
@@ -997,7 +994,7 @@ mod tests {
 		assert!(cut > 0.5 && cut < 2.5, "4 kHz trimmed {} dB", cut);
 	}
 
-	// harmonic energy over the rest, in dB, between lo and hi Hz, of x at fundamental f0 (Hann-windowed DFT)
+	// harmonic-to-rest energy in dB between lo and hi Hz, for x at fundamental f0 (Hann-windowed DFT)
 	fn hnr(x: &[f32], f0: f32, lo: f32, hi: f32) -> f32 {
 		let n = x.len();
 		let (mut h, mut r) = (0.0f64, 0.0f64);
@@ -1096,7 +1093,7 @@ mod tests {
 
 	#[test]
 	fn voices_scale_the_formants_they_are_given() {
-		// a voice at 150% renders the table's formants as the table voice renders them 1.5 times higher and wider
+		// a 150% voice sounds like the table voice with formants 1.5 times higher and wider
 		let big = Voice { f1: 150.0, f2: 150.0, ..VOICES[0] };
 		assert_eq!(steady(big, 400.0, 1000.0, 80.0, 90.0), steady(VOICES[0], 600.0, 1500.0, 120.0, 135.0));
 		assert_ne!(steady(big, 400.0, 1000.0, 80.0, 90.0), steady(VOICES[0], 600.0, 1500.0, 80.0, 90.0));
@@ -1128,7 +1125,7 @@ mod tests {
 
 	#[test]
 	fn cos_table_puts_resonators_where_they_belong() {
-		// the frequency the table's cosine stands for, against the asked one, up to the highest a formant may reach
+		// compare the frequency the table's cosine gives with the asked one, up to F_MAX_SR
 		let off = |hz: u32| {
 			let got = (cos_hz(hz as f32) as f64).clamp(-1.0, 1.0).acos() * m_sr as f64 / (2.0 * core::f64::consts::PI);
 			(got - hz as f64).abs()
@@ -1144,7 +1141,7 @@ mod tests {
 
 	#[test]
 	fn exp_table_gives_resonators_their_bandwidth() {
-		// the bandwidth the table's radius stands for, against the asked one, across all a resonator can be given
+		// compare the bandwidth the table's radius gives with the asked one, over every bandwidth a resonator gets
 		let worst = (0..=6000).map(|bw| {
 			let got = -(pole_radius(bw as f32) as f64).ln() * m_sr as f64 / core::f64::consts::PI;
 			(got - bw as f64).abs()

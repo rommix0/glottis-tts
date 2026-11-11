@@ -1,4 +1,4 @@
-// the command line around the synthesizer, for trying it by hand: reads the options, writes tts_demo.wav
+// command line demo for trying the synthesizer by hand: reads the options, writes tts_demo.wav
 //   cargo run --release --example tts_demo -- "text to speak."
 use std::env;
 use std::fs::File;
@@ -8,7 +8,7 @@ use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 use tts_synth::{_vtm, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
 
-// mono at the synth's rate, as 16-bit integers or 32-bit floats
+// WAV format: mono at the synth's rate, 16-bit int or 32-bit float samples
 fn wav_spec(pcm16: bool) -> hound::WavSpec {
 	let (bits, format) = if pcm16 { (16, hound::SampleFormat::Int) } else { (32, hound::SampleFormat::Float) };
 	hound::WavSpec { channels: 1, sample_rate: SAMPLE_RATE, bits_per_sample: bits, sample_format: format }
@@ -67,7 +67,7 @@ fn parse_args() -> Result<Opts, String> {
 	Ok(opts)
 }
 
-// the WAV file, the segment dump and the trace
+// writes the WAV file and the segment dump, prints the trace
 struct WavOut {
 	writer: hound::WavWriter<BufWriter<File>>,
 	dump:   Option<BufWriter<File>>,	// the playing segment index of every sample
@@ -98,7 +98,7 @@ fn block_on<F: Future>(f: F) -> F::Output {
 }
 
 fn read_table(path: &str) -> Result<&'static [u16; 1550], String> {
-	// the numbers of the formant table in order, anything else between them is skipped
+	// read the formant table's numbers in order, skipping anything between them
 	let text = std::fs::read_to_string(path).map_err(|e| format!("can't read {path}: {e}"))?;
 	let vals = text.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty())
 		.map(|t| t.parse().map_err(|_| format!("{path}: {t} is out of range"))).collect::<Result<Vec<u16>, _>>()?;

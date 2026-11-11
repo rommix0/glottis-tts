@@ -101,7 +101,7 @@ pub fn pause_after(end: Boundary, rate: f32) -> f32 {
 	ms / tempo(rate)
 }
 
-// the speaking rate times TEMPO, the rate held to 0.5..2 (a NaN is the normal rate)
+// speaking rate times TEMPO, rate clamped to 0.5..2 (NaN means the normal rate)
 fn tempo(rate: f32) -> f32 { if rate.is_nan() { TEMPO } else { rate.clamp(0.5, 2.0) * TEMPO } }
 
 pub fn assign(utt: &mut Utterance, rate: f32) {
@@ -113,7 +113,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 	}
 }
 
-// the product of the rule factors for segment i, and the names of the rules that fired
+// multiply the rule factors for segment i, and list the rules that fired
 fn rule_factor(utt: &Utterance, i: usize) -> (f32, Vec<&'static str>) {
 	let p = utt.segs[i].phone;
 	let vowel = is_vowel(p);

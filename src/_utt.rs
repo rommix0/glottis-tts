@@ -140,7 +140,7 @@ impl Utterance {
 		if u.words.len() > phrase_start {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::Unmarked });
 		}
-		// a sentence does not end on a comma: one at the end of the input ends it
+		// a comma at the end of the input ends the sentence like a period
 		if let Some(last) = u.phrases.last_mut() {
 			if last.end == Boundary::Comma { last.end = Boundary::Period; }
 		}
@@ -166,7 +166,7 @@ impl Utterance {
 			last.end = end;
 		}
 	}
-	// the (phone, stress) pairs of a phone token, added to the last word
+	// add a phone token's (phone, stress) pairs to the last word
 	fn add_phones(&mut self, phones: [(u8, u8); 2]) {
 		if self.words.last().is_none_or(|w| w.phrase != self.phrases.len()) {
 			// phones before any word boundary, or after punctuation: start a content word
@@ -179,9 +179,9 @@ impl Utterance {
 		let w = self.words.len() - 1;
 		for (p, s) in phones {
 			if p == SIL { continue; }
-			// a vowel ending on a w or y glides through it into the next vowel of its word ("follower",
-			// "being"), and into an unstressed vowel starting the next word of its phrase ("go away"); a
-			// stressed one starts with a glottal catch instead
+			// insert the w or y a vowel ends on before the next vowel in its word ("follower", "being"),
+			// or before an unstressed vowel starting the next word in its phrase ("go away").
+			// a stressed vowel there starts with a glottal catch instead
 			let first = self.words[w].segs.is_empty();
 			let prev = self.segs.last()
 				.filter(|x| x.word == w
@@ -223,9 +223,9 @@ impl Utterance {
 		}
 	}
 	fn pieces(&self, words: Range<usize>, end: Boundary) -> Vec<Phrase> {
-		// a phrase with too many syllables to say in one go breaks after a content word, before its best next word:
-		// a conjunction or relative word, else a preposition, the nearer the middle the better; never before another
-		// function word, which would split a verb from its object ("using | the") or a noun from "of"
+		// break a phrase too long to say in one go after a content word, before a conjunction or relative word,
+		// else a preposition, the nearer the middle the better. never before another function word:
+		// that would split a verb from its object ("using | the") or a noun from "of"
 		let syls = |r: Range<usize>| -> usize { r.map(|w| self.words[w].syls.len()).sum() };
 		let total = syls(words.clone());
 		if total <= MAX_PHRASE_SYL { return vec![Phrase { words, end }]; }
@@ -250,9 +250,10 @@ impl Utterance {
 		out
 	}
 	fn flap(&mut self) {
-		// a t or d after a vowel or r is said as a flap before an unstressed vowel in its word ("city", "rider"),
-		// or ending its word before a vowel in the same phrase ("got it"); a word's first stop, a stop before a
-		// stressed vowel and a t before a word-final syllabic n ("button") keep their closure
+		// flap a t or d after a vowel or r when an unstressed vowel follows in its word ("city", "rider"),
+		// or when it ends its word and a vowel follows in the same phrase ("got it").
+		// keep the closure on a word's first stop, a stop before a stressed vowel,
+		// and a t before a word-final syllabic n ("button")
 		fn vowel(p: u8) -> bool { is_vowel(p) && !matches!(p, AXP | IXP) }
 		for i in 1..self.segs.len().saturating_sub(1) {
 			let (prev, cur, next) = (&self.segs[i - 1], &self.segs[i], &self.segs[i + 1]);
@@ -271,8 +272,8 @@ impl Utterance {
 		}
 	}
 	fn dark_l(&mut self) {
-		// a syllabic l (ax l / ix l with no vowel after it in its word: "example", "bottles") is a dark l, like
-		// the l ending "feel"; the clear l made the schwa ring as a vowel of its own
+		// a syllabic l is dark, like the l in "feel"; a clear one rings like an extra vowel.
+		// syllabic: ax l / ix l with no vowel after it in its word ("example", "bottles")
 		for i in 1..self.segs.len() {
 			let w = self.segs[i].word;
 			if self.segs[i].phone != L || !matches!(self.segs[i - 1].phone, AX | IX) || self.segs[i - 1].word != w {
@@ -283,8 +284,8 @@ impl Utterance {
 		}
 	}
 	fn close_word(&mut self) {
-		// split the last word into syllables, once it has all its phones; a word boundary with no phones after it
-		// is not a word
+		// split the last word into syllables once it has all its phones.
+		// drop a word boundary with no phones after it
 		let Some(w) = self.words.len().checked_sub(1) else { return; };
 		if self.words[w].segs.is_empty() { self.words.pop(); return; }
 		if self.words[w].syls.end > self.words[w].syls.start { return; }
@@ -341,8 +342,8 @@ mod tests {
 		let u = Utterance::build(&[CW, 46, 15, 60, 66, 37, PERIOD], &["follower"]);
 		assert_eq!(u.segs.iter().map(|s| s.phone).collect::<Vec<_>>(), vec![16, 1, 25, 29, 41, 7]);
 		assert_eq!(syl_phones(&u, 2), vec![41, 7]);
-		// across words into an unstressed vowel, which the w starts ("go away"); not into a stressed one, nor
-		// across a comma
+		// across words: a w before an unstressed vowel, in that vowel's word ("go away");
+		// none before a stressed vowel or across a comma
 		let u = Utterance::build(&[CW, 66, CW, 32, PERIOD], &["owe", "aa"]);
 		assert_eq!(u.segs.iter().map(|s| (s.phone, s.word)).collect::<Vec<_>>(), vec![(29, 0), (41, 1), (1, 1)]);
 		assert!(u.segs[1].glide && !u.segs[0].glide);
@@ -456,7 +457,7 @@ mod tests {
 
 	fn phones(u: &Utterance) -> Vec<u8> { u.segs.iter().map(|s| s.phone).collect() }
 
-	// one-syllable words (function?, text), each b 'aa, then a period
+	// build a sentence of one-syllable words (function?, text), each b 'aa, then a period
 	fn sentence(words: &[(bool, &str)]) -> Utterance {
 		let mut toks = Vec::new();
 		for &(f, _) in words { toks.extend([if f { FW } else { CW }, 39, 15]); }

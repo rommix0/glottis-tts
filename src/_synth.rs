@@ -45,30 +45,30 @@ const BURST_GAIN_DB: f32 = -4.0;
 const BURST_UNSTRESSED_DB: f32 = -6.0;
 const BURST_SIBILANT_DB: f32 = 0.0;
 
-// share of each formant move spent easing in and out: one starting or stopping at full speed clicks
+// share of each formant move spent easing in and out (starting or stopping at full speed clicks)
 const TRACK_EASE: f32 = 0.1;
 
-// a move cut off by the next one hands its speed on, fading over this long, instead of stopping dead
+// a move cut off by the next one carries its speed on, fading it over this long so it doesn't stop dead
 const CARRY_MS: f32 = 10.0;
 
-// a burst into a vowel or sonorant duller than an open vowel is cut by this share of 40 log10(F1 * F2 / RELEASE_REF)
+// cut a burst into a vowel or sonorant duller than an open vowel by this share of 40 log10(F1 * F2 / RELEASE_REF)
 const RELEASE_FOLLOW: f32 = 0.5;
 const RELEASE_REF: f32 = 600.0 * 1500.0;
 
-// aspiration takes the larger of the front-vowel cut and this share of the same difference
+// cut aspiration by the front-vowel cut or this share of the same difference, whichever is larger
 const ASP_FOLLOW: f32 = 0.5;
 
-// lip release (AH for p, b): noise in front of the tract, so F2 and F3 stay under these, eased over LIP_RAMP_MS
+// lip release (AH for p, b) is noise in front of the tract: hold F2 and F3 under these, eased over LIP_RAMP_MS
 const LABIAL_BURST_AH: [f32; 2] = [27.0, 28.0];
 const LABIAL_BURST_F2: f32 = 1100.0;
 const LABIAL_BURST_F3: f32 = 2300.0;
 const LABIAL_BURST_WIDEN: f32 = 800.0;		// B2 and B3 added, so the release has no compact peak (a k cue)
 const LIP_RAMP_MS: f32 = 5.0;
 
-// an unreleased stop plays this share of its duration, as closure merging with the next one
+// unreleased stop: play this share of its duration as closure, merging into the next one
 const UNRELEASED_SHARE: f32 = 0.5;
 
-// fricative crossfades with a vowel or sonorant, centred on the boundary: out of the fricative, then into it
+// fricative crossfades with a vowel or sonorant, centred on the boundary: RAMP out of the fricative, ENTRY into it
 const SIB_RAMP_MS: f32 = 40.0;
 const FRIC_RAMP_MS: f32 = 40.0;
 const SIB_ENTRY_MS: f32 = 60.0;
@@ -81,8 +81,8 @@ const FRIC_SILENCE_MS: f32 = 70.0;
 const FRIC_DIP_DB: f32 = 10.0;
 const FRIC_DIP_MS: f32 = 30.0;
 
-// a word-initial vowel after a vowel starts with a glottal catch: a voice dip centred on the join, lighter when
-// unstressed ("Nina and"); an unstressed one after an r-coloured vowel is linked by the r instead ("letter and")
+// glottal catch: dip the voice at the join when a word starts with a vowel after a vowel,
+// lighter if unstressed ("Nina and"); an unstressed one after an r-coloured vowel is linked by the r ("letter and")
 const GLOTTAL_DIP_DB: f32 = 24.0;
 const GLOTTAL_DIP_UNSTRESSED_DB: f32 = 12.0;
 const GLOTTAL_DIP_MS: f32 = 40.0;
@@ -91,13 +91,13 @@ const GLOTTAL_DIP_MS: f32 = 40.0;
 const NASAL_DIP_DB: f32 = 4.0;
 const NASAL_DIP_MS: f32 = 30.0;
 
-// nasal into a voiceless fricative: the velum closes before the tongue lets go, a silent gap before the noise, which
-// then rises over NASAL_GAP_RISE_MS
+// nasal into a voiceless fricative: the velum closes before the tongue lets go,
+// so leave a silent gap, then raise the noise over NASAL_GAP_RISE_MS
 const NASAL_GAP_MS: f32 = 25.0;
 const NASAL_GAP_RISE_MS: f32 = 20.0;
 
-// a nasal after an unstressed vowel is quieter, so it stays under that weaker vowel ("-ing", "-en"); not one that
-// starts a word ("the moon")
+// quieter nasal after an unstressed vowel so it stays under it ("-ing", "-en"),
+// unless the nasal starts a word ("the moon")
 const NASAL_AFTER_UNSTRESSED_DB: f32 = 6.0;
 
 // a nasal's voicing and nasal coupling switch within this long at its closure and release
@@ -119,7 +119,7 @@ const BEFORE_R: [(u8, f32, f32, f32, f32); 6] = [
 	(UW, 310.0,  930.0, 370.0,  890.0),
 ];
 
-// breath noise, and the extra breath and Rd as the voice dies at a phrase end, reached BREATH_RAMP_MS into the release
+// breath noise, plus extra breath and Rd as the voice dies at a phrase end (full BREATH_RAMP_MS into the release)
 const BREATH_DB: f32 = 6.0;
 const BREATH_END_DB: f32 = 12.0;
 const BREATH_END_RD: f32 = 0.3;
@@ -134,15 +134,15 @@ const R_ONSET_MS: f32 = 50.0;
 // while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
 
-// a back vowel whose own targets move this much (F1 or F2) starts that glide on time, not after the slow F2
+// a back vowel whose own F1 or F2 moves this much starts its glide on time, not after the slow F2
 const GLIDE_HZ: f32 = 100.0;
 
-// a consonant's F1 follows the next vowel by this share of its F1 off F1_FOLLOW_REF, never under F1_FOLLOW_MIN
+// shift a consonant's F1 by this share of (next vowel's F1 - F1_FOLLOW_REF), never under F1_FOLLOW_MIN
 const F1_FOLLOW: f32 = 0.5;
 const F1_FOLLOW_REF: f32 = 500.0;
 const F1_FOLLOW_MIN: f32 = 180.0;
 
-// front vowels pull an alveolar's F2 locus up but back vowels don't pull it down: a lower vowel F2 counts as this
+// front vowels raise an alveolar's F2 locus but back vowels don't lower it: a vowel F2 under this counts as this
 const ALVEOLAR_F2_FLOOR: f32 = 1500.0;
 
 // a fricative's voicing switches within this long at a vowel or sonorant, though its noise crossfades longer
@@ -161,8 +161,8 @@ const ASP_DB: f32 = 15.5;
 const ASP_UNSTRESSED: f32 = 0.6;
 const ASP_BEFORE_SONORANT: f32 = 0.8;
 
-// a word-internal t before an unstressed schwa ("button", "Clinton") is softer still: this share of that aspiration,
-// this much quieter
+// word-internal t before an unstressed schwa ("button", "Clinton"): softer still,
+// this share of that aspiration, this much quieter
 const SCHWA_T_ASP: f32 = 0.5;
 const SCHWA_T_ASP_DB: f32 = 6.0;
 
@@ -220,12 +220,12 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 }
 
 fn db_gain(db: f32) -> f32 {
-	// an amplitude (dB, 0 is off) as linear gain: G_MAX is full scale, every DB_PER_HALF dB halves it
+	// amplitude in dB (0 is off) to linear gain: G_MAX is full scale, every DB_PER_HALF dB under it halves it
 	if db <= 0.0 { 0.0 } else { libm::powf(0.5, (G_MAX - db) / DB_PER_HALF) }
 }
 
 fn audible(g: f32) -> f32 {
-	// a gain at or under that of 0 dB is off
+	// a gain at or under 0 dB's gain counts as off
 	if g <= DB_GAIN[0] { 0.0 } else { g }
 }
 
@@ -308,9 +308,9 @@ fn quiet(p: u8) -> bool { p == PAU || p == SIL || p == AXP || p == IXP }
 fn hiss(p: u8) -> bool { fricative(p) || p == HH }
 // aw, ay, ow, oy (feats' DIPHTHONG marks only ay and oy)
 fn diphthong(p: u8) -> bool { matches!(p, AW | AY | OW | OY) }
-// the formant table row a phone plays: the pause plays the silent row
+// formant table row for a phone (the pause uses the silent row)
 fn table_row(p: u8) -> u8 { if p == PAU { SIL } else { p } }
-// the vowels reduce() moves toward ax as they get shorter (not ax and ix themselves)
+// vowels reduce() moves toward ax as they get shorter (all but ax and ix)
 fn reduces(p: u8) -> bool { feats(p) & VOWEL != 0 && !matches!(p, AX | IX) }
 
 // a word-internal t before an unstressed schwa ("button"): softened by SCHWA_T_ASP and SCHWA_T_ASP_DB
@@ -320,8 +320,8 @@ fn schwa_t(phone: u8, word_start: bool, next: u8, next_stressed: bool) -> bool {
 
 fn stop_place(x: u8) -> usize { match x { P | B => 0, T | D => 1, _ => 2 } }
 
-// a plosive's parts in samples: the closure and burst (an affricate's frication) play in its own segment,
-// the aspiration in the start of the next phone
+// plosive parts in samples: closure and burst (or an affricate's frication) play in its own segment,
+// aspiration plays at the start of the next phone
 #[derive(Debug)]
 struct Stop { closure: i32, burst: i32, asp: i32, }
 
@@ -336,9 +336,9 @@ fn stop_timeline(
 	}
 	let nf = feats(next);
 
-	// unreleased before another stop or a nasal, a t or d before a word starting with th or dh ("get the"), and a
-	// word-final t after a vowel, r, n or l before a word starting with a consonant ("not that");
-	// a k or g before a word starting with a nasal, th or dh keeps a burst, or it is not heard
+	// unreleased: before another stop or a nasal, t or d before a word starting with th or dh ("get the"),
+	// and word-final t after a vowel, r, n or l before a word starting with a consonant ("not that").
+	// k or g keeps its burst before a word starting with a nasal, th or dh, or it isn't heard
 	// ("unique New York", "thick thistle")
 	let final_t = phone == T && !word_start && (feats(prev) & VOWEL != 0 || matches!(prev, RX | N | L | LX))
 		&& next_word_start && nf & VOWEL == 0 && !matches!(next, SIL | AXP | IXP | PAU);
@@ -753,7 +753,7 @@ impl engine {
 		self.B3_B_src  = self.tbl[offset_src+30] as f32;
 	}
 	fn copy_a_to_empty_b(&mut self) {
-		// a B target left at 0 in the table is the A target
+		// a B target of 0 in the table means use the A target
 		if self.F1_B_src == 0.0 { self.F1_B_src = self.F1_A_src; }
 		if self.F2_B_src == 0.0 { self.F2_B_src = self.F2_A_src; }
 		if self.F3_B_src == 0.0 { self.F3_B_src = self.F3_A_src; }
@@ -821,12 +821,12 @@ impl engine {
 	}
 	fn apply_vowel_sonorant_rules(&mut self, factor: f32) {
 		// SONORANT ADJUSTMENT
-		// after r and w; an l and a y keep their F3 high
+		// lower F3 after r and w (l and y keep their F3 high)
 		if matches!(self.phn_l1, R | RX | W) {
 			self.F3_A_src -= 150.0 * factor;
 		}
 		if self.phn_r1 == W {
-			// before w; an l and a y keep their F3 high, an r has its own rule
+			// and before w (l and y keep their F3 high, r has its own rule)
 			self.F3_B_src -= 150.0 * factor;
 		}
 
@@ -856,15 +856,15 @@ impl engine {
 	fn apply_vowel_glide_rules(&mut self, factor: f32) {
 		// VOWEL RHOTICIZATION
 		if self.pft_r1 & RHOTIC != 0 {
-			// the vowel takes on r-coloring as it moves into the r, not from its start, by the same amount
-			// stressed or not; its F2 does not rise away from the r ("tour")
+			// r-color only the end of the vowel, same amount stressed or not,
+			// and don't let F2 rise away from the r ("tour")
 			self.F3_B_src -= RHOTIC_F3;
 			self.F2_B_src = self.F2_B_src.min(self.F2_A_src);
 		}
 
 		// GLIDE TOWARD THE NEXT CONSONANT
-		// a vowel's own F2 glide does not head away from where the next consonant takes F2 ("cat", "pick");
-		// the diphthongs aw, ay, ow and oy keep theirs
+		// don't let a vowel's own F2 glide head away from the next consonant's F2 ("cat", "pick"),
+		// except in the diphthongs aw, ay, ow and oy
 		if !diphthong(self.phn_c) && self.pft_r1 & VOWEL == 0
 			&& !matches!(self.phn_r1, SIL | HH | AXP | IXP | PAU) {
 			let next_f2 = match locus(self.phn_r1) {
@@ -882,14 +882,14 @@ impl engine {
 			if self.pft_l1 & ALVEOLAR != 0 {
 				self.F2_A_src += 250.0 * factor;
 			}
-			// not into a dark l, which pulls F2 down: the vowel went up and back down ("full")
+			// not into a dark l, which pulls F2 down, or the vowel goes up and back down ("full")
 			if self.pft_r1 & ALVEOLAR != 0 && self.phn_r1 != LX {
 				self.F2_B_src += 250.0 * factor;
 			}
 		}
 	}
 	fn apply_consonant_rules(&mut self) {
-		// F2 and the velars' F3 are left to loci(), which places them from the neighbouring vowels
+		// F2 and the velars' F3 are set later by loci(), from the neighbouring vowels
 		// BEFORE A FRONT VOWEL: w moves up toward it; a sibilant's F3 (which A3 follows) rises
 		if self.pft_r1 & (VOWEL | FRONT) == VOWEL | FRONT {
 			if self.phn_c == W {
@@ -903,12 +903,12 @@ impl engine {
 		}
 		// NASALS (m, n, ng)
 		if self.pft_c & NASAL != 0 {
-			// after a front vowel, a lower F3 (ng's F3 is its pinch)
+			// lower F3 after a front vowel (not ng, whose F3 is its pinch)
 			if self.phn_c != NG && self.pft_l1 & (VOWEL | FRONT) == VOWEL | FRONT {
 				self.F3_A_src -= 100.0;
 				self.F3_B_src -= 100.0;
 			}
-			// a wider B1
+			// widen B1
 			self.B1_A_src += 107.0;
 			self.B1_B_src += 107.0;
 			// quieter after an unstressed vowel, unless the nasal starts the word
@@ -952,7 +952,7 @@ impl engine {
 			self.reduced([self.F1_B_src, self.F2_B_src, self.F3_B_src], self.pdr_c);
 	}
 	fn reduced(&self, f: [f32; 3], dur: i32) -> [f32; 3] {
-		// F1-F3 of a vowel lasting dur samples, moved toward the neutral vowel's
+		// move F1-F3 of a vowel lasting dur samples toward the neutral vowel's
 		let ax_row = AX as usize * 31;
 		let k = reduce_k(dur as f32 * 1000.0 / m_sr as f32);
 		[0, 1, 2].map(|i| { let n = self.tbl[ax_row + 5 + i] as f32; n + (f[i] - n) * k })
@@ -964,9 +964,8 @@ impl engine {
 		(-40.0 * libm::log10f(f1 * f2 / RELEASE_REF)).max(0.0)
 	}
 	fn next_vowel_formants(&self) -> [f32; 3] {
-		// the next phone's F1-F3 at its start, reduced for its length as reduce() does a vowel's. An l, r, w or y is
-		// reduced too, unlike in reduce(): the release level before them was set by ear that way (a release before
-		// them 2-4 dB softer was tried and not kept, ab/160)
+		// next phone's F1-F3 at its start, reduced for its length like reduce() does a vowel.
+		// unlike reduce(), l, r, w and y are reduced too: the release level before them was set by ear that way
 		let row = table_row(self.phn_r1) as usize * 31;
 		let target = [self.tbl[row + 5] as f32, self.tbl[row + 6] as f32, self.tbl[row + 7] as f32];
 		if matches!(self.phn_r1, AX | IX | PAU) { return target; }
@@ -991,12 +990,12 @@ impl engine {
 			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
 			(self.F1_A_src, self.F1_B_src) = (f1, f1);
 		}
-		// f and v: the tongue is free, so it is already where the next vowel wants it (no F3 fall into "first")
+		// f and v leave the tongue free, so take the next vowel's F3 (no F3 fall into "first")
 		if next_vowel && (self.phn_c == F || self.phn_c == V) { (self.F3_A_src, self.F3_B_src) = (next_f3, next_f3); }
 		let left  = if prev_vowel { Some(prev_f2) } else { None };
 		let right = if next_vowel { Some(next_f2) } else { None };
-		// F2 (and F3 for k and g) at an edge whose vowel has F2 v; k and g sit above a front vowel's F2, with F3 coming
-		// down toward it
+		// F2 (and F3 for k and g) at an edge next to a vowel with F2 v;
+		// k and g sit above a front vowel's F2, with F3 coming down toward it
 		let phn = self.phn_c;
 		let edge = |v: f32, f3: f32| {
 			let f2 = f2_offset + f2_slope * v.max(floor);
@@ -1129,8 +1128,8 @@ impl engine {
 		let now = self.counter;
 		// the nasal coupling switches with the amplitudes
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
-		// the velum lowers during a vowel before a nasal and is still rising after one, so the vowel is partly nasal;
-		// not the diphthongs aw, ay, ow and oy, which sound too nasal with it ("joined")
+		// partly nasalize a vowel next to a nasal (the velum lowers before one and is still rising after one),
+		// except the diphthongs aw, ay, ow and oy, which sound too nasal with it ("joined")
 		if self.pft_c & VOWEL != 0 && !diphthong(self.phn_c) {
 			let near = |nasal: bool, d: i32, len: f32| if nasal {
 				NASAL_VOWEL_K * (1.0 - d as f32 / samples(len) as f32).clamp(0.0, 1.0)
@@ -1343,7 +1342,7 @@ impl engine {
 		self.f1_len = 0;
 	}
 	fn set_formant_targets(&mut self) {
-		// the previous phone's formant targets at its end, before fetch replaces them
+		// save the previous phone's end targets before fetch replaces them
 		let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
 		let prev_rd = self.RD_B_src;
 		let (prev_b, prev_av) = ([self.B1_B_src, self.B2_B_src, self.B3_B_src], self.AV_src);
@@ -1466,7 +1465,7 @@ impl engine {
 			self.marker_BA = share_of(self.pdr_c, self.C_B_src);
 		}
 		if self.pft_c & VOWEL != 0 && self.marker_BA > samples(VOWEL_EXIT_MS) {
-			// a long vowel keeps its own formants longer, the move into the next phone takes the same time
+			// long vowel: hold its own formants longer, so the move into the next phone keeps the same length
 			self.marker_B += self.marker_BA - samples(VOWEL_EXIT_MS);
 			self.marker_BA = samples(VOWEL_EXIT_MS);
 		}
@@ -1506,9 +1505,8 @@ impl engine {
 		if self.f1_len > 0 && glides {
 			self.ab_at = self.marker_A.min(fifty_ms);
 		}
-		// step() counts before it checks, so a move due at the phone's first sample starts at its second;
-		// with A and B the same (a nasal after silence) there is nothing to move,
-		// and starting one would cut short its glide into A
+		// step() counts before it checks, so a move due on the phone's first sample starts on its second.
+		// if A and B are the same (a nasal after silence) skip it: a move would cut short the glide into A
 		if self.ab_at <= self.counter {
 			let a = [self.F1_A_src, self.F2_A_src, self.F3_A_src,
 				self.B1_A_src, self.B2_A_src, self.B3_A_src, self.RD_A_src];
@@ -1703,10 +1701,10 @@ mod tests {
 	use super::*;
 	use super::samples as ms;
 
-	// a register's gain back in dB, for the checks written in dB
+	// convert a register's gain back to dB for the checks
 	fn db(g: f32) -> f32 { if g <= 0.0 { 0.0 } else { G_MAX + DB_PER_HALF * g.log2() } }
 
-	// render phones (id, ms, stressed) as segments 0, 1, ..., handing each the engine and the sample it made
+	// render phones (id, ms, stressed) as segments 0, 1, ... and pass the engine and each sample to `each`
 	fn drive(phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
 		let mut e = engine::new();
 		for (seg, &(p, d, st)) in phones.iter().enumerate() {
@@ -1716,7 +1714,7 @@ mod tests {
 		}
 	}
 
-	// the engine as phone `at` loads, after rendering the phones (id, ms, stressed) before it
+	// render phones (id, ms, stressed) up to phone `at` and return the engine as that one loads
 	fn loaded(phones: &[(u8, i32, bool)], at: u8) -> engine {
 		let mut e = engine::new();
 		for &(p, d, st) in phones {
@@ -2040,8 +2038,8 @@ mod tests {
 
 	#[test]
 	fn formants_start_and_stop_moving_gently() {
-		// a formant that starts or stops moving at full speed in one sample clicks, most on the big F3 sweeps into and
-		// out of an r, so its speed changes by only a little from one sample to the next
+		// a formant that starts or stops at full speed in one sample clicks (worst on the big F3 sweeps around an r),
+		// so its speed may change only a little from one sample to the next
 		for seq in [[(4u8, 132), (33, 122)], [(1, 150), (32, 90)], [(14, 140), (36, 100)]] {
 			let (mut last, mut speed, mut worst) = (None::<[f32; 3]>, [0.0f32; 3], 0.0f32);
 			let phones: Vec<_> = [(PAU, 50)].iter()
@@ -2066,8 +2064,8 @@ mod tests {
 
 	#[test]
 	fn formants_do_not_jump_at_a_lip_release() {
-		// a formant stepped in one sample makes a resonator click, so the lip release's low F2 and F3 come and go
-		// smoothly, even where they are far from the stop's own (a b after ay and before r)
+		// a formant step in one sample clicks the resonator, so the lip release's low F2 and F3 come and go
+		// smoothly, even far from the stop's own (b after ay and before r)
 		for &(prev, stop, next) in &[(8u8, 9u8, 32u8), (21, 9, 21), (8, 31, 32), (26, 9, 24)] {
 			let (mut f2, mut f3, mut worst) = (None::<f32>, 0.0f32, 0.0f32);
 			drive(&[(PAU, 50, true), (prev, 120, true), (stop, 90, true),
@@ -2124,8 +2122,8 @@ mod tests {
 
 	#[test]
 	fn nasal_is_softer_after_unstressed_vowel() {
-		// AA-N-AA: the N's voicing is NASAL_AFTER_UNSTRESSED_DB lower when the AA before it is unstressed, unless the
-		// N starts a word ("the moon")
+		// AA-N-AA: the N's voicing drops NASAL_AFTER_UNSTRESSED_DB after an unstressed AA,
+		// unless the N starts a word ("the moon")
 		let av = |stressed: bool, word_start: bool| {
 			let mut e = engine::new();
 			let mut v = 0.0;
@@ -2211,8 +2209,8 @@ mod tests {
 
 	#[test]
 	fn different_fricatives_dip_between() {
-		// S-SH dips at the switch so the two don't run together into one hiss; S-S runs on as one. The dip is
-		// measured against the frication either side of it, which glides from one fricative's level to the other's
+		// S-SH dips at the switch so the two don't run into one hiss; S-S runs on as one.
+		// measure the dip against the frication either side, which glides from one fricative's level to the other's
 		for &(b, dips) in &[(35u8, true), (34, false)] {
 			let (out, _) = trace_regs(&[(PAU, 50, 0), (1, 150, 1), (34, 120, 2), (b, 120, 3),
 				(1, 150, 4), (48, 100, 5), (0, 50, 6)]);
@@ -2353,9 +2351,8 @@ mod tests {
 
 	#[test]
 	fn a_nasal_after_a_pause_keeps_its_entry_glide() {
-		// nothing carries over from a pause, so the n starts at counter 0 with its A and B targets the same:
-		// no A-to-B move
-		// starts, which would restart its formants' glide from the silence's over the whole n instead of 30 ms
+		// nothing carries over from a pause, so the n starts at counter 0 with its A and B targets the same.
+		// no A-to-B move starts: it would restart the glide from silence over the whole n instead of 30 ms
 		let e = loaded(&[(PAU, 100, true), (27, 100, true), (2, 150, true)], 27);
 		assert_eq!(e.ab_at, i32::MIN);
 		let mut at_35ms = None;
@@ -2416,8 +2413,8 @@ mod tests {
 
 	#[test]
 	fn consonant_f2_follows_the_vowel() {
-		// the consonant's F2 on each side moves with the neighbouring vowel's F2, by its place's slope; an alveolar
-		// takes a back vowel's F2 as ALVEOLAR_F2_FLOOR
+		// a consonant's F2 on each side follows the neighbouring vowel's F2 by its place's slope;
+		// an alveolar takes a back vowel's F2 as ALVEOLAR_F2_FLOOR
 		for &c in &[9u8, 11, 17, 26, 27, 34] {
 			let alveolar = matches!(c, 11 | 27 | 34);
 			let f2 = |v: u8| {
@@ -2472,8 +2469,8 @@ mod tests {
 
 	#[test]
 	fn th_hiss_is_flat_like_f() {
-		// th's noise is duller than f's (about 12 dB more 1.7 kHz against 5.5 kHz, so fin and thin differ) but has no
-		// strong low resonance of its own: within 15 dB of f (a 1.7 kHz resonance of its own put it 20 dB over)
+		// th is duller than f (about 12 dB more 1.7 kHz against 5.5 kHz, so fin and thin differ),
+		// but has no strong low resonance: within 15 dB of f (a 1.7 kHz resonance of its own puts it 20 dB over)
 		let mid = |c: u8| {
 			let mut x = Vec::new();
 			drive(&[(PAU, 50, true), (1, 150, true), (c, 150, true),
@@ -2489,8 +2486,8 @@ mod tests {
 
 	#[test]
 	fn er_f3_falls_after_th_not_after_f() {
-		// "thirst" against "first": the tongue tip leaves the teeth, so er's F3 starts high after th; during f the
-		// tongue is free and already r-shaped
+		// "thirst" vs "first": after th the tongue tip leaves the teeth, so er's F3 starts high;
+		// during f the tongue is free and already r-shaped
 		let fall = |c: u8| {
 			let (mut start, mut mid) = (0.0, 0.0);
 			drive(&[(PAU, 50, true), (c, 100, true), (14, 180, true),
@@ -2629,7 +2626,7 @@ mod tests {
 
 	#[test]
 	fn voiceless_fricative_breathes_into_its_vowels() {
-		// th: f's own breath is too faint to show since f got brighter than th
+		// use th: f is brighter, so its own breath is too faint to show
 		let t = noise_track(&[(PAU, 50), (1, 150), (37, 110), (1, 150)]);
 		// the TH's carried-over region is the first vowel's tail; the second vowel starts breathy
 		assert!(t.iter().any(|x| x.0 == 37 && x.1 < 0 && x.3 > 0.0), "no breath at the vowel's end");
@@ -2640,8 +2637,8 @@ mod tests {
 
 	#[test]
 	fn tongue_consonants_glide_slowly_into_back_vowels() {
-		// out of d, F2 still moves 50 ms into a back vowel but has arrived in a front one (aa: ao and the other back
-		// vowels now glide toward their B targets)
+		// out of d, F2 is still moving 50 ms into a back vowel but has arrived in a front one
+		// (aa, since ao and the other back vowels glide toward their B targets)
 		let f2_at = |v: u8, at: f32| {
 			let mut f = (0.0, 0.0);
 			drive(&[(PAU, 50, true), (6, 100, true), (11, 80, true),
@@ -2694,8 +2691,8 @@ mod tests {
 
 	#[test]
 	fn alveolars_front_uw_and_uh() {
-		// d, l and an r before the vowel front uw and uh; b does not, and neither does a dark l after the vowel, which
-		// would make F2 rise and fall back into it ("full")
+		// d, l and an r before the vowel front uw and uh; b doesn't, nor does a dark l after the vowel,
+		// which would make F2 rise and fall back into it ("full")
 		for v in [39u8, 38] {
 			let (_, a_b, b_b) = vowel_targets(9, v, 9);
 			for &(l, r) in &[(11u8, 11u8), (24, 24), (32, 11)] {
@@ -2793,7 +2790,7 @@ mod tests {
 
 	#[test]
 	fn vowels_are_not_pressed() {
-		// vowel Rd was set by ear to about 0.6 (2026-10-31): tense enough for clear vowel colour, no more
+		// vowel Rd is set by ear to about 0.6: tense enough for clear vowel colour, no more
 		for &v in &[1u8, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 19, 20, 21, 29, 30, 39] {
 			let o = v as usize * 31;
 			let (a, b) = (formant_tbl[o + 2], formant_tbl[o + 3]);
@@ -3044,7 +3041,7 @@ mod tests {
 		let vowel: Vec<_> = out.iter().filter(|x| x.0 == 1).collect();
 		let release: Vec<_> = out.iter().filter(|x| x.0 == 48).collect();
 		let rd = vowel.last().unwrap().2;
-		// the vowel itself as ever
+		// the vowel itself is unchanged
 		assert!(vowel.iter().all(|x| x.1 == BREATH_DB), "breath in the vowel");
 		// rising through the start of the release, then held
 		let k = ms(BREATH_RAMP_MS) as usize;
@@ -3085,7 +3082,7 @@ mod tests {
 
 	#[test]
 	fn formants_do_not_stop_dead() {
-		// "follower": the move into its short w was cut off at full speed, a click when that landed on a voicing pulse
+		// "follower": a move into its short w cut off at full speed clicks when it lands on a voicing pulse
 		let mut e = engine::new();
 		let mut f: Vec<[f32; 3]> = Vec::new();
 		for (seg, &(p, d)) in [(PAU, 50), (16, 102), (1, 139), (25, 104), (29, 106),
