@@ -100,7 +100,7 @@ H O U S E	hh 'aw z
 L E A D	l 'eh d
 L I V E	l 'ay v
 L I V E S	l 'ay v z
-M I N U T E	m 'ay n uw t
+M I N U T E	m ay n 'uw t
 M O D E R A T E	m 'aa d axr ax t
 M O D E R A T E S	m 'aa d axr "ey t s
 M O P E D	m 'ow p t
@@ -270,3 +270,6 @@ t a u	t 'aw
 t o p h a t	t 'aa p hh "ae t
 u n a m u s e d	"ah n ax m y 'uw z d
 z e r o t h	z 'ih rx ow th
+o n o m a t o p o e i a	"aa n ax m "aa t ax p 'iy ax
+z h a	zh 'aa
+a z h a	'aa zh ax
