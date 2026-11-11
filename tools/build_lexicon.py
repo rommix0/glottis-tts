@@ -399,8 +399,9 @@ def main():
     write_tree(tab, samples, os.path.join(SRC, '_lts_tree.rs'))
     print(f'tree {tab.n} nodes; it gets {len(misses)} of {len(aligned)} aligned words wrong')
 
-    # capitalized and other non-lowercase spellings first, so an exact-case match beats the lowercase entry
-    entries = [(g, p, False) for g, p in manual if ''.join(g) != ''.join(g).lower()]
+    # capitalized and other non-lowercase spellings first, so an exact-case match beats the lowercase entry; one the
+    # normalizer writes for a function word ("FOR" before a vowel) stays a function word (not a lone letter: "A")
+    entries = [(g, p, len(g) > 1 and tuple(''.join(g).lower()) in fw_pron) for g, p in manual if ''.join(g) != ''.join(g).lower()]
     listed = set()
     # CMUdict words that could not be aligned never reached the tree, so nothing vouches for its guess
     seen = {g for g, _ in aligned}

@@ -117,8 +117,18 @@ def write_tables(rules, path):
     return len(entries)
 
 
+def check_capitals(rules, manual):
+    # a capitalized word in a replacement picks the other reading of a homograph ("to USE"): the dictionary must have
+    # it in that exact case (tools/lexicon_manual.txt), or it silently falls back to the lowercase word
+    have = {line.split('	')[0].replace(' ', '') for line in open(manual, encoding='utf-8') if '	' in line}
+    missing = sorted({w for _, t in rules for w in re.findall(r"[A-Za-z']+", t) if len(w) > 1 and w.isupper()} - have)
+    if missing:
+        sys.exit(f'no exact-case entry in {manual} for: {", ".join(missing)}')
+
+
 def main():
     rules = read_rules(os.path.join(HERE, 'normalizer_rules.txt'))
+    check_capitals(rules, os.path.join(HERE, 'lexicon_manual.txt'))
     n = write_tables(rules, os.path.join(SRC, '_text_rules.rs'))
     print(f'{len(rules)} rules, {n} patterns')
     re2c = sys.argv[1] if len(sys.argv) > 1 else 're2c'

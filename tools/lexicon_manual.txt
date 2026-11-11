@@ -32,6 +32,7 @@ U P D A T E	'ah p d "ey t
 U P D A T E S	'ah p d "ey t s
 U P G R A D E	'ah p g r "ey d
 U P G R A D E S	'ah p g r "ey d z
+U S E	y 'uw z
 U S E D	y 'uw z d
 A D D R E S S	ax d r 'eh s
 A D V O C A T E	'ae d v ax k "ey t
@@ -43,6 +44,7 @@ A G G R E G A T E	'ae g r ax g ey t
 A G G R E G A T E S	'ae g r ax g "ey t s
 A L T E R N A T E	'ao l t axr n "ey t
 A N A L Y S E S	'ae n ax l ay z "ih z
+A N A L Y Z E S	'ae n ax l "ay z ix z
 A N I M A T E	'ae n ax m ax t
 A P P R O P R I A T E	ax p r 'ow p r iy "ey t
 A P P R O X I M A T E	ax p r 'aa k s ax m "ey t
