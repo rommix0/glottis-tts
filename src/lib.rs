@@ -596,6 +596,12 @@ mod tests {
 	}
 
 	#[test]
+	fn a_named_sign_is_said_once() {
+		says_all(&[("Negative -42 and positive +5.", "negative forty two and positive five"),
+			("It was minus -3 today.", "minus three today"), ("It fell to -3 today.", "to negative three today")]);
+	}
+
+	#[test]
 	fn drawn_out_words_are_said_once() {
 		for (w, said) in [("shhhhh", "shh"), ("nooooo", "no"), ("whaaat", "what"), ("hmmm", "hmm"), ("book", "book"), ("aah", "aah"), ("www", "ww")] {
 			assert_eq!(drawn_out(w.as_bytes()), said.as_bytes(), "{}", w);

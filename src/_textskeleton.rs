@@ -1444,8 +1444,17 @@ impl engine {
 				}
 				if t1 != t2 {
 					buf.setcurs(t1);
+					// the word before, when the text already names the sign ("Negative -42", "plus +5")
+					let said = {
+						let b = Self::behind(buf, 24);
+						let mut e = b.len();
+						while e > 0 && is_space(b[e - 1]) { e -= 1; }
+						let mut s = e;
+						while s > 0 && b[s - 1].is_ascii_alphabetic() { s -= 1; }
+						b[s..e].to_ascii_lowercase()
+					};
 					if buf.read() == b'+' {
-						self.scratch_pad.write_text(" positive ");
+						if !matches!(&said[..], b"positive" | b"plus") { self.scratch_pad.write_text(" positive "); }
 					} else if self.digit_prev {
 						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5); not
 						// after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read digit by digit
@@ -1461,7 +1470,7 @@ impl engine {
 						buf.setcurs(t1);
 						let score = whole && value(&now) <= was;
 						self.scratch_pad.write_text(if score { " to " } else { " through " });
-					} else {
+					} else if !matches!(&said[..], b"negative" | b"minus") {
 						self.scratch_pad.write_text(" negative ");
 					}
 				}
