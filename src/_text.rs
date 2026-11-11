@@ -947,23 +947,33 @@ impl engine {
 
 	// FIXED-TEXT RULE PART
 	fn match_len(buf: &mut cbuf, pat: &[u8]) -> Option<usize> {
-		// count the bytes the pattern matches at the cursor (None if no match), without moving the cursor
+		// the length of an exact pattern if it matches at the cursor (None if not), without moving the cursor
+		Self::match_by(buf, pat, |c, p| c == p)
+	}
+	fn match_rule(buf: &mut cbuf, pat: &str, any_case: bool) -> Option<usize> {
+		// the same for a fixed-text rule: a space matches any space, an any-case rule ignores case
+		Self::match_by(buf, pat.as_bytes(), |c, p| {
+			if p == b' ' {
+				is_space(c)
+			} else if any_case {
+				c.to_ascii_lowercase() == p
+			} else {
+				c == p
+			}
+		})
+	}
+	fn match_by(buf: &mut cbuf, pat: &[u8], same: impl Fn(u8, u8) -> bool) -> Option<usize> {
 		let start = buf.getcurs();
-		let (mut i, mut n) = (0, 0);
-		let hit = loop {
-			if i == pat.len() { break true; }
-			let c = buf.read();
-			let ok = match pat[i] {
-				0x01 => { i += 1; is_space(c) },
-				0x02 => { i += 2; c.is_ascii_alphabetic() && c.to_ascii_lowercase() == pat[i - 1] },
-				p => { i += 1; c == p },
-			};
-			if !ok { break false; }
+		let mut hit = true;
+		for &p in pat {
+			if !same(buf.read(), p) {
+				hit = false;
+				break;
+			}
 			buf.advance();
-			n += 1;
-		};
+		}
 		buf.setcurs(start);
-		if hit { Some(n) } else { None }
+		if hit { Some(pat.len()) } else { None }
 	}
 	fn lexer_len(buf: &mut cbuf) -> usize {
 		// the longest match at the cursor of the lexer rules a fixed-text rule can lose to:
@@ -1100,7 +1110,8 @@ impl engine {
 		let first = buf.read();
 		let mut best: Option<(usize, usize)> = None;
 		for &r in FIRST[first as usize] {
-			if let Some(n) = Self::match_len(buf, RULES[r as usize].0) {
+			let (pat, any_case, _) = RULES[r as usize];
+			if let Some(n) = Self::match_rule(buf, pat, any_case) {
 				if best.is_none_or(|(b, _)| n > b) { best = Some((n, r as usize)); }
 			}
 		}
@@ -1112,8 +1123,9 @@ impl engine {
 		let first = buf.read();
 		let Some((n, r)) = Self::table_best(buf) else { return false };
 		// a rule that starts (ends) with a letter starts (ends) a word: no "kg" inside "background" or "kgb"
-		let pat = RULES[r].0;
-		let letter = |c: Option<&u8>| c.is_some_and(|&c| c.is_ascii_alphabetic() || c == 0x02);
+		let (pat, _, replacement) = RULES[r];
+		let pat = pat.as_bytes();
+		let letter = |c: Option<&u8>| c.is_some_and(|c| c.is_ascii_alphabetic());
 		if letter(pat.first()) && Self::prev_byte(buf).is_ascii_alphabetic() { return false; }
 		if letter(pat.last()) {
 			consume(buf, n);
@@ -1125,9 +1137,9 @@ impl engine {
 		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
 		consume(buf, n);
 		// "bit{s} per second": the part in braces is added only after a plural number
-		let (text, plural, rest) = match RULES[r].1.split_once('{') {
+		let (text, plural, rest) = match replacement.split_once('{') {
 			Some((text, t)) => { let (plural, rest) = t.split_once('}').unwrap_or((t, "")); (text, plural, rest) }
-			None => (RULES[r].1, "", ""),
+			None => (replacement, "", ""),
 		};
 		self.scratch_pad.write_text(text);
 		if self.is_plural && !plural.is_empty() {

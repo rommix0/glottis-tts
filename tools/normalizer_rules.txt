@@ -2,7 +2,7 @@
 # PATTERN<TAB>"REPLACEMENT", in the lexer's pattern syntax (see tools/build_normalizer.py). At each
 # position the longest match wins, the earlier rule on a tie; {s} in a replacement follows a plural number.
 
-# homographs: the capitalized spelling selects the other reading in the dictionary; a rule's first word matches either case, so it also starts a sentence
+# homographs: the capitalized spelling selects the other reading in the dictionary; a quoted first word makes the rule match in any case, so it also starts a sentence
 "august of "	"AUGUST of "
 " " 'bow' " before"	" BOW before"
 " " 'bow' " down"	" BOW down"
