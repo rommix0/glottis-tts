@@ -656,7 +656,7 @@ impl engine {
 			let saint = k > 4 && at(k).is_ascii_uppercase();
 			self.scratch_pad.write_text(if saint { " saint " } else { " street " });
 			consume(buf, 4);
-			if !saint { self.end_after_period(buf); }
+			if !saint { self.end_after_period(buf, true); }
 			return true;
 		}
 
@@ -828,13 +828,46 @@ impl engine {
 		buf.setcurs(start);
 		n
 	}
-	fn end_after_period(&mut self, buf: &mut cbuf) {
-		// a period eaten by an abbreviation also ends the sentence when only spaces follow it
+	fn end_after_period(&mut self, buf: &mut cbuf, before_capital: bool) {
+		// a period eaten by an abbreviation also ends the sentence when only spaces follow it, or (before_capital)
+		// when a capital starts the next word
 		let start = buf.getcurs();
 		while is_space(buf.read()) { buf.advance(); }
-		let end = buf.read() == 0x00;
+		let c = buf.read();
 		buf.setcurs(start);
-		if end { self.scratch_pad.write_text(" . "); }
+		if c == 0x00 || (before_capital && c.is_ascii_uppercase()) { self.scratch_pad.write_text(" . "); }
+	}
+	fn behind(buf: &mut cbuf, max: usize) -> Vec<u8> {
+		// up to max bytes before the cursor, in text order, stopping at the start of the text; the cursor stays put
+		let start = buf.getcurs();
+		let mut out = Vec::new();
+		while out.len() < max {
+			buf.recede();
+			let c = buf.read();
+			if c == 0x00 { break; }
+			out.push(c);
+		}
+		buf.setcurs(start);
+		out.reverse();
+		out
+	}
+	fn initial(buf: &mut cbuf) -> bool {
+		// whether the capital and period before the cursor are a name's initial ("John F. Kennedy", "J. R. R. Tolkien"):
+		// an initial next to it, or a capitalized word before it inside the sentence. A name starting a sentence is
+		// taken for a sentence end ("John F. Kennedy spoke." reads "john f . kennedy")
+		let a = Self::ahead(buf, 8);
+		let k = a.iter().take_while(|c| is_space(**c)).count();
+		if a.get(k).is_some_and(u8::is_ascii_uppercase) && a.get(k + 1) == Some(&b'.') { return true; }
+		let b = Self::behind(buf, 40);
+		let at = |i: usize| if i < b.len() { b[i] } else { 0 };
+		let mut i = b.len().saturating_sub(2);
+		while i > 0 && is_space(at(i - 1)) { i -= 1; }
+		if i >= 2 && at(i - 1) == b'.' && at(i - 2).is_ascii_uppercase() && (i < 3 || !at(i - 3).is_ascii_alphabetic()) { return true; }
+		let end = i;
+		while i > 0 && at(i - 1).is_ascii_alphabetic() { i -= 1; }
+		let capital = end > i && at(i).is_ascii_uppercase();
+		while i > 0 && is_space(at(i - 1)) { i -= 1; }
+		capital && i > 0 && (at(i - 1).is_ascii_alphabetic() || at(i - 1) == b',')
 	}
 	fn table_best(buf: &mut cbuf) -> Option<(usize, usize)> {
 		// the longest fixed-text rule matching at the cursor, the earlier on a tie: (length, rule)
@@ -878,7 +911,11 @@ impl engine {
 		self.scratch_pad.write_text(rest);
 		// a unit or abbreviation ends what a number before it started
 		self.digit_prev = false;
-		if pat.last() == Some(&b'.') && !text.trim_end().ends_with('.') { self.end_after_period(buf); }
+		// a title stays with the name after it ("Dr. Smith"); other abbreviations end a sentence before a capital
+		const TITLES: [&str; 20] = ["mister", "missus", "miz", "misters", "doctor", "professor", "sergeant", "corporal",
+			"lieutenant", "major", "general", "colonel", "captain", "commander", "governor", "mount", "fort", "attorney general",
+			"for example ,", "in other words ,"];
+		if pat.last() == Some(&b'.') && !text.trim_end().ends_with('.') { self.end_after_period(buf, !TITLES.contains(&text.trim())); }
 		true
 	}
 
@@ -1757,7 +1794,7 @@ let mut t5;
 				if dot { buf.advance(); }
 				self.scratch_pad.write_text(" ");
 				self.scratch_pad.write(if c == b'A' { c } else { c.to_ascii_lowercase() });
-				if dot { self.end_after_period(buf); }
+				if dot { let initial = Self::initial(buf); self.end_after_period(buf, !initial); }
 				break;
 			},
                 32 => {
@@ -3047,13 +3084,13 @@ let mut t5;
 				// a time of day; its period may also end the sentence
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" A m ");
-				self.end_after_period(buf);
+				self.end_after_period(buf, true);
 				break;
 			},
                 123 => {
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" p m ");
-				self.end_after_period(buf);
+				self.end_after_period(buf, true);
 				break;
 			},
                 124 => {
@@ -3202,9 +3239,11 @@ let mut t5;
 				let end = buf.getcurs();
 				buf.setcurs(t2);
 				let pair = [buf.read(), { buf.advance(); buf.read() }];
+				let dot = { buf.advance(); buf.read() == b'.' };
 				if let Some(st) = STATES.iter().find(|st| if st.1 { *st.0 == pair } else { st.0.eq_ignore_ascii_case(&pair) }) {
 					buf.setcurs(end);
 					self.say(st.2);
+					if dot { self.end_after_period(buf, true); }
 				} else {
 					// as the comma rule
 					buf.setcurs(t1);
@@ -3290,6 +3329,7 @@ let mut t5;
                 }
                 138 => {
 				self.scratch_pad.write_text(" A m ");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
 				break;
 			},
                 139 => {
@@ -3323,6 +3363,7 @@ let mut t5;
                 }
                 141 => {
 				self.scratch_pad.write_text(" p m ");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
 				break;
 			},
                 142 => {

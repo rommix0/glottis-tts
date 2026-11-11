@@ -671,6 +671,14 @@ mod tests {
 	}
 
 	#[test]
+	fn sentence_ends_after_abbreviations_and_letters() {
+		says_all(&[("Meet at 11:00 p.m. In 1999 we left.", "eleven p m . in nineteen"), ("Boston, MA. Plan B. Vitamin C. The letter Q. NASA",
+			"boston massachusetts . plan b . vitamin c . the letter q . nasa"), ("A. The.", "A . the ."),
+			// a title or an initial keeps the name
+			("Dr. Smith came.", "doctor smith came"), ("Meet John F. Kennedy now.", "john f kennedy"), ("J. R. R. Tolkien", "j r r tolkien")]);
+	}
+
+	#[test]
 	fn a_run_of_marks_is_one_mark() {
 		// a question if any of them asks, else an exclamation; one mark, so one sentence
 		for (t, want) in [("You did that?!", "you did that ?"), ("You did that!?", "you did that ?"), ("No way!!!", "no way !"),
