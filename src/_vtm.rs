@@ -40,8 +40,9 @@ const FRIC_LP_HZ: f32 = 4500.0;
 // narrowest F1/F2 bandwidth (Hz) the cascade uses
 const CASC_MIN_BW: f32 = 60.0;
 
-// amplitudes in dB are relative to this full scale
-const G_MAX: f32 = 87.0;
+// amplitudes in dB are relative to this full scale, and every DB_PER_HALF dB down halves the gain
+pub const G_MAX: f32 = 87.0;
+pub const DB_PER_HALF: f32 = 6.0;
 
 // gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6), every 6 dB halving it
 pub const DB_GAIN: [f32; 88] = [

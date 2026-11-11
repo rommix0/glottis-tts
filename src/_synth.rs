@@ -5,7 +5,7 @@
 | DATE:   8/11/2026-11/10/2026          |
 ---------------------------------------*/
 
-use crate::_vtm::{vtm, Voice, DB_GAIN};
+use crate::_vtm::{vtm, Voice, DB_GAIN, DB_PER_HALF, G_MAX};
 use crate::_vtm::m_sr;
 use crate::_vtbl::formant_tbl;
 use crate::_utt::PAU;
@@ -220,8 +220,8 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 }
 
 fn db_gain(db: f32) -> f32 {
-	// an amplitude (dB, 0 is off) as linear gain: 87 dB is full scale, every 6 dB halves it
-	if db <= 0.0 { 0.0 } else { libm::powf(0.5, (87.0 - db) / 6.0) }
+	// an amplitude (dB, 0 is off) as linear gain: G_MAX is full scale, every DB_PER_HALF dB halves it
+	if db <= 0.0 { 0.0 } else { libm::powf(0.5, (G_MAX - db) / DB_PER_HALF) }
 }
 
 fn audible(g: f32) -> f32 {
@@ -1095,7 +1095,7 @@ impl engine {
 		let (mut g_af, mut g_ah, mut g_av) = (1.0, 1.0, 1.0);
 		let t = (now - self.dip_mid) as f32 / self.dip_half.max(1) as f32;
 		if self.dip_half > 0 && t.abs() < 1.0 {
-			let g = libm::exp2f(-self.dip_db / 12.0 * (1.0 + libm::cosf(core::f32::consts::PI * t)));
+			let g = libm::exp2f(-self.dip_db / (2.0 * DB_PER_HALF) * (1.0 + libm::cosf(core::f32::consts::PI * t)));
 			(g_af, g_ah, g_av) = (g, g, g);
 		}
 		if self.gap > 0 && now >= 0 {
@@ -1118,7 +1118,7 @@ impl engine {
 			// the voice bar fades over the closure and holds through the burst
 			let bar = if self.stop_bar {
 				let t = (now.min(self.marker_A) as f32 / self.marker_A.max(1) as f32).min(1.0);
-				fade(self.AV_reg, libm::exp2f(-VOICE_BAR_FADE_DB / 6.0 * t))
+				fade(self.AV_reg, libm::exp2f(-VOICE_BAR_FADE_DB / DB_PER_HALF * t))
 			} else { 0.0 };
 			if now < self.marker_A || self.burst_len == 0 {
 				// closure (all of an unreleased stop): the previous phone's sound dies away over 5 ms
@@ -1129,7 +1129,7 @@ impl engine {
 			} else {
 				// burst: a sharp onset, then an exponential decay over its length
 				let t = (now - self.marker_A) as f32 / self.burst_len.max(1) as f32;
-				let g = self.burst_gain * libm::exp2f(-self.burst_decay / 6.0 * t);
+				let g = self.burst_gain * libm::exp2f(-self.burst_decay / DB_PER_HALF * t);
 				if self.stop_labial {
 					// a lip release: weak noise through the vocal tract, low and falling
 					self.AF_reg = 0.0;
@@ -1338,7 +1338,7 @@ impl engine {
 				let gain_db = if self.stop_affric { 0.0 } else {
 					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 } + if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
 				};
-				self.burst_gain = libm::exp2f(gain_db / 6.0);
+				self.burst_gain = libm::exp2f(gain_db / DB_PER_HALF);
 				self.after_stop_next = stop.burst > 0;
 				stop_asp = stop.asp;
 			}
@@ -1564,7 +1564,7 @@ mod tests {
 	use super::samples as ms;
 
 	// a register's gain back in dB, for the checks written in dB
-	fn db(g: f32) -> f32 { if g <= 0.0 { 0.0 } else { 87.0 + 6.0 * g.log2() } }
+	fn db(g: f32) -> f32 { if g <= 0.0 { 0.0 } else { G_MAX + DB_PER_HALF * g.log2() } }
 
 	// render phones (id, ms, stressed) as segments 0, 1, ..., handing each the engine and the sample it made
 	fn drive(phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
