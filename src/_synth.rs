@@ -1380,6 +1380,13 @@ impl engine {
 			if self.f1_len > 0 && glides {
 				self.ab_at = self.marker_A.min(fifty_ms);
 			}
+			// step() counts before it checks, so a move due at the phone's first sample starts at its second; with A and B the
+			// same (a nasal after silence) there is nothing to move, and starting one would cut short its glide into A
+			if self.ab_at <= self.counter {
+				let a = [self.F1_A_src, self.F2_A_src, self.F3_A_src, self.B1_A_src, self.B2_A_src, self.B3_A_src, self.RD_A_src];
+				let b = [self.F1_B_src, self.F2_B_src, self.F3_B_src, self.B1_B_src, self.B2_B_src, self.B3_B_src, self.RD_B_src];
+				self.ab_at = if a == b { i32::MIN } else { self.counter + 1 };
+			}
 			// sources switch quickly at obstruent edges; formants keep their own transition
 			fn obstruent(f: u16) -> bool { f != 0 && f & 0x1 == 0 && f & 0x1C10 == 0 }
 			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) { self.marker_A.min(fifteen_ms) } else { self.marker_A };
@@ -2147,6 +2154,20 @@ mod tests {
 		let low = band_db(&m, 250.0);
 		let f2 = band_db(&m, 1100.0);
 		assert!(f2 - low > -35.0, "murmur F2 region {} dB under its low peak", low - f2);
+	}
+
+	#[test]
+	fn a_nasal_after_a_pause_keeps_its_entry_glide() {
+		// nothing carries over from a pause, so the n starts at counter 0 with its A and B targets the same: no A-to-B move
+		// starts, which would restart its formants' glide from the silence's over the whole n instead of 30 ms
+		let e = loaded(&[(PAU, 100, true), (27, 100, true), (2, 150, true)], 27);
+		assert_eq!(e.ab_at, i32::MIN);
+		let mut at_35ms = None;
+		drive(&[(PAU, 100, true), (27, 100, true), (2, 150, true), (48, 100, true), (0, 50, true)], |e, _| {
+			if e.phn_c == 27 && e.counter == samples(35.0) { at_35ms = Some((e.F2_reg, e.F2_A_src)); }
+		});
+		let (f2, target) = at_35ms.unwrap();
+		assert!((f2 - target).abs() < 1.0, "n's F2 {} by 35 ms, target {}", f2, target);
 	}
 
 	#[test]
