@@ -30,7 +30,6 @@ from tkinter import messagebox, ttk
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(ROOT, 'src', '_vtbl.rs')
-PHONES = os.path.join(ROOT, 'phone_to_id.txt')
 RENDERS = os.path.join(ROOT, 'ab', 'editor')
 SYNTH = os.path.join(ROOT, 'target', 'release', 'examples', 'tts_demo' + ('.exe' if sys.platform == 'win32' else ''))
 SR = 22050	# synth rate, for the envelope preview
@@ -121,19 +120,6 @@ class Table:
         self.load()
 
 
-def phone_names():
-    names = {}
-    try:
-        with open(PHONES, encoding='utf-8') as f:
-            for line in f:
-                m = re.match(r'(\S+)\s+(\d+)', line)
-                if m:
-                    names[int(m.group(2))] = m.group(1)
-    except OSError:
-        pass
-    return names
-
-
 def envelope_db(fs, bs, freqs):
     """Magnitude in dB of the cascade F1-F3 resonators, each with unity gain at DC."""
     out = []
@@ -177,7 +163,6 @@ class Editor(tk.Tk):
         self.geometry(f'{px(1340)}x{px(820)}')
         self.minsize(px(1100), px(700))
         self.table = Table(TABLE)
-        self.names = phone_names()
         self.cur = 1
         self.vars = {}		# column -> StringVar
         self.widgets = {}	# column -> entry widget
@@ -290,7 +275,8 @@ class Editor(tk.Tk):
         return ('● edited  ' if self.table.dirty(i) else '') + ('' if self.table.ready[i] else 'draft')
 
     def phone(self, i):
-        return self.names.get(i, self.table.labels[i] or str(i))
+        # the table's own row labels, in the lower case the phone names are written in elsewhere
+        return self.table.labels[i].lower() or str(i)
 
     def spin(self, parent, col, lo, hi, inc=1, width=7):
         var = tk.StringVar()
