@@ -113,7 +113,7 @@ const RHOTIC_F3: f32 = 200.0;
 const BEFORE_R: [(u8, f32, f32, f32, f32); 6] = [
 	(EH, 420.0, 2060.0, 470.0, 1900.0),
 	(IH, 300.0, 2400.0, 330.0, 2250.0),	// near ee ("near", "here")
-	(AA, 706.0, 1250.0, 716.0, 1300.0),	// only a little closer than its own place
+	(AA, 706.0, 1250.0, 716.0, 1250.0),	// only a little closer than its own place
 	(AO, 548.0,  808.0, 545.0,  808.0),
 	(UH, 310.0,  930.0, 370.0,  890.0),
 	(UW, 310.0,  930.0, 370.0,  890.0),
