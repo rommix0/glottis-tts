@@ -325,13 +325,17 @@ fn stop_timeline(phone: u8, pdr: i32, prev: u8, next: u8, next_stressed: bool, w
 	}
 	let nf = feats(next);
 
-	// unreleased before another stop or a nasal, a t, d, k or g before a word starting with th or dh ("get the"), and a
-	// word-final t after a vowel, r, n or l before a word starting with a consonant ("not that")
+	// unreleased before another stop or a nasal, a t or d before a word starting with th or dh ("get the"), and a
+	// word-final t after a vowel, r, n or l before a word starting with a consonant ("not that"); a k or g before a word
+	// starting with a nasal, th or dh keeps a burst, or it is not heard ("unique New York", "thick thistle")
 	let final_t = phone == 36 && !word_start && (feats(prev) & 0x1 != 0 || matches!(prev, 33 | 27 | 24 | 25))
 		&& next_word_start && nf & 0x1 == 0 && !matches!(next, 0 | 48 | 49 | PAU);
 	let before_dental = next_word_start && matches!(next, 37 | 12);
-	if nf & 0x50 != 0 || final_t || (before_dental && stop_place(phone) != 0) { return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 }; }
 	let place = stop_place(phone);
+	let velar_kept = place == 2 && next_word_start && (nf & 0x10 != 0 || before_dental);
+	if !velar_kept && (nf & 0x50 != 0 || final_t || (before_dental && place != 0)) {
+		return Stop { closure: (pdr as f32 * UNRELEASED_SHARE) as i32, burst: 0, asp: 0 };
+	}
 	let voiced = pf & 0x2 != 0;
 	let mut burst = samples(BURST_MS[voiced as usize][place]);
 	// a lip stop before th or dh keeps its release, without aspiration ("keep the")
@@ -1739,10 +1743,17 @@ mod tests {
 		assert_eq!(stop_timeline(36, pdr, 1, 12, true, false, true).closure, unreleased);
 		assert!(stop_timeline(36, pdr, 1, 1, true, false, true).burst > 0, "before a vowel");
 		assert!(stop_timeline(36, pdr, 1, 49, false, false, true).burst > 0, "phrase-final");
-		// a lip stop before a word starting with th or dh is released without aspiration; t, d, k and g are unreleased
+		// a lip stop, k or g before a word starting with th or dh is released without aspiration; t and d are unreleased
 		let keep_the = stop_timeline(31, pdr, 21, 12, true, false, true);
 		assert!(keep_the.burst > 0 && keep_the.asp == 0, "keep the: {:?}", keep_the);
-		assert_eq!(stop_timeline(23, pdr, 15, 37, true, false, true).burst, 0, "take thick");
+		let take_thick = stop_timeline(23, pdr, 15, 37, true, false, true);
+		assert!(take_thick.burst > 0 && take_thick.asp == 0, "take thick: {:?}", take_thick);
+		assert_eq!(stop_timeline(11, pdr, 1, 37, true, false, true).burst, 0, "had thick");
+		// k and g keep that burst before a word starting with a nasal, not inside a word or before another stop
+		let unique_new = stop_timeline(23, pdr, 21, 27, true, false, true);
+		assert!(unique_new.burst > 0 && unique_new.asp == 0, "unique New: {:?}", unique_new);
+		assert_eq!(stop_timeline(23, pdr, 2, 27, false, false, false).burst, 0, "acne");
+		assert_eq!(stop_timeline(23, pdr, 21, 36, true, false, true).burst, 0, "unique town");
 		assert!(stop_timeline(31, pdr, 21, 34, true, false, true).burst > 0, "keep sitting");
 		assert!(stop_timeline(31, pdr, 21, 12, true, false, false).burst > 0, "inside a word");
 		// a shorter aspiration gives its time to the closure: the stop keeps its length
