@@ -45,10 +45,10 @@ pub fn phone_dur(p: u8) -> PhoneDur {
 		2  => PhoneDur { inherent: 110.0, min:  50.0 },	// ae
 		3  => PhoneDur { inherent: 114.0, min:  51.0 },	// ah
 		4  => PhoneDur { inherent: 120.0, min:  54.0 },	// ao
-		5  => PhoneDur { inherent: 124.0, min:  56.0 },	// aw
+		5  => PhoneDur { inherent: 149.0, min:  67.0 },	// aw
 		6  => PhoneDur { inherent:  90.0, min:  40.0 },	// ax
 		7  => PhoneDur { inherent: 123.0, min:  55.0 },	// axr
-		8  => PhoneDur { inherent: 152.0, min:  68.0 },	// ay
+		8  => PhoneDur { inherent: 117.0, min:  52.0 },	// ay
 		9  => PhoneDur { inherent:  78.0, min:  45.0 },	// b
 		10 => PhoneDur { inherent:  95.0, min:  43.0 },	// ch
 		11 => PhoneDur { inherent:  75.0, min:  34.0 },	// d
