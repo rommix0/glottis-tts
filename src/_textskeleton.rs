@@ -32,6 +32,7 @@ pub struct engine {
 	is_plural:   bool,
 	number:      u64,
 	last_year:   Option<bool>,	// whether the last four-digit number was read as a year, for the next in "X to Y"
+	folded:      bool,			// accented letters are folded once, before the first lex()
 }
 impl engine {
 	pub fn new() -> engine {
@@ -41,6 +42,7 @@ impl engine {
 			is_plural:   false,
 			number:      0,
 			last_year:   None,
+			folded:      false,
 		}
 	}
 	pub fn is_not_empty(&mut self) -> bool {
@@ -709,7 +711,13 @@ impl engine {
 					return true;
 				}
 				let low = run.to_ascii_lowercase();
-				if n >= 3 && Self::is_word(&low) {
+				// two capitals read as a word inside a run of all-capital words ("THIS IS IT"), not among lowercase
+				// words ("the UK"); an acronym next to another all-capital word is read as a word too ("THE US ARMY")
+				let caps = |w: &[u8]| w.len() >= 2 && w.iter().all(u8::is_ascii_uppercase);
+				let k = n + a[n..].iter().take_while(|c| is_space(**c)).count();
+				let next = &a[k..k + a[k..].iter().take_while(|c| c.is_ascii_alphabetic()).count()];
+				let in_caps = n == 2 && !self.digit_prev && (caps(Self::prev_word(buf).as_bytes()) || (k > n && caps(next)));
+				if (n >= 3 || in_caps) && Self::is_word(&low) {
 					self.say(&low);
 					consume(buf, n);
 					return true;
@@ -868,6 +876,25 @@ impl engine {
 		while i > 0 && is_space(at(i - 1)) { i -= 1; }
 		capital && i > 0 && (at(i - 1).is_ascii_alphabetic() || at(i - 1) == b',')
 	}
+	fn fold(buf: &mut cbuf) {
+		// accented Latin letters to plain ones ("café" cafe, "Straße" strasse): the whole text, before any of it is read
+		const FOLD: [(&str, &str); 21] = [("ÀÁÂÃÄÅ", "A"), ("àáâãäå", "a"), ("Ç", "C"), ("ç", "c"), ("ÈÉÊË", "E"), ("èéêë", "e"),
+			("ÌÍÎÏ", "I"), ("ìíîï", "i"), ("Ñ", "N"), ("ñ", "n"), ("ÒÓÔÕÖØ", "O"), ("òóôõöø", "o"), ("ÙÚÛÜ", "U"), ("ùúûü", "u"),
+			("Ý", "Y"), ("ýÿ", "y"), ("ß", "ss"), ("Æ", "AE"), ("æ", "ae"), ("Œ", "OE"), ("œ", "oe")];
+		let start = buf.getcurs();
+		let mut text = Vec::new();
+		while buf.is_not_empty() { text.push(buf.read()); buf.advance(); }
+		buf.setcurs(start);
+		let Ok(s) = core::str::from_utf8(&text) else { return };
+		if s.is_ascii() { return; }
+		let mut out = cbuf::new();
+		let mut b = [0u8; 4];
+		for c in s.chars() {
+			let to = FOLD.iter().find(|f| f.0.contains(c)).map_or(&*c.encode_utf8(&mut b), |f| f.1);
+			for x in to.bytes() { out.write(x); }
+		}
+		*buf = out;
+	}
 	fn table_best(buf: &mut cbuf) -> Option<(usize, usize)> {
 		// the longest fixed-text rule matching at the cursor, the earlier on a tie: (length, rule)
 		let first = buf.read();
@@ -923,6 +950,7 @@ impl engine {
 		let mut text_done: bool  = false;
 		let mut yymarker: usize = 0;
 
+		if !self.folded { self.folded = true; Self::fold(buf); }
 		if self.context_rule(buf) { return false; }
 		if self.table_rule(buf) { return false; }
 

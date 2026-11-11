@@ -679,6 +679,12 @@ mod tests {
 	}
 
 	#[test]
+	fn all_capitals_and_accents() {
+		says_all(&[("THIS IS ALL CAPITALS", "this is all capitals"), ("the UK and a TV", "the u k and a t v"),
+			("Caf\u{e9}, na\u{ef}ve, r\u{e9}sum\u{e9}, Z\u{fc}rich, Stra\u{df}e", "cafe , naive , resume , zurich , strasse")]);
+	}
+
+	#[test]
 	fn a_run_of_marks_is_one_mark() {
 		// a question if any of them asks, else an exclamation; one mark, so one sentence
 		for (t, want) in [("You did that?!", "you did that ?"), ("You did that!?", "you did that ?"), ("No way!!!", "no way !"),
