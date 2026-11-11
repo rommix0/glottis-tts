@@ -78,6 +78,22 @@ pub fn phone_token(p: u8) -> Option<u8> {
 		.max_by_key(|&t| _utils::PHNIDToPhoneme(t).2)
 }
 
+// a word drawn out in writing, as it is said: a vowel written three or more times counts once ("nooooo", "whaaat"),
+// a consonant twice ("shhhhh", "hmmm")
+fn drawn_out(w: &[u8]) -> Vec<u8> {
+	let mut out = Vec::with_capacity(w.len());
+	let mut i = 0;
+	while i < w.len() {
+		let c = w[i];
+		let mut n = 1;
+		while w.get(i + n) == Some(&c) { n += 1; }
+		let keep = if n < 3 || !c.is_ascii_alphabetic() { n } else if b"aeiou".contains(&c.to_ascii_lowercase()) { 1 } else { 2 };
+		out.extend(core::iter::repeat_n(c, keep));
+		i += n;
+	}
+	out
+}
+
 // a word the dictionary lacks, built from a known stem and suffixes (letters and apostrophes only)
 fn morph_word(word: &str, dict_reader: &mut dictreader) -> Option<Vec<u8>> {
 	if word.len() < 4 || !word.bytes().all(|b| b.is_ascii_alphabetic() || b == b'\'') { return None; }
@@ -267,13 +283,16 @@ impl Speaker {
 				let cc = text_engine.read();		// normalized text character
 				if wbuf.is_not_empty() && cc == 0x20 {
 					dict_reader.reset();
-					let mut word_text = String::new();
+					let mut raw = Vec::new();
 					while wbuf.is_not_empty() {
 						let cin = wbuf.read();		// read in character for dictionary searcher
 						wbuf.advance();
-						if cin == 0x20 { continue; }
-						dict_reader.readIn(cin);
-						word_text.push(cin as char);
+						if cin != 0x20 { raw.push(cin); }
+					}
+					let mut word_text = String::new();
+					for c in drawn_out(&raw) {
+						dict_reader.readIn(c);
+						word_text.push(c as char);
 					}
 
 					if dict_reader.search() {
@@ -574,6 +593,13 @@ mod tests {
 	#[test]
 	fn junior_and_senior_run_on_from_the_name() {
 		says_all(&[("Prof. Lee, Jr. at 5.", "professor lee junior at five"), ("John Smith, Sr. came.", "john smith senior came")]);
+	}
+
+	#[test]
+	fn drawn_out_words_are_said_once() {
+		for (w, said) in [("shhhhh", "shh"), ("nooooo", "no"), ("whaaat", "what"), ("hmmm", "hmm"), ("book", "book"), ("aah", "aah"), ("www", "ww")] {
+			assert_eq!(drawn_out(w.as_bytes()), said.as_bytes(), "{}", w);
+		}
 	}
 
 	#[test]
