@@ -136,7 +136,11 @@ fn asp_level(v: &Voice) -> f32 {
 	let top = F_MAX_SR * m_sr as f32;
 	let (s1, s2, s3, sh) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0, v.fhi / 100.0);
 	// F1-F3 as wide as in a release, the fixed upper formants as set_voice builds them
-	let low = [(400.0 * s1, 300.0 * s1), (1600.0 * s2, 120.0 * s2), (2600.0 * s3, 250.0 * s3)];
+	let (f1, f2, f3) = (400.0 * s1, 1600.0 * s2, 2600.0 * s3);
+	// widened for close neighbours as fix_bw does
+	let (a1, a2) = (bw_widen((f1 - f2).abs()), bw_widen((f2 - f3).abs()));
+	let a3 = bw_widen((f3 - F4_INIT * sh).abs()).max(a2);
+	let low = [(f1, 300.0 * s1 * a1), (f2, 120.0 * s2 * a2), (f3, 250.0 * s3 * a3)];
 	let mut rs = [resonator::new((low[0].0).min(top), low[0].1, false), resonator::new((low[1].0).min(top), low[1].1, false),
 		resonator::new((low[2].0).min(top), low[2].1, false), resonator::new((F4_INIT * sh).min(top), B4_INIT * sh, false),
 		resonator::new((F5_INIT * sh).min(top), B5_INIT * sh, false), resonator::new((F6_INIT * sh).min(top), B6_INIT * sh, false),
@@ -716,7 +720,8 @@ impl vtm {
 		// formants close together
 		self.B1_ADJ = bw_widen((self.F1 - self.F2).abs());
 		self.B2_ADJ = bw_widen((self.F2 - self.F3).abs());
-		self.B3_ADJ = bw_widen((self.F3 - self.VR4.bf).abs());
+		// F3 widens for a close F2 as well as F4, or the F2-F3 pair rings as one narrow peak (front vowels in voice 6)
+		self.B3_ADJ = bw_widen((self.F3 - self.VR4.bf).abs()).max(self.B2_ADJ);
 	}
 	fn nasal_zero(&self, scale: f32, k: f32) -> f32 {
 		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
@@ -866,6 +871,16 @@ mod tests {
 		for (i, &voice) in VOICES.iter().enumerate() {
 			assert!((level(voice) - table).abs() < 2.5, "voice {}: {:.1} dB against {:.1}", i, level(voice), table);
 		}
+	}
+
+	#[test]
+	fn close_f2_and_f3_both_widen() {
+		// voice 6's ix: F2 up and F3 down to 194 Hz apart, which rang as one narrow peak while only B2 widened
+		let mut v = vtm::new();
+		v.F1 = 280.0; v.F2 = 2080.0; v.F3 = 2274.0;
+		v.fix_bw();
+		assert!(v.B2_ADJ > 2.0, "B2 x{}", v.B2_ADJ);
+		assert_eq!(v.B3_ADJ, v.B2_ADJ);
 	}
 
 	#[test]
