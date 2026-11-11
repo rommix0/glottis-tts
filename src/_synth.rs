@@ -202,13 +202,13 @@ fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 // k and g next to a high front vowel: F2 at least this far above the vowel's
 const VELAR_F2_ABOVE: f32 = 150.0;
-// a vowel with F2 under this is a back vowel, for the th and f/v F3 rules
+// a vowel with F2 under this is a back vowel, for the f/v and dh F3 rules
 const BACK_VOWEL_F2: f32 = 1500.0;
-// a vowel into th: (slope, offset) of F2 = offset + slope * the vowel's F2.
+// a vowel into th: (slope, offset) of F2 = offset + slope * the vowel's F2, for th's start and the vowel's glide.
 // flatter than th's locus(), which still sets the way out of th
-const TH_ENTRY: (f32, f32) = (0.7, 570.0);
-// th next to a back vowel: F3 at least this far over the vowel's
-const TH_F3_ABOVE: f32 = 250.0;
+const TH_ENTRY: (f32, f32) = (0.85, 300.0);
+// th next to a vowel that isn't front (back, rounded or a diphthong): F3 at least this far over the vowel's
+const TH_F3_ABOVE: f32 = 400.0;
 // out of f or v into a vowel: (slope, offset) of F2 = offset + slope * the vowel's F2.
 // lower than f and v's locus(), which still sets the way in (and the vowel's glide before them)
 const FV_EXIT: (f32, f32) = (0.75, 300.0);
@@ -228,7 +228,8 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 		F | V                   => Some((0.8, 300.0, 0.0)),					// labiodental
 		TH                      => Some((0.4, 900.0, 0.0)),					// dental
 		DH                      => Some((0.5, 700.0, 0.0)),					// lower: pulls F2 down by front vowels
-		D | T | N | S | DX      => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),	// alveolar
+		D | T | N | DX          => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),	// alveolar
+		S                       => Some((0.5, 850.0, ALVEOLAR_F2_FLOOR)),	// lower: pulls F2 down by front vowels
 		Z                       => Some((0.5, 750.0, 0.0)),					// lower and flatter than s
 		SH | ZH | CH | JH       => Some((0.3, 1500.0, 0.0)),				// postalveolar
 		G | K                   => Some((0.5, 1100.0, 0.0)),				// velar
@@ -884,6 +885,8 @@ impl engine {
 		if self.pft_c & DIPHTHONG == 0 && self.pft_r1 & VOWEL == 0
 			&& !matches!(self.phn_r1, SIL | HH | AXP | IXP | PAU) {
 			let next_f2 = match locus(self.phn_r1) {
+				// th's way in is its own: a front vowel holds its F2 into it ("breath")
+				_ if self.phn_r1 == TH => TH_ENTRY.1 + TH_ENTRY.0 * self.F2_B_src,
 				Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
 				None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
 			};
@@ -1024,9 +1027,13 @@ impl engine {
 			TH => {
 				// into th from a vowel the tongue is already near the teeth: F2 hardly moves after a front vowel
 				if let Some((v, _)) = left { self.F2_A_src = TH_ENTRY.1 + TH_ENTRY.0 * v; }
-				// the tongue tip up at the teeth lifts F3 over a back vowel's, on either side
-				if let Some((_, f3)) = left.filter(back) { self.F3_A_src = self.F3_A_src.max(f3 + TH_F3_ABOVE); }
-				if let Some((_, f3)) = right.filter(back) { self.F3_B_src = self.F3_B_src.max(f3 + TH_F3_ABOVE); }
+				// the tongue tip up at the teeth lifts F3 over any vowel that isn't front, on either side
+				if let (Some((_, f3)), 0) = (left, self.pft_l1 & FRONT) {
+					self.F3_A_src = self.F3_A_src.max(f3 + TH_F3_ABOVE);
+				}
+				if let (Some((_, f3)), 0) = (right, self.pft_r1 & FRONT) {
+					self.F3_B_src = self.F3_B_src.max(f3 + TH_F3_ABOVE);
+				}
 			}
 			F | V => {
 				// f and v leave the tongue free: F3 follows the vowel on each side, a little under a front one
@@ -2569,6 +2576,23 @@ mod tests {
 		let ((_, ao_f3), (_, in_f3, _, out_f3), _) = edges(AO, TH);
 		assert!(in_f3 >= ao_f3 + TH_F3_ABOVE && out_f3 >= ao_f3 + TH_F3_ABOVE,
 			"th's F3 {} / {} Hz is not {} Hz over ao's {} Hz", in_f3, out_f3, TH_F3_ABOVE, ao_f3);
+	}
+
+	#[test]
+	fn a_front_vowel_holds_its_f2_into_th_and_th_lifts_f3_by_any_vowel_that_isnt_front() {
+		// "breath": eh doesn't glide down into th (the speaker's F2 holds); "I think": ay's high F2 still lifts th's F3
+		let e = loaded(&[(PAU, 50, false), (B, 100, false), (EH, 150, true), (TH, 80, false), (AX, 100, false)], EH);
+		assert!(e.F2_B_src >= e.F2_A_src, "eh glides from {} to {} Hz into th", e.F2_A_src, e.F2_B_src);
+		let ((ay_f2, ay_f3), (_, f3, _, _), _) = edges(AY, TH);
+		assert!(ay_f2 >= BACK_VOWEL_F2 && f3 >= ay_f3 + TH_F3_ABOVE, "th's F3 {} Hz after ay's {} Hz", f3, ay_f3);
+	}
+
+	#[test]
+	fn s_pulls_f2_down_by_a_front_vowel() {
+		// "miss", "niece": F2 falls into s, where t, d and n land on the vowel's F2
+		let ((iy_f2, _), (s_f2, _, _, _), _) = edges(IY, S);
+		let ((_, _), (t_f2, _, _, _), _) = edges(IY, T);
+		assert!(iy_f2 - s_f2 > 200.0 && t_f2 - s_f2 > 100.0, "s's F2 {} Hz after iy's {} Hz (t's {})", s_f2, iy_f2, t_f2);
 	}
 
 	#[test]
