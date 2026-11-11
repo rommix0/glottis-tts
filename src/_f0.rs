@@ -224,8 +224,8 @@ fn merge_close(mut placed: Vec<(usize, f32, Target)>) -> Vec<(usize, f32, Target
 	placed.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
 	let mut kept: Vec<(usize, f32, Target)> = Vec::new();
 	for (ph, t, tg) in placed {
-		if let Some(&(pph, pt, _)) = kept.last() {
-			if pph == ph && t - pt < MERGE_MS { kept.pop(); }
+		if let Some(&(pph, pt, _)) = kept.last() && pph == ph && t - pt < MERGE_MS {
+			kept.pop();
 		}
 		kept.push((ph, t, tg));
 	}
@@ -351,8 +351,8 @@ impl<'a> Layout<'a> {
 				_ if is_last => (h + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE,
 				_ => h * EXCLAIM_RANGE,
 			};
-			if let Some(prev) = prev_peak {
-				if tp - prev.1 > TROUGH_GAP_MS { self.place_trough(k, prev, (n, tp, height)); }
+			if let Some(prev) = prev_peak && tp - prev.1 > TROUGH_GAP_MS {
+				self.place_trough(k, prev, (n, tp, height));
 			}
 			self.push(n, frac, self.base(k, tp) + height, self.base(k, tp), kind);
 			prev_peak = Some((n, tp, height));
@@ -726,8 +726,14 @@ mod tests {
 	}
 
 	// tokens from PHNIDToPhoneme, a word boundary before each word
-	const S: u8 = 72; const L: u8 = 59; const M: u8 = 61; const D: u8 = 42; const T: u8 = 76; const K: u8 = 56;
-	const OW1: u8 = 27; const IH1: u8 = 25;
+	const PH_S:   u8 = 72;
+	const PH_L:   u8 = 59;
+	const PH_M:   u8 = 61;
+	const PH_D:   u8 = 42;
+	const PH_T:   u8 = 76;
+	const PH_K:   u8 = 56;
+	const PH_OW1: u8 = 27;		// stressed ow
+	const PH_IH1: u8 = 25;		// stressed ih
 
 	fn offsets(toks: &[u8]) -> (Utterance, Contour) {
 		let words = toks.iter().filter(|&&t| t == CW || t == FW).count();
@@ -737,36 +743,36 @@ mod tests {
 	#[test]
 	fn obstruents_raise_the_following_sonorant() {
 		// "slow": the l starts raised and the rise carries on, decaying, into the vowel
-		let (_, mut c) = offsets(&[CW, S, L, OW1, PERIOD]);
+		let (_, mut c) = offsets(&[CW, PH_S, PH_L, PH_OW1, PERIOD]);
 		assert!((c.bump_at(1, 0.0) - VOICELESS_BUMP_ST).abs() < 0.01);
 		assert!(c.bump_at(2, 0.0) > 0.0 && c.bump_at(2, 0.0) < c.bump_at(1, 0.0));
 		// a voiced obstruent lowers it, from nothing at its start (no step in the voice) to deepest at its end
-		let (_, mut c) = offsets(&[CW, D, OW1, PERIOD]);
+		let (_, mut c) = offsets(&[CW, PH_D, PH_OW1, PERIOD]);
 		assert_eq!(c.bump_at(0, 0.0), 0.0);
 		assert!((c.bump_at(0, 0.5) + VOICED_DIP_ST / 2.0).abs() < 0.01);
 		assert!((c.bump_at(1, 0.0) + VOICED_DIP_ST).abs() < 0.01);
 		// a nasal does nothing
-		let (u, mut c) = offsets(&[CW, M, OW1, PERIOD]);
+		let (u, mut c) = offsets(&[CW, PH_M, PH_OW1, PERIOD]);
 		assert!((0..u.segs.len()).all(|i| c.bump_at(i, 0.0) == 0.0));
 	}
 
 	#[test]
 	fn word_final_t_before_a_consonant_dips() {
 		// "mitt cow": F0 falls over the end of the vowel and stays low through the t
-		let (u, mut c) = offsets(&[CW, M, IH1, T, CW, K, OW1, PERIOD]);
+		let (u, mut c) = offsets(&[CW, PH_M, PH_IH1, PH_T, CW, PH_K, PH_OW1, PERIOD]);
 		assert!(u.segs[1].dur_ms > T_DIP_MS);
 		assert_eq!(c.bump_at(1, 0.0), 0.0);
 		assert!((c.bump_at(1, 1.0) + T_DIP_ST).abs() < 0.01);
 		assert!((c.bump_at(2, 0.5) + T_DIP_ST).abs() < 0.01);
 		// "mitt owe": not before a vowel
-		let (_, mut c) = offsets(&[CW, M, IH1, T, CW, OW1, PERIOD]);
+		let (_, mut c) = offsets(&[CW, PH_M, PH_IH1, PH_T, CW, PH_OW1, PERIOD]);
 		assert_eq!(c.bump_at(2, 0.5), 0.0);
 	}
 
 	#[test]
 	fn stressed_vowel_starting_a_content_word_has_a_glottal_onset() {
 		// "mow it" with a content "it": after ow, F0 falls into the catch over ONSET_LEAD_MS, then comes back
-		let (u, mut c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
+		let (u, mut c) = offsets(&[CW, PH_M, PH_OW1, CW, PH_IH1, PH_T, PERIOD]);
 		let d = u.segs[2].dur_ms;
 		assert_eq!(c.bump_at(2, 0.0), 0.0);
 		// ih is a high vowel, so its own rise rides on top
@@ -774,10 +780,10 @@ mod tests {
 		assert!((c.bump_at(2, ONSET_LEAD_MS / d) - high + ONSET_DIP_ST).abs() < 0.01);
 		assert!(d > ONSET_LEAD_MS + ONSET_DIP_MS && c.bump_at(2, 1.0) == 0.0);
 		// "it" after a pause starts low
-		let (_, mut c) = offsets(&[CW, IH1, T, PERIOD]);
+		let (_, mut c) = offsets(&[CW, PH_IH1, PH_T, PERIOD]);
 		assert!((c.bump_at(0, 0.0) + ONSET_DIP_ST).abs() < 0.01);
 		// not for a function word
-		let (_, mut c) = offsets(&[CW, M, OW1, FW, IH1, T, PERIOD]);
+		let (_, mut c) = offsets(&[CW, PH_M, PH_OW1, FW, PH_IH1, PH_T, PERIOD]);
 		assert_eq!(c.bump_at(2, 0.0), 0.0);
 	}
 }

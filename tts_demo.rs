@@ -7,6 +7,8 @@ use std::io::{BufWriter, Write};
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 use tts_synth::{_vtm, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
+use tts_synth::_phone::{TOKEN_CW, TOKEN_PERIOD};
+use tts_synth::_vtbl::TABLE_LEN;
 
 // WAV format: mono at the synth's rate, 16-bit int or 32-bit float samples
 fn wav_spec(pcm16: bool) -> hound::WavSpec {
@@ -97,13 +99,13 @@ fn block_on<F: Future>(f: F) -> F::Output {
 	}
 }
 
-fn read_table(path: &str) -> Result<&'static [u16; 1550], String> {
+fn read_table(path: &str) -> Result<&'static [u16; TABLE_LEN], String> {
 	// read the formant table's numbers in order, skipping anything between them
 	let text = std::fs::read_to_string(path).map_err(|e| format!("can't read {path}: {e}"))?;
 	let vals = text.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty())
 		.map(|t| t.parse().map_err(|_| format!("{path}: {t} is out of range"))).collect::<Result<Vec<u16>, _>>()?;
-	let tbl: [u16; 1550] = vals.try_into()
-		.map_err(|v: Vec<u16>| format!("{path} has {} numbers, expected 1550", v.len()))?;
+	let tbl: [u16; TABLE_LEN] = vals.try_into()
+		.map_err(|v: Vec<u16>| format!("{path} has {} numbers, expected {TABLE_LEN}", v.len()))?;
 	Ok(Box::leak(Box::new(tbl)))
 }
 
@@ -134,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	block_on(async {
 		if let Some(tk) = opts.phone {
 			// the phone as a word of its own
-			sp.sentence(&[90, tk, 92], &[""], &mut out).await?;
+			sp.sentence(&[TOKEN_CW, tk, TOKEN_PERIOD], &[""], &mut out).await?;
 		} else {
 			sp.speak(&opts.text, &mut out).await?;
 		}

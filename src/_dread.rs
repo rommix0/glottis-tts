@@ -18,8 +18,12 @@ dictionary format:
 
 */
 
+use alloc::vec::Vec;
 use crate::_dict::dictdat;
 use crate::_dict::getLetterOffset;
+
+// what readOut() gives after a word's last phone
+pub const END_OF_PHONES: u8 = 0xFF;
 
 pub struct dictreader {
 	pos:      usize,		// read position in dictdat
@@ -55,12 +59,25 @@ impl dictreader {
 		}
 	}
 	pub fn readOut(&mut self) -> u8 {
-		// read out phoneme stream of found word, then 0xFF
-		if self.done { return 0xFF; }
+		// read out phoneme stream of found word, then END_OF_PHONES
+		if self.done { return END_OF_PHONES; }
 		let x = dictdat[self.pos];
 		self.pos += 1;
 		self.done = x & 0x80 != 0;
 		x & 0x7F
+	}
+	pub fn lookup(&mut self, word: &str) -> Option<Vec<u8>> {
+		// the word's phones, or None if the dictionary doesn't have it
+		self.reset();
+		for b in word.bytes() { self.readIn(b); }
+		if !self.search() { return None; }
+		let mut phones = Vec::new();
+		loop {
+			let p = self.readOut();
+			if p == END_OF_PHONES { break; }
+			phones.push(p);
+		}
+		Some(phones)
 	}
 	pub fn search(&mut self) -> bool {
 		// naive scan of the word's letter partition, rebuilding each entry's word from the one before.

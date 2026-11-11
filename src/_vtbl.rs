@@ -35,7 +35,11 @@ otherwise the consonants may not sound as good as they should due to interpolati
 
 */
 
-pub static formant_tbl: [u16; 1550] = [
+// numbers per phone row, and in the whole table (50 rows)
+pub const ROW_LEN: usize = 31;
+pub const TABLE_LEN: usize = 50 * ROW_LEN;
+
+pub static formant_tbl: [u16; TABLE_LEN] = [
 
 	// _
 	25, 25,

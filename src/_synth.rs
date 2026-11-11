@@ -2,12 +2,12 @@
 | KLATT-STYLE FORMANT SYNTHESIZER       |
 |                                       |
 | AUTHOR: ANTHONY C. BARTMAN (@ROMMIX0) |
-| DATE:   8/11/2026-11/10/2026          |
+| DATE:   8/11/2026-11/11/2026          |
 ---------------------------------------*/
 
 use crate::_vtm::{vtm, Voice, DB_GAIN, DB_PER_HALF, G_MAX};
 use crate::_vtm::m_sr;
-use crate::_vtbl::formant_tbl;
+use crate::_vtbl::{formant_tbl, ROW_LEN, TABLE_LEN};
 use crate::_phone::*;
 
 // pre-calculated millisecond constants for slopes
@@ -202,15 +202,15 @@ fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 // k and g next to a high front vowel: F2 at least this far above the vowel's
 const VELAR_F2_ABOVE: f32 = 150.0;
-// a vowel with F2 under this is a back vowel, for the f/v and dh F3 rules
+// a vowel with F2 under this is a back vowel
 const BACK_VOWEL_F2: f32 = 1500.0;
-// a vowel into th: (slope, offset) of F2 = offset + slope * the vowel's F2, for th's start and the vowel's glide.
-// flatter than th's locus(), which still sets the way out of th
+// a vowel into th: (slope, offset) of F2 = offset + slope * the vowel's F2.
+// closer to the vowel's own F2 than th's locus(), which sets the way out of th
 const TH_ENTRY: (f32, f32) = (0.85, 300.0);
 // th next to a vowel that isn't front (back, rounded or a diphthong): F3 at least this far over the vowel's
 const TH_F3_ABOVE: f32 = 400.0;
 // out of f or v into a vowel: (slope, offset) of F2 = offset + slope * the vowel's F2.
-// lower than f and v's locus(), which still sets the way in (and the vowel's glide before them)
+// lower than f and v's locus(), which sets the way in
 const FV_EXIT: (f32, f32) = (0.75, 300.0);
 // f and v next to a front vowel: F3 this far under the vowel's
 const FV_F3_BELOW: f32 = 150.0;
@@ -236,6 +236,16 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 		NG                      => Some((0.9, 400.0, 0.0)),					// near the vowel's own F2
 		_                       => None,
 	}
+}
+
+// the locus a vowel heads into: th has its own way in
+fn locus_in(x: u8) -> Option<(f32, f32, f32)> {
+	if x == TH { Some((TH_ENTRY.0, TH_ENTRY.1, 0.0)) } else { locus(x) }
+}
+
+// the locus a vowel comes out of: f and v have their own way out
+fn locus_out(x: u8) -> Option<(f32, f32, f32)> {
+	if matches!(x, F | V) { Some((FV_EXIT.0, FV_EXIT.1, 0.0)) } else { locus(x) }
 }
 
 fn db_gain(db: f32) -> f32 {
@@ -281,7 +291,6 @@ const LATERAL:   u32 = 0x0400;
 const RHOTIC:    u32 = 0x0800;
 const GLIDE:     u32 = 0x1000;
 const DIPHTHONG: u32 = 0x2000;
-const DENTAL:    u32 = 0x4000;
 const AFFRICATE: u32 = 0x8000;
 const FRICATIVE: u32 = 0x10000;
 const APPROXIMANT: u32 = LATERAL | RHOTIC | GLIDE;
@@ -304,8 +313,8 @@ fn feats(x: u8) -> u32 {
 		NG                                => VOICED | NASAL | VELAR,
 		F                                 => FRICATIVE,
 		V                                 => VOICED | FRICATIVE,
-		TH                                => DENTAL | FRICATIVE,
-		DH                                => VOICED | DENTAL | FRICATIVE,
+		TH                                => FRICATIVE,
+		DH                                => VOICED | FRICATIVE,
 		S | SH                            => ALVEOLAR | SIBILANT | FRICATIVE,
 		Z | ZH                            => VOICED | ALVEOLAR | SIBILANT | FRICATIVE,
 		CH                                => ALVEOLAR | STOP | SIBILANT | AFFRICATE,
@@ -313,7 +322,7 @@ fn feats(x: u8) -> u32 {
 		L | LX                            => VOICED | ALVEOLAR | LATERAL,
 		R | RX                            => VOICED | ALVEOLAR | RHOTIC,
 		Y                                 => VOICED | GLIDE,
-		W                                 => VOICED | BILABIAL | VELAR | GLIDE,
+		W                                 => VOICED | BILABIAL | GLIDE,
 		_                                 => 0,
 	}
 }
@@ -322,7 +331,7 @@ fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
 fn sibilant(f: u32) -> bool { f & (SIBILANT | AFFRICATE) == SIBILANT }
 fn obstruent(f: u32) -> bool { f != 0 && f & (VOWEL | NASAL | APPROXIMANT) == 0 }
-fn sonorant(f: u32) -> bool { f & VOWEL != 0 || f & (NASAL | APPROXIMANT) != 0 }
+fn sonorant(f: u32) -> bool { f & (VOWEL | NASAL | APPROXIMANT) != 0 }
 fn quiet(p: u8) -> bool { p == PAU || p == SIL || p == AXP || p == IXP }
 fn hiss(p: u8) -> bool { feats(p) & FRICATIVE != 0 || p == HH }
 // formant table row for a phone (the pause uses the silent row)
@@ -358,7 +367,7 @@ fn stop_timeline(
 	// k or g keeps its burst before a word starting with a nasal, th or dh, or it isn't heard
 	// ("unique New York", "thick thistle")
 	let final_t = phone == T && !word_start && (feats(prev) & VOWEL != 0 || matches!(prev, RX | N | L | LX))
-		&& next_word_start && nf & VOWEL == 0 && !matches!(next, SIL | AXP | IXP | PAU);
+		&& next_word_start && nf & VOWEL == 0 && !quiet(next);
 	let before_dental = next_word_start && matches!(next, TH | DH);
 	let place = stop_place(phone);
 	let velar_kept = place == 2 && next_word_start && (nf & NASAL != 0 || before_dental);
@@ -394,7 +403,7 @@ fn stop_timeline(
 }
 
 pub struct engine {
-	pub tbl: &'static [u16; 1550],	// the formant table, swapped by --table
+	pub tbl: &'static [u16; TABLE_LEN],	// the formant table, swapped by --table
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -736,7 +745,7 @@ impl engine {
 		self.hold_formants_in_pause();
 	}
 	fn read_table_row(&mut self, row: u8) {
-		let offset_src: usize = row as usize * 31;
+		let offset_src: usize = row as usize * ROW_LEN;
 		//---------------source---------------------
 		self.C_A_src   = self.tbl[offset_src+0] as u8;						// also target during transition time
 		self.C_B_src   = self.tbl[offset_src+1] as u8;
@@ -811,20 +820,19 @@ impl engine {
 	fn apply_vowel_place_rules(&mut self, factor: f32) {
 		// VOWEL BEFORE R
 		// sits higher, and for the back vowels further back ("air", "four", "tour")
-		if self.pft_r1 & RHOTIC != 0 {
-			if let Some(&(_, f1a, f2a, f1b, f2b)) = BEFORE_R.iter().find(|v| v.0 == self.phn_c) {
-				(self.F1_A_src, self.F2_A_src, self.F1_B_src, self.F2_B_src) = (f1a, f2a, f1b, f2b);
-			}
+		if self.pft_r1 & RHOTIC != 0
+			&& let Some(&(_, f1a, f2a, f1b, f2b)) = BEFORE_R.iter().find(|v| v.0 == self.phn_c) {
+			(self.F1_A_src, self.F2_A_src, self.F1_B_src, self.F2_B_src) = (f1a, f2a, f1b, f2b);
 		}
 
 		// VELAR PINCHING RULE (more on a front vowel's F2)
-		if self.pft_l1 & VELAR != 0 && self.phn_l1 != W {
+		if self.pft_l1 & VELAR != 0 {
 			self.F2_A_src += if self.pft_c & FRONT != 0 { 130.0 } else { 80.0 } * factor;
 			self.F3_A_src -= 100.0 * factor;
 		}
-		if self.pft_r1 & VELAR != 0 && self.phn_r1 != W {
+		if self.pft_r1 & VELAR != 0 {
 			// a back vowel's F2 stays put before a velar
-			if self.F2_B_src > 1500.0 { self.F2_B_src += 80.0 * factor; }
+			if self.F2_B_src > BACK_VOWEL_F2 { self.F2_B_src += 80.0 * factor; }
 			self.F3_B_src -= 100.0 * factor;
 		}
 
@@ -883,12 +891,10 @@ impl engine {
 		// don't let a vowel's own F2 glide head away from the next consonant's F2 ("cat", "pick"),
 		// except in the diphthongs aw, ay, ow and oy
 		if self.pft_c & DIPHTHONG == 0 && self.pft_r1 & VOWEL == 0
-			&& !matches!(self.phn_r1, SIL | HH | AXP | IXP | PAU) {
-			let next_f2 = match locus(self.phn_r1) {
-				// th's way in is its own: a front vowel holds its F2 into it ("breath")
-				_ if self.phn_r1 == TH => TH_ENTRY.1 + TH_ENTRY.0 * self.F2_B_src,
+			&& !quiet(self.phn_r1) && self.phn_r1 != HH {
+			let next_f2 = match locus_in(self.phn_r1) {
 				Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
-				None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
+				None => self.tbl[self.phn_r1 as usize * ROW_LEN + 6] as f32,
 			};
 			if (self.F2_B_src - self.F2_A_src) * (next_f2 - self.F2_B_src) < 0.0 {
 				self.F2_B_src = self.F2_A_src;
@@ -897,7 +903,7 @@ impl engine {
 
 		// BACK VOWEL ALVEOLARIZATION
 		// not before an r, where the vowel has its own place
-		if self.pft_c == VOWEL | VOICED | BACK && self.pft_r1 & RHOTIC == 0 {
+		if self.pft_c & BACK != 0 && self.pft_r1 & RHOTIC == 0 {
 			if self.pft_l1 & ALVEOLAR != 0 {
 				self.F2_A_src += 250.0 * factor;
 			}
@@ -910,7 +916,7 @@ impl engine {
 	fn apply_consonant_rules(&mut self) {
 		// F2 and the velars' F3 are set later by loci(), from the neighbouring vowels
 		// BEFORE A FRONT VOWEL: w moves up toward it; a sibilant's F3 (which A3 follows) rises
-		if self.pft_r1 & (VOWEL | FRONT) == VOWEL | FRONT {
+		if self.pft_r1 & FRONT != 0 {
 			if self.phn_c == W {
 				self.F2_A_src += 150.0;
 				self.F2_B_src += 150.0;
@@ -923,7 +929,7 @@ impl engine {
 		// NASALS (m, n, ng)
 		if self.pft_c & NASAL != 0 {
 			// lower F3 after a front vowel (not ng, whose F3 is its pinch)
-			if self.phn_c != NG && self.pft_l1 & (VOWEL | FRONT) == VOWEL | FRONT {
+			if self.phn_c != NG && self.pft_l1 & FRONT != 0 {
 				self.F3_A_src -= 100.0;
 				self.F3_B_src -= 100.0;
 			}
@@ -972,7 +978,7 @@ impl engine {
 	}
 	fn reduced(&self, f: [f32; 3], dur: i32) -> [f32; 3] {
 		// move F1-F3 of a vowel lasting dur samples toward the neutral vowel's
-		let ax_row = AX as usize * 31;
+		let ax_row = AX as usize * ROW_LEN;
 		let k = reduce_k(dur as f32 * 1000.0 / m_sr as f32);
 		[0, 1, 2].map(|i| { let n = self.tbl[ax_row + 5 + i] as f32; n + (f[i] - n) * k })
 	}
@@ -985,7 +991,7 @@ impl engine {
 	fn next_vowel_formants(&self) -> [f32; 3] {
 		// next phone's F1-F3 at its start, reduced for its length like reduce() does a vowel.
 		// unlike reduce(), l, r, w and y are reduced too: the release level before them was set by ear that way
-		let row = table_row(self.phn_r1) as usize * 31;
+		let row = table_row(self.phn_r1) as usize * ROW_LEN;
 		let target = [self.tbl[row + 5] as f32, self.tbl[row + 6] as f32, self.tbl[row + 7] as f32];
 		if matches!(self.phn_r1, AX | IX | PAU) { return target; }
 		self.reduced(target, self.pdr_r1)
@@ -1003,7 +1009,8 @@ impl engine {
 			}
 			return;
 		}
-		let Some((f2_slope, f2_offset, floor)) = locus(self.phn_c) else { return };
+		let phn = self.phn_c;
+		let (Some(own), Some(into), Some(out_of)) = (locus(phn), locus_in(phn), locus_out(phn)) else { return };
 		let [next_f1, next_f2, next_f3] = self.next_vowel_formants();
 		if next_vowel {
 			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
@@ -1014,24 +1021,24 @@ impl engine {
 		let right = next_vowel.then_some((next_f2, next_f3));
 		// F2 (and F3 for k and g) at an edge next to a vowel with F2 v;
 		// k and g sit above a front vowel's F2, with F3 coming down toward it
-		let phn = self.phn_c;
-		let edge = |v: f32, f3: f32| {
-			let f2 = f2_offset + f2_slope * v.max(floor);
+		let edge = |(slope, offset, floor): (f32, f32, f32), v: f32, f3: f32| {
+			let f2 = offset + slope * v.max(floor);
 			if matches!(phn, G | K) { (f2.max(v + VELAR_F2_ABOVE), VELAR_F3.1 + VELAR_F3.0 * v) } else { (f2, f3) }
 		};
-		// a side with no vowel holds the other side's value
-		if let Some((v, _)) = left.or(right) { (self.F2_A_src, self.F3_A_src) = edge(v, self.F3_A_src); }
-		if let Some((v, _)) = right.or(left) { (self.F2_B_src, self.F3_B_src) = edge(v, self.F3_B_src); }
+		// the way in from the vowel before and out to the vowel after;
+		// a side with no vowel takes the other side's vowel through the plain locus
+		let start = left.map(|(v, _)| (into, v)).or(right.map(|(v, _)| (own, v)));
+		let end = right.map(|(v, _)| (out_of, v)).or(left.map(|(v, _)| (own, v)));
+		if let Some((at, v)) = start { (self.F2_A_src, self.F3_A_src) = edge(at, v, self.F3_A_src); }
+		if let Some((at, v)) = end { (self.F2_B_src, self.F3_B_src) = edge(at, v, self.F3_B_src); }
 		let back = |side: &(f32, f32)| side.0 < BACK_VOWEL_F2;
 		match phn {
 			TH => {
-				// into th from a vowel the tongue is already near the teeth: F2 hardly moves after a front vowel
-				if let Some((v, _)) = left { self.F2_A_src = TH_ENTRY.1 + TH_ENTRY.0 * v; }
 				// the tongue tip up at the teeth lifts F3 over any vowel that isn't front, on either side
-				if let (Some((_, f3)), 0) = (left, self.pft_l1 & FRONT) {
+				if let Some((_, f3)) = left && self.pft_l1 & FRONT == 0 {
 					self.F3_A_src = self.F3_A_src.max(f3 + TH_F3_ABOVE);
 				}
-				if let (Some((_, f3)), 0) = (right, self.pft_r1 & FRONT) {
+				if let Some((_, f3)) = right && self.pft_r1 & FRONT == 0 {
 					self.F3_B_src = self.F3_B_src.max(f3 + TH_F3_ABOVE);
 				}
 			}
@@ -1040,7 +1047,6 @@ impl engine {
 				let f3 = |side: (f32, f32)| if back(&side) { side.1 } else { side.1 - FV_F3_BELOW };
 				if let Some(side) = left.or(right) { self.F3_A_src = f3(side); }
 				if let Some(side) = right.or(left) { self.F3_B_src = f3(side); }
-				if let Some((v, _)) = right { self.F2_B_src = FV_EXIT.1 + FV_EXIT.0 * v; }
 			}
 			DH => {
 				// dh's F3 stays near the vowel's: a little over a back one, under a front one
@@ -1083,28 +1089,7 @@ impl engine {
 		self.AF_reg_src  = 0.0;
 		self.AH_reg_src  = 0.0;
 		self.AV_reg_src  = 0.0;
-		// target
-		self.RD_reg_trg  = self.RD_reg_src;
-		self.NZP_reg_trg = self.NZP_reg_src;
-		self.F1_reg_trg  = self.F1_reg_src;
-		self.F2_reg_trg  = self.F2_reg_src;
-		self.F3_reg_trg  = self.F3_reg_src;
-		self.B1_reg_trg  = self.B1_reg_src;
-		self.B2_reg_trg  = self.B2_reg_src;
-		self.B3_reg_trg  = self.B3_reg_src;
-		self.A2_reg_trg  = db_gain(self.A2_src);
-		self.A3_reg_trg  = db_gain(self.A3_src);
-		self.A4_reg_trg  = db_gain(self.A4_src);
-		self.A5_reg_trg  = db_gain(self.A5_src);
-		self.A6_reg_trg  = db_gain(self.A6_src);
-		self.A7_reg_trg  = db_gain(self.A7_src);
-		self.A8_reg_trg  = db_gain(self.A8_src);
-		self.A9_reg_trg  = db_gain(self.A9_src);
-		self.A10_reg_trg = db_gain(self.A10_src);
-		self.AB_reg_trg  = db_gain(self.AB_src);
-		self.AF_reg_trg  = db_gain(self.AF_src);
-		self.AH_reg_trg  = db_gain(self.AH_src);
-		self.AV_reg_trg  = db_gain(self.AV_src);
+		self.set_targets_to_a();
 	}
 	fn regs(&self) -> [f32; 7] {
 		[self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg]
@@ -1828,7 +1813,7 @@ mod tests {
 	fn short_vowel_moves_to_neutral() {
 		let long = targets_for(21, 1000);
 		let short = targets_for(21, 50);
-		let n_f2 = formant_tbl[6 * 31 + 6] as f32;
+		let n_f2 = formant_tbl[AX as usize * ROW_LEN + 6] as f32;
 		assert!(short[1] < long[1] && short[1] > n_f2, "IY F2 {} not between {} and {}", short[1], n_f2, long[1]);
 	}
 
@@ -2471,7 +2456,7 @@ mod tests {
 		for &c in &[9u8, 11, 17, 26, 27, 34] {
 			let alveolar = matches!(c, 11 | 27 | 34);
 			let f2 = |v: u8| {
-				let x = formant_tbl[v as usize * 31 + 6] as f32;
+				let x = formant_tbl[v as usize * ROW_LEN + 6] as f32;
 				if alveolar { x.max(ALVEOLAR_F2_FLOOR) } else { x }
 			};
 			let (slope, offset, _) = locus(c).unwrap();
@@ -2491,7 +2476,8 @@ mod tests {
 	fn h_takes_the_next_vowels_formants() {
 		for &v in &[21u8, 1, 39] {
 			let (a, b, f1) = cons_targets(6, 18, v);
-			let (tf1, tf2) = (formant_tbl[v as usize * 31 + 5] as f32, formant_tbl[v as usize * 31 + 6] as f32);
+			let row = v as usize * ROW_LEN;
+			let (tf1, tf2) = (formant_tbl[row + 5] as f32, formant_tbl[row + 6] as f32);
 			assert!((a - tf2).abs() < 0.03 * tf2 && (b - tf2).abs() < 0.03 * tf2,
 				"h before {}: F2 {} {} vs {}", v, a, b, tf2);
 			assert!((f1 - tf1).abs() < 0.05 * tf1, "h before {}: F1 {} vs {}", v, f1, tf1);
@@ -2569,20 +2555,16 @@ mod tests {
 	}
 
 	#[test]
-	fn th_keeps_a_front_vowels_f2_and_lifts_a_back_vowels_f3() {
-		// "path": F2 stays put into th (a fall would sound like f); "cloth of": F3 rises on both sides
+	fn th_keeps_a_front_vowels_f2_and_lifts_f3_by_any_other_vowel() {
+		// "path", "breath": F2 holds into th, both in th and in the vowel (a fall would sound like f)
 		let ((ae_f2, _), (f2, _, _, _), _) = edges(AE, TH);
 		assert!((f2 - ae_f2).abs() < 40.0, "th's F2 {} Hz is off ae's {} Hz", f2, ae_f2);
+		let e = loaded(&[(PAU, 50, false), (B, 100, false), (EH, 150, true), (TH, 80, false), (AX, 100, false)], EH);
+		assert!(e.F2_B_src >= e.F2_A_src, "eh glides from {} to {} Hz into th", e.F2_A_src, e.F2_B_src);
+		// "cloth of": F3 rises on both sides; "I think": so it does by ay, though ay's F2 ends high
 		let ((_, ao_f3), (_, in_f3, _, out_f3), _) = edges(AO, TH);
 		assert!(in_f3 >= ao_f3 + TH_F3_ABOVE && out_f3 >= ao_f3 + TH_F3_ABOVE,
 			"th's F3 {} / {} Hz is not {} Hz over ao's {} Hz", in_f3, out_f3, TH_F3_ABOVE, ao_f3);
-	}
-
-	#[test]
-	fn a_front_vowel_holds_its_f2_into_th_and_th_lifts_f3_by_any_vowel_that_isnt_front() {
-		// "breath": eh doesn't glide down into th (the speaker's F2 holds); "I think": ay's high F2 still lifts th's F3
-		let e = loaded(&[(PAU, 50, false), (B, 100, false), (EH, 150, true), (TH, 80, false), (AX, 100, false)], EH);
-		assert!(e.F2_B_src >= e.F2_A_src, "eh glides from {} to {} Hz into th", e.F2_A_src, e.F2_B_src);
 		let ((ay_f2, ay_f3), (_, f3, _, _), _) = edges(AY, TH);
 		assert!(ay_f2 >= BACK_VOWEL_F2 && f3 >= ay_f3 + TH_F3_ABOVE, "th's F3 {} Hz after ay's {} Hz", f3, ay_f3);
 	}
@@ -2592,12 +2574,13 @@ mod tests {
 		// "miss", "niece": F2 falls into s, where t, d and n land on the vowel's F2
 		let ((iy_f2, _), (s_f2, _, _, _), _) = edges(IY, S);
 		let ((_, _), (t_f2, _, _, _), _) = edges(IY, T);
-		assert!(iy_f2 - s_f2 > 200.0 && t_f2 - s_f2 > 100.0, "s's F2 {} Hz after iy's {} Hz (t's {})", s_f2, iy_f2, t_f2);
+		assert!(iy_f2 - s_f2 > 200.0 && t_f2 - s_f2 > 100.0,
+			"s's F2 {} Hz after iy's {} Hz (t's {})", s_f2, iy_f2, t_f2);
 	}
 
 	#[test]
 	fn th_starts_a_front_vowel_low() {
-		// "theme": the vowel rises out of th, like the speaker's
+		// "theme": the vowel starts well under its own F2 and rises out of th
 		let (_, (_, _, th_f2, _), (iy_f2, _)) = edges(IY, TH);
 		assert!(iy_f2 - th_f2 > 450.0, "th's F2 {} Hz is only {} Hz under iy's", th_f2, iy_f2 - th_f2);
 	}
@@ -2674,7 +2657,7 @@ mod tests {
 	#[test]
 	fn velar_f3_follows_the_vowel() {
 		// velar F3 sits near F2 before a front vowel and lower before a back one
-		let f2 = |v: u8| formant_tbl[v as usize * 31 + 6] as f32;
+		let f2 = |v: u8| formant_tbl[v as usize * ROW_LEN + 6] as f32;
 		for &c in &[17u8, 23] {
 			let mut f3 = Vec::new();
 			for &v in &[21u8, 1] {
@@ -2803,14 +2786,14 @@ mod tests {
 		// the aspiration a stop leaves for the next vowel drops with how front that vowel is
 		let asp_before = |v: u8| loaded(&[(PAU, 50, true), (6, 100, true), (36, 101, true), (v, 1000, true)], 36)
 			.asp_db_next;
-		let gap = |v: u8| formant_tbl[v as usize * 31 + 6] as f32 - formant_tbl[v as usize * 31 + 5] as f32;
+		let gap = |v: u8| formant_tbl[v as usize * ROW_LEN + 6] as f32 - formant_tbl[v as usize * ROW_LEN + 5] as f32;
 		let want = ASP_FRONT_DB_PER_KHZ * (gap(21) - ASP_FRONT_FROM_HZ) / 1000.0;
 		assert!(want > 3.0);
 		assert!(((asp_before(1) - asp_before(21)) - want).abs() < 0.3,
 			"cut {} before iy, want {}", asp_before(1) - asp_before(21), want);
 		assert_eq!(asp_before(1), ASP_DB, "aspiration before aa changed");
 		// and before a vowel quiet above F2, by ASP_FOLLOW of how much quieter it is than an open vowel
-		let f = |v: u8, i: usize| formant_tbl[v as usize * 31 + i] as f32;
+		let f = |v: u8, i: usize| formant_tbl[v as usize * ROW_LEN + i] as f32;
 		let want = ASP_FOLLOW * -40.0 * (f(39, 5) * f(39, 6) / RELEASE_REF).log10();
 		assert!(want > 3.0);
 		assert!(((asp_before(1) - asp_before(39)) - want).abs() < 0.3,
@@ -2935,7 +2918,7 @@ mod tests {
 	fn vowels_are_not_pressed() {
 		// vowel Rd is set by ear to about 0.6: tense enough for clear vowel colour, no more
 		for &v in &[1u8, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 19, 20, 21, 29, 30, 39] {
-			let o = v as usize * 31;
+			let o = v as usize * ROW_LEN;
 			let (a, b) = (formant_tbl[o + 2], formant_tbl[o + 3]);
 			assert!(a >= 55 && b >= 55, "vowel {} Rd {} / {}", v, a, b);
 		}

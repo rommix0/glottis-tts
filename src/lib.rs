@@ -38,7 +38,7 @@ pub mod _f0;
 use alloc::{format, string::String, vec, vec::Vec};
 use core::{fmt::Write, future::Future};
 use _utils::cbuf;
-use _dread::dictreader;
+use _dread::{dictreader, END_OF_PHONES};
 use _utt::{Utterance, Boundary, Seg};
 use _phone::*;
 
@@ -119,18 +119,7 @@ fn drawn_out(w: &[u8]) -> Vec<u8> {
 // build a word the dictionary lacks from a known stem and suffixes (letters and apostrophes only)
 fn morph_word(word: &str, dict_reader: &mut dictreader) -> Option<Vec<u8>> {
 	if word.len() < 4 || !word.bytes().all(|b| b.is_ascii_alphabetic() || b == b'\'') { return None; }
-	let mut lookup = |w: &str| {
-		dict_reader.reset();
-		for b in w.bytes() { dict_reader.readIn(b); }
-		if !dict_reader.search() { return None; }
-		let mut out = Vec::new();
-		loop {
-			let p = dict_reader.readOut();
-			if p == 0xFF { break; }
-			out.push(p);
-		}
-		Some(out)
-	};
+	let mut lookup = |w: &str| dict_reader.lookup(w);
 	_morph::compose(&word.to_ascii_lowercase(), &mut lookup, 2)
 }
 
@@ -202,10 +191,10 @@ impl Speaker {
 					self.play(out, PAU, 50.0, false, seg, true).await?;
 				} else {
 					// no punctuation at the end of input, so play the release here
-					self.play(out, 48, 100.0, false, seg, true).await?;
+					self.play(out, AXP, 100.0, false, seg, true).await?;
 				}
 			} else {
-				self.play(out, 0, 50.0, false, seg, true).await?;
+				self.play(out, SIL, 50.0, false, seg, true).await?;
 			}
 		}
 		Ok(())
@@ -284,9 +273,8 @@ impl Speaker {
 	fn trace_seg<O: SpeechSink>(&self, s: &Seg, seg: usize, out: &mut O) {
 		let mut line = format!(
 			"TRACE {} {} seg={} dur={:.0} rules={}",
-			s.phone, s.stress, seg, s.dur_ms, s.rules.first().copied().unwrap_or("")
+			s.phone, s.stress, seg, s.dur_ms, s.rules.join(",")
 		);
-		for r in s.rules.iter().skip(1) { line.push(','); line.push_str(r); }
 		line.push_str(" targets=");
 		for (k, t) in self.contour.targets_of(seg).enumerate() {
 			let _ = write!(
@@ -375,19 +363,14 @@ impl Speaker {
 		}
 
 		if dict_reader.search() {
-			if dict_reader.isFunctionWord() {
-				// function word boundary
-				tokens.push(TOKEN_FW);
-			} else {
-				// content word boundary
-				tokens.push(TOKEN_CW);
-			}
+			// function or content word boundary
+			tokens.push(if dict_reader.isFunctionWord() { TOKEN_FW } else { TOKEN_CW });
 			texts.push(word_text);
 
-			// the word's phones, up to the 0xFF end mark
+			// the word's phones, up to the end mark
 			loop {
 				let pout = dict_reader.readOut();		// phoneme out
-				if pout == 0xFF { break; }
+				if pout == END_OF_PHONES { break; }
 				tokens.push(pout);
 			}
 		} else if let Some(classes) = morph_word(&word_text, dict_reader) {

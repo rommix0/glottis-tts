@@ -5,7 +5,7 @@
 #########################################
 
   author: anthony c. bartman (@rommix0)
-  date:   4/6/2026 - 11/10/2026
+  date:   4/6/2026 - 11/11/2026
 
 */
 
@@ -39,6 +39,11 @@ const FRIC_LP_HZ: f32 = 4500.0;
 
 // narrowest F1/F2 bandwidth (Hz) the cascade uses
 const CASC_MIN_BW: f32 = 60.0;
+// the narrowest any other formant gets (Hz)
+const MIN_BW: f32 = 40.0;
+
+// dB to an amplitude ratio
+fn db_amp(db: f32) -> f32 { libm::powf(10.0, db / 20.0) }
 
 // amplitudes in dB are relative to this full scale, and every DB_PER_HALF dB down halves the gain
 pub const G_MAX: f32 = 87.0;
@@ -189,7 +194,7 @@ fn asp_level(v: &Voice) -> f32 {
 		e += (y - prev) * (y - prev);
 		prev = y;
 	}
-	libm::sqrtf(e) * libm::powf(10.0, v.db / 20.0)
+	libm::sqrtf(e) * db_amp(v.db)
 }
 
 struct noise { nxt: u32 }
@@ -364,8 +369,8 @@ impl resonator {
 		// anti-resonator (the nasal zero): the inverse transfer function
 		if self.anti {
 			self.a = 1.0 / self.a;
-			self.b = -self.a * self.b;
-			self.c = -self.a * self.c;
+			self.b *= -self.a;
+			self.c *= -self.a;
 		}
 
 		// Fujisaki-style gain compensation (KLSYN88-Qlatt)
@@ -556,7 +561,7 @@ impl LfSource {
 			self.pos_in_period %= 1.0;
 			// jitter stretches or shrinks this period, shimmer scales this pulse
 			self.jit_k = 1.0 / (1.0 + PERTURB_SPREAD * self.jitter / 100.0 * self.rand());
-			let amp = libm::powf(10.0, PERTURB_SPREAD * self.shimmer * self.rand() / 20.0);
+			let amp = db_amp(PERTURB_SPREAD * self.shimmer * self.rand());
 			self.add_pulse(ago, amp);
 		}
 		let slot = self.n % PULSE_RING;
@@ -696,7 +701,7 @@ impl vtm {
 
 			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
 			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
-			out_g:   libm::powf(10.0, OUT_DB / 20.0),
+			out_g:   db_amp(OUT_DB),
 		};
 		// set voice 0 fully: jitter and shimmer live in the glottal source, which only set_voice reaches
 		tract.set_voice(VOICES[0]);
@@ -705,7 +710,7 @@ impl vtm {
 	pub fn set_voice(&mut self, v: Voice) {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
 		self.voice = v;
-		self.vgain = libm::powf(10.0, v.db / 20.0);
+		self.vgain = db_amp(v.db);
 		self.asp_gain = asp_level(&VOICES[0]) / asp_level(&v);
 		self.min_bw = CASC_MIN_BW * libm::sqrtf((v.f0 / 100.0).max(1.0));
 		self.glottal.jitter = v.jit;
@@ -772,10 +777,8 @@ impl vtm {
 	}
 	fn parallel(&mut self, x: f32) -> f32 {
 		let mut yy: f32 = 0.0;
-		let mut bb2 = self.B2 * self.B2_ADJ;
-		let mut bb3 = self.B3 * self.B3_ADJ;
-		if bb2 < 40.0 { bb2 = 40.0; }
-		if bb3 < 40.0 { bb3 = 40.0; }
+		let bb2 = (self.B2 * self.B2_ADJ).max(MIN_BW);
+		let bb3 = (self.B3 * self.B3_ADJ).max(MIN_BW);
 
 		yy -= self.FR2.step(x, self.F2, bb2)  * self.A2.min(1.0);
 		yy += self.FR3.step(x, self.F3, bb3)  * self.A3.min(1.0);
@@ -790,12 +793,9 @@ impl vtm {
 		yy
 	}
 	fn cascade(&mut self, x: f32) -> f32 {
-		let mut bb1 = self.B1 * self.B1_ADJ;
-		let mut bb2 = self.B2 * self.B2_ADJ;
-		let mut bb3 = self.B3 * self.B3_ADJ;
-		if bb1 < self.min_bw { bb1 = self.min_bw; }
-		if bb2 < self.min_bw { bb2 = self.min_bw; }
-		if bb3 < 40.0 { bb3 = 40.0; }
+		let bb1 = (self.B1 * self.B1_ADJ).max(self.min_bw);
+		let bb2 = (self.B2 * self.B2_ADJ).max(self.min_bw);
+		let bb3 = (self.B3 * self.B3_ADJ).max(MIN_BW);
 
 		// nasal coupling (Hawkins & Stevens 1985)
 		let k = self.NC.clamp(0.0, 1.0);

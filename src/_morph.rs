@@ -67,7 +67,7 @@ fn stem(s: &str, way: Way) -> Option<String> {
 }
 
 fn ending(e: Ending, stem: &[u8]) -> Vec<u8> {
-	let kind = LAST_KIND[*stem.last().unwrap() as usize];
+	let kind = stem.last().map_or(0, |&p| LAST_KIND[p as usize]);
 	match e {
 		Ending::Phones(p) => p.to_vec(),
 		Ending::S  => match kind { 4 | 5 => vec![PH_IX, PH_Z], 1 | 3 => vec![PH_S], _ => vec![PH_Z] },
@@ -93,12 +93,11 @@ pub fn compose(w: &str, dict: &mut dyn FnMut(&str) -> Option<Vec<u8>>, depth: u3
 		if w.len() >= suf.len() + MIN_STEM && w.ends_with(suf) {
 			let base = &w[..w.len() - suf.len()];
 			for &way in ways {
-				if let Some(respelled) = stem(base, way) {
-					if let Some(mut phones) = compose(&respelled, dict, depth - 1) {
-						let tail = ending(e, &phones);
-						phones.extend(tail);
-						return Some(phones);
-					}
+				if let Some(respelled) = stem(base, way)
+					&& let Some(mut phones) = compose(&respelled, dict, depth - 1) {
+					let tail = ending(e, &phones);
+					phones.extend(tail);
+					return Some(phones);
 				}
 			}
 		}
@@ -111,24 +110,11 @@ mod tests {
 	use super::*;
 	use crate::_dread::dictreader;
 
-	fn dict_lookup(r: &mut dictreader, w: &str) -> Option<Vec<u8>> {
-		r.reset();
-		for b in w.bytes() { r.readIn(b); }
-		if !r.search() { return None; }
-		let mut out = Vec::new();
-		loop {
-			let p = r.readOut();
-			if p == 0xFF { break; }
-			out.push(p);
-		}
-		Some(out)
-	}
-
 	#[test]
 	fn matches_the_builder() {
 		let mut r = dictreader::new();
 		for &(w, want) in SAMPLES.iter() {
-			let got = compose(w, &mut |s| dict_lookup(&mut r, s), 2);
+			let got = compose(w, &mut |s| r.lookup(s), 2);
 			assert_eq!(got.as_deref(), Some(want), "{}", w);
 		}
 	}
@@ -147,6 +133,6 @@ mod tests {
 	#[test]
 	fn unknown_stem_is_left_to_the_tree() {
 		let mut r = dictreader::new();
-		assert!(compose("zorblats", &mut |s| dict_lookup(&mut r, s), 2).is_none());
+		assert!(compose("zorblats", &mut |s| r.lookup(s), 2).is_none());
 	}
 }

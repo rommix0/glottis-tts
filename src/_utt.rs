@@ -16,8 +16,8 @@ use alloc::{string::String, vec, vec::Vec};
 pub fn is_vowel(p: u8) -> bool {
 	matches!(p, AA | AE | AH | AO | AW | AX | AXR | AY | EH | ER | EY | IH | IX | IY | OW | OY | UH | UW | AXP | IXP)
 }
-pub fn is_stop(p: u8)      -> bool { matches!(p, B | D | G | K | P | T | DX) }
-pub fn is_fricative(p: u8) -> bool { matches!(p, CH | DH | F | HH | JH | S | SH | TH | V | Z | ZH) }
+fn is_stop(p: u8)      -> bool { matches!(p, B | D | G | K | P | T | DX) }
+fn is_fricative(p: u8) -> bool { matches!(p, CH | DH | F | HH | JH | S | SH | TH | V | Z | ZH) }
 pub fn is_voiced(p: u8) -> bool {
 	is_vowel(p) || matches!(p, B | D | DH | G | JH | L | LX | M | N | NG | R | RX | V | W | Y | Z | ZH | DX)
 }
@@ -25,7 +25,7 @@ pub fn is_obstruent(p: u8) -> bool { is_stop(p) || is_fricative(p) }
 pub fn is_sonorant(p: u8)  -> bool { is_vowel(p) || matches!(p, L | LX | M | N | NG | R | RX | W | Y) }
 
 // the glide a vowel ends on: w after ow uw aw, y after iy ey ay oy
-pub fn offglide(p: u8) -> Option<u8> {
+fn offglide(p: u8) -> Option<u8> {
 	match p { OW | UW | AW => Some(W), IY | EY | AY | OY => Some(Y), _ => None }
 }
 
@@ -105,7 +105,7 @@ const PREPOSITION_VERBS: [&str; 15] = [
 	"believe", "believes", "call", "calls", "put", "puts", "speculate"
 ];
 // ... else before a preposition
-// "to", "into", and "onto" are all infinitive "to" words, and are not included here.
+// (not "to", "into" or "onto": they stay with the word before them, "text to speech", "turned into")
 const PREPOSITIONS: [&str; 29] = [
 	"in", "on", "at", "by", "near", "over", "under", "after",
 	"before", "with", "without", "from", "through", "during",
@@ -150,8 +150,8 @@ impl Utterance {
 			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::Unmarked });
 		}
 		// a comma at the end of the input ends the sentence like a period
-		if let Some(last) = u.phrases.last_mut() {
-			if last.end == Boundary::Comma { last.end = Boundary::Period; }
+		if let Some(last) = u.phrases.last_mut() && last.end == Boundary::Comma {
+			last.end = Boundary::Period;
 		}
 		u.break_long_phrases();
 		u.flap();
@@ -267,18 +267,17 @@ impl Utterance {
 		// or when it ends its word and a vowel follows in the same phrase ("got it").
 		// keep the closure on a word's first stop, a stop before a stressed vowel,
 		// and a t before a word-final syllabic n ("button")
-		fn vowel(p: u8) -> bool { is_vowel(p) && !matches!(p, AXP | IXP) }
 		for i in 1..self.segs.len().saturating_sub(1) {
 			let (prev, cur, next) = (&self.segs[i - 1], &self.segs[i], &self.segs[i + 1]);
-			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(vowel(prev.phone) || prev.phone == RX) {
+			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(is_vowel(prev.phone) || prev.phone == RX) {
 				continue;
 			}
 			let w = &self.words[cur.word];
 			let flaps = if next.word == cur.word {
 				let syllabic_n = matches!(next.phone, AX | IX) && i + 3 == w.segs.end && self.segs[i + 2].phone == N;
-				vowel(next.phone) && next.stress == 0 && !syllabic_n
+				is_vowel(next.phone) && next.stress == 0 && !syllabic_n
 			} else {
-				vowel(next.phone) && self.words[next.word].phrase == w.phrase
+				is_vowel(next.phone) && self.words[next.word].phrase == w.phrase
 					&& self.words[next.word].segs.start == i + 1
 			};
 			if flaps { self.segs[i].phone = DX; }
@@ -314,7 +313,7 @@ impl Utterance {
 					Some(&next) => {
 						// longest legal onset before the next nucleus goes with it
 						let phones: Vec<u8> = (n + 1..next).map(|i| self.segs[i].phone).collect();
-						let split = (0..=phones.len()).find(|&j| is_legal_onset(&phones[j..])).unwrap();
+						let split = (0..=phones.len()).find(|&j| is_legal_onset(&phones[j..])).unwrap_or(phones.len());
 						n + 1 + split
 					},
 					None => segs.end,
