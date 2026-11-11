@@ -305,6 +305,10 @@ fn fricative(p: u8) -> bool { matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44)
 fn sibilant(f: u16) -> bool { f & 0x8200 == 0x200 }
 // aw, ay, ow, oy (feats' 0x2000 marks only ay and oy)
 fn diphthong(p: u8) -> bool { matches!(p, 5 | 8 | 29 | 30) }
+// the formant table row a phone plays: the pause plays the silent row
+fn table_row(p: u8) -> u8 { if p == PAU { 0 } else { p } }
+// the vowels reduce() moves toward ax as they get shorter (not ax and ix themselves)
+fn reduces(p: u8) -> bool { feats(p) & 0x1 != 0 && !matches!(p, 6 | 20) }
 
 // a word-internal t before an unstressed schwa ("button"): softened by SCHWA_T_ASP and SCHWA_T_ASP_DB
 fn schwa_t(phone: u8, word_start: bool, next: u8, next_stressed: bool) -> bool {
@@ -701,7 +705,7 @@ impl engine {
 	pub fn is_not_last(&self) -> bool { self.phn_c == 0 || self.phn_r1 != 0 }
 	fn fetch(&mut self) {
 		// the pause uses the silent row
-		let row: u8 = if self.phn_c == PAU { 0 } else { self.phn_c };
+		let row = table_row(self.phn_c);
 		// the phrase-end release after a nasal is that nasal dying away
 		let row = if matches!(row, 48 | 49) && self.pft_l1 & 0x10 != 0 { self.phn_l1 } else { row };
 		let offset_src: usize = row as usize * 31;
@@ -916,7 +920,7 @@ impl engine {
 	}
 	fn reduce(&mut self) {
 		// move vowel targets toward the neutral vowel (AX) as the vowel gets shorter
-		if self.pft_c & 0x1 == 0 || self.phn_c == 6 || self.phn_c == 20 { return; }
+		if !reduces(self.phn_c) { return; }
 		[self.F1_A_src, self.F2_A_src, self.F3_A_src] = self.reduced([self.F1_A_src, self.F2_A_src, self.F3_A_src], self.pdr_c);
 		[self.F1_B_src, self.F2_B_src, self.F3_B_src] = self.reduced([self.F1_B_src, self.F2_B_src, self.F3_B_src], self.pdr_c);
 	}
@@ -933,10 +937,12 @@ impl engine {
 		(-40.0 * libm::log10f(f1 * f2 / RELEASE_REF)).max(0.0)
 	}
 	fn next_vowel_formants(&self) -> [f32; 3] {
-		// the next vowel's F1-F3 at its start, reduced for its length as reduce() will do
-		let row = self.phn_r1 as usize * 31;
+		// the next phone's F1-F3 at its start, reduced for its length as reduce() does a vowel's. An l, r, w or y is
+		// reduced too, unlike in reduce(): the release level before them was set by ear that way (a release before
+		// them 2-4 dB softer was tried and not kept, ab/160)
+		let row = table_row(self.phn_r1) as usize * 31;
 		let target = [self.tbl[row + 5] as f32, self.tbl[row + 6] as f32, self.tbl[row + 7] as f32];
-		if self.phn_r1 == 6 || self.phn_r1 == 20 { return target; }
+		if matches!(self.phn_r1, 6 | 20 | PAU) { return target; }
 		self.reduced(target, self.pdr_r1)
 	}
 	fn loci(&mut self, prev_f2: f32) {
@@ -2154,6 +2160,13 @@ mod tests {
 		let low = band_db(&m, 250.0);
 		let f2 = band_db(&m, 1100.0);
 		assert!(f2 - low > -35.0, "murmur F2 region {} dB under its low peak", low - f2);
+	}
+
+	#[test]
+	fn a_consonant_before_a_pause_sees_the_silent_row() {
+		// not row PAU, which is past the end of the table
+		let e = loaded(&[(PAU, 100, true), (34, 80, false), (PAU, 100, true)], 34);
+		assert_eq!(e.next_vowel_formants(), [formant_tbl[5] as f32, formant_tbl[6] as f32, formant_tbl[7] as f32]);
 	}
 
 	#[test]
