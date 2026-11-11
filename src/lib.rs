@@ -675,6 +675,8 @@ mod tests {
 	fn sentence_ends_after_abbreviations_and_letters() {
 		says_all(&[("Meet at 11:00 p.m. In 1999 we left.", "eleven p m . in nineteen"), ("Boston, MA. Plan B. Vitamin C. The letter Q. NASA",
 			"boston massachusetts . plan b . vitamin c . the letter q . nasa"), ("A. The.", "A . the ."),
+			// a spelled capital run is no initial
+			("They live in the UK. World news.", "the u k . world news"), ("I saw a TV. Then", "a t v . then"),
 			// a title or an initial keeps the name
 			("Dr. Smith came.", "doctor smith came"), ("Meet John F. Kennedy now.", "john f kennedy"), ("J. R. R. Tolkien", "j r r tolkien")]);
 	}

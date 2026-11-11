@@ -922,6 +922,8 @@ impl engine {
 		if a.get(k).is_some_and(u8::is_ascii_uppercase) && a.get(k + 1) == Some(&b'.') { return true; }
 		let b = Self::behind(buf, 40);
 		let at = |i: usize| if i < b.len() { b[i] } else { 0 };
+		// the last letter of a capital run is no initial ("the UK. Then", "a TV. Then")
+		if b.len() >= 3 && at(b.len() - 3).is_ascii_alphabetic() { return false; }
 		let mut i = b.len().saturating_sub(2);
 		while i > 0 && is_space(at(i - 1)) { i -= 1; }
 		if i >= 2 && at(i - 1) == b'.' && at(i - 2).is_ascii_uppercase() && (i < 3 || !at(i - 3).is_ascii_alphabetic()) { return true; }
