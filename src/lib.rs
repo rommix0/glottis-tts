@@ -24,7 +24,7 @@ use alloc::{format, string::String, vec, vec::Vec};
 use core::{fmt::Write, future::Future};
 use _utils::cbuf;
 use _dread::dictreader;
-use _utt::{Utterance, Boundary};
+use _utt::{Utterance, Boundary, Seg};
 use _phone::*;
 
 // master samples rate
@@ -211,11 +211,7 @@ impl Speaker {
 		_dur::assign(&mut utt, self.rate);
 
 		if self.trace {
-			for w in &utt.words {
-				out.trace(&format!(
-					"WORD {} fn={} phrase={} syls={}", w.text, w.function as u8, w.phrase, w.syls.len()
-				));
-			}
+			Self::trace_words(&utt, out);
 		}
 
 		if !self.started {
@@ -224,7 +220,38 @@ impl Speaker {
 			self.play(out, PAU, _dur::START_PAUSE_MS, false, seg, true).await?;
 		}
 
-		// stream indices: the segments of each phrase, then its release and pause
+		let (stream, ends) = self.stream_indices(&utt);
+		self.contour.add_utterance(&utt, &stream);
+
+		let mut ends = ends.into_iter();
+		for ph in &utt.phrases {
+			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
+			for i in segs.clone() {
+				let s = &utt.segs[i];
+				if self.trace {
+					self.trace_seg(s, stream[i], out);
+				}
+				self.play(out, s.phone, s.dur_ms, s.stress != 0, stream[i], utt.words[s.word].segs.start == i).await?;
+			}
+			if ph.end != Boundary::Unmarked {
+				// phrase-end release, then the pause
+				let (r, p) = ends.next().unwrap();
+				self.play_phrase_end(utt.segs[segs.end - 1].phone, ph.end, (r, p), out).await?;
+			}
+		}
+		Ok(())
+	}
+
+	fn trace_words<O: SpeechSink>(utt: &Utterance, out: &mut O) {
+		for w in &utt.words {
+			out.trace(&format!(
+				"WORD {} fn={} phrase={} syls={}", w.text, w.function as u8, w.phrase, w.syls.len()
+			));
+		}
+	}
+
+	// stream indices: the segments of each phrase, then its release and pause
+	fn stream_indices(&mut self, utt: &Utterance) -> (Vec<usize>, Vec<(usize, usize)>) {
 		let mut stream: Vec<usize> = vec![0; utt.segs.len()];
 		let mut ends: Vec<(usize, usize)> = Vec::new();		// (release, pause) per phrase
 		for ph in &utt.phrases {
@@ -236,47 +263,41 @@ impl Speaker {
 				ends.push((r, p));
 			}
 		}
-		self.contour.add_utterance(&utt, &stream);
+		(stream, ends)
+	}
 
-		let mut ends = ends.into_iter();
-		for ph in &utt.phrases {
-			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
-			for i in segs.clone() {
-				let s = &utt.segs[i];
-				if self.trace {
-					let mut line = format!(
-						"TRACE {} {} seg={} dur={:.0} rules={}",
-						s.phone, s.stress, stream[i], s.dur_ms, s.rules.first().copied().unwrap_or("")
-					);
-					for r in s.rules.iter().skip(1) { line.push(','); line.push_str(r); }
-					line.push_str(" targets=");
-					for (k, t) in self.contour.targets_of(stream[i]).enumerate() {
-						let _ = write!(
-							line,
-							"{}{:?}@{:.2}:{:+.1}/{:+.1}",
-							if k == 0 { "" } else { " " }, t.kind, t.frac, t.st, t.base
-						);
-					}
-					out.trace(&line);
-				}
-				self.play(out, s.phone, s.dur_ms, s.stress != 0, stream[i], utt.words[s.word].segs.start == i).await?;
-			}
-			if ph.end != Boundary::Unmarked {
-				// phrase-end release, then the pause
-				let (r, p) = ends.next().unwrap();
-				let release = match utt.segs[segs.end - 1].phone {
-					D | T => IXP,
-					_     => AXP,
-				};
-				let pause = _dur::pause_after(ph.end, self.rate);
-				if self.trace {
-					out.trace(&format!("TRACE {} 0 seg={} dur={:.0} rules=release", release, r, _dur::RELEASE_MS));
-					out.trace(&format!("TRACE {} 0 seg={} dur={:.0} rules=pause", PAU, p, pause));
-				}
-				self.play(out, release, _dur::RELEASE_MS, false, r, true).await?;
-				self.play(out, PAU, pause, false, p, true).await?;
-			}
+	// one segment's plan: phone, stress, duration, rules and pitch targets
+	fn trace_seg<O: SpeechSink>(&self, s: &Seg, seg: usize, out: &mut O) {
+		let mut line = format!(
+			"TRACE {} {} seg={} dur={:.0} rules={}",
+			s.phone, s.stress, seg, s.dur_ms, s.rules.first().copied().unwrap_or("")
+		);
+		for r in s.rules.iter().skip(1) { line.push(','); line.push_str(r); }
+		line.push_str(" targets=");
+		for (k, t) in self.contour.targets_of(seg).enumerate() {
+			let _ = write!(
+				line,
+				"{}{:?}@{:.2}:{:+.1}/{:+.1}",
+				if k == 0 { "" } else { " " }, t.kind, t.frac, t.st, t.base
+			);
 		}
+		out.trace(&line);
+	}
+
+	async fn play_phrase_end<O: SpeechSink>(
+		&mut self, last_phone: u8, end: Boundary, (r, p): (usize, usize), out: &mut O
+	) -> Result<(), O::Error> {
+		let release = match last_phone {
+			D | T => IXP,
+			_     => AXP,
+		};
+		let pause = _dur::pause_after(end, self.rate);
+		if self.trace {
+			out.trace(&format!("TRACE {} 0 seg={} dur={:.0} rules=release", release, r, _dur::RELEASE_MS));
+			out.trace(&format!("TRACE {} 0 seg={} dur={:.0} rules=pause", PAU, p, pause));
+		}
+		self.play(out, release, _dur::RELEASE_MS, false, r, true).await?;
+		self.play(out, PAU, pause, false, p, true).await?;
 		Ok(())
 	}
 
@@ -303,69 +324,7 @@ impl Speaker {
 			while text_engine.is_not_empty() {
 				let cc = text_engine.read();		// normalized text character
 				if wbuf.is_not_empty() && cc == 0x20 {
-					dict_reader.reset();
-					let mut raw = Vec::new();
-					while wbuf.is_not_empty() {
-						let cin = wbuf.read();		// read in character for dictionary searcher
-						wbuf.advance();
-						if cin != 0x20 { raw.push(cin); }
-					}
-					let mut word_text = String::new();
-					for c in drawn_out(&raw) {
-						dict_reader.readIn(c);
-						word_text.push(c as char);
-					}
-
-					if dict_reader.search() {
-						if dict_reader.isFunctionWord() {
-							// function word boundary
-							tokens.push(TOKEN_FW);
-						} else {
-							// content word boundary
-							tokens.push(TOKEN_CW);
-						}
-						texts.push(word_text);
-
-						// the word's phones, up to the 0xFF end mark
-						loop {
-							let pout = dict_reader.readOut();		// phoneme out
-							if pout == 0xFF { break; }
-							tokens.push(pout);
-						}
-					} else if let Some(classes) = morph_word(&word_text, &mut dict_reader) {
-						// a known stem with suffixes
-						tokens.push(TOKEN_CW);
-						texts.push(word_text);
-						tokens.extend(classes);
-					} else {
-						// not in the dictionary: letter to sound
-						let mut wb_written: bool = false;
-						let mut run: Vec<u8> = Vec::new();
-						for b in word_text.bytes().chain([0u8]) {
-							let code = _lts::letter_code(b);
-							if code != 0 { run.push(code); continue; }
-
-							// a run of letters ends: say it, then the punctuation that ended it
-							if !run.is_empty() {
-								let classes = _lts::word(&run);
-								if !classes.is_empty() && !wb_written {
-									// content word boundary once, before the word's first phoneme
-									tokens.push(TOKEN_CW);
-									texts.push(word_text.clone());
-									wb_written = true;
-								}
-								tokens.extend(classes);
-								run.clear();
-							}
-							match b {
-								b'!' => tokens.push(TOKEN_BANG),
-								b',' => tokens.push(TOKEN_COMMA),
-								b'.' => tokens.push(TOKEN_PERIOD),
-								b'?' => tokens.push(TOKEN_QMARK),
-								_ => {}
-							}
-						}
-					}
+					Self::word_tokens(&mut wbuf, &mut dict_reader, &mut tokens, &mut texts);
 
 					// synthesize when the sentence is complete
 					if matches!(tokens.last(), Some(&(TOKEN_PERIOD | TOKEN_QMARK | TOKEN_BANG))) {
@@ -384,6 +343,77 @@ impl Speaker {
 			self.sentence(&tokens, &texts, out).await?;
 		}
 		Ok(())
+	}
+
+	// take the word out of wbuf and add its phone tokens and text to the sentence
+	fn word_tokens(wbuf: &mut cbuf, dict_reader: &mut dictreader, tokens: &mut Vec<u8>, texts: &mut Vec<String>) {
+		dict_reader.reset();
+		let mut raw = Vec::new();
+		while wbuf.is_not_empty() {
+			let cin = wbuf.read();		// read in character for dictionary searcher
+			wbuf.advance();
+			if cin != 0x20 { raw.push(cin); }
+		}
+		let mut word_text = String::new();
+		for c in drawn_out(&raw) {
+			dict_reader.readIn(c);
+			word_text.push(c as char);
+		}
+
+		if dict_reader.search() {
+			if dict_reader.isFunctionWord() {
+				// function word boundary
+				tokens.push(TOKEN_FW);
+			} else {
+				// content word boundary
+				tokens.push(TOKEN_CW);
+			}
+			texts.push(word_text);
+
+			// the word's phones, up to the 0xFF end mark
+			loop {
+				let pout = dict_reader.readOut();		// phoneme out
+				if pout == 0xFF { break; }
+				tokens.push(pout);
+			}
+		} else if let Some(classes) = morph_word(&word_text, dict_reader) {
+			// a known stem with suffixes
+			tokens.push(TOKEN_CW);
+			texts.push(word_text);
+			tokens.extend(classes);
+		} else {
+			// not in the dictionary: letter to sound
+			Self::lts_tokens(&word_text, tokens, texts);
+		}
+	}
+
+	fn lts_tokens(word_text: &str, tokens: &mut Vec<u8>, texts: &mut Vec<String>) {
+		let mut wb_written: bool = false;
+		let mut run: Vec<u8> = Vec::new();
+		for b in word_text.bytes().chain([0u8]) {
+			let code = _lts::letter_code(b);
+			if code != 0 { run.push(code); continue; }
+
+			// a run of letters ends: say it, then the punctuation that ended it
+			if !run.is_empty() {
+				let classes = _lts::word(&run);
+				if !classes.is_empty() && !wb_written {
+					// content word boundary once, before the word's first phoneme
+					tokens.push(TOKEN_CW);
+					texts.push(String::from(word_text));
+					wb_written = true;
+				}
+				tokens.extend(classes);
+				run.clear();
+			}
+			match b {
+				b'!' => tokens.push(TOKEN_BANG),
+				b',' => tokens.push(TOKEN_COMMA),
+				b'.' => tokens.push(TOKEN_PERIOD),
+				b'?' => tokens.push(TOKEN_QMARK),
+				_ => {}
+			}
+		}
 	}
 
 	// speak text into writer, to the end

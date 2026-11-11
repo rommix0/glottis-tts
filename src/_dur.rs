@@ -106,64 +106,70 @@ fn tempo(rate: f32) -> f32 { if rate.is_nan() { TEMPO } else { rate.clamp(0.5, 2
 
 pub fn assign(utt: &mut Utterance, rate: f32) {
 	for i in 0..utt.segs.len() {
-		let p = utt.segs[i].phone;
-		let vowel = is_vowel(p);
-		let w = utt.segs[i].word;
-		let syl = utt.segs[i].syl;
-		let word = &utt.words[w];
-		let same_word = |j: usize| j < utt.segs.len() && utt.segs[j].word == w;
-		let mut factor: f32 = 1.0;
-		let mut rules: Vec<&'static str> = Vec::new();
-		let mut apply = |name: &'static str, x: f32| { factor *= x; rules.push(name); };
-
-		// phrase-final lengthening: the nucleus and coda of the last syllable of a phrase
-		if utt.is_last_syl_of_phrase(syl) {
-			let nucleus = utt.syls[syl].nucleus;
-			let is_nucleus = nucleus == Some(i);
-			let is_coda = !vowel && nucleus.is_some_and(|n| i > n);
-			if is_nucleus || is_coda {
-				apply("phrase-final", if is_nucleus { PHRASE_FINAL_VOWEL } else { PHRASE_FINAL_CODA });
-				if !matches!(utt.phrases[word.phrase].end, Boundary::Comma | Boundary::Minor) {
-					apply("sentence-final", SENTENCE_FINAL);
-				}
-			}
-		}
-
-		if vowel {
-			match utt.segs[i].stress {
-				0 => apply("unstressed", UNSTRESSED_VOWEL),
-				2 => apply("secondary", SECONDARY_VOWEL),
-				_ => {},
-			}
-			if matches!(p, AA | AE | AO | AW | AY | ER | EY | IY | OW | OY | UW) { apply("tense", TENSE_VOWEL); }
-			let n = word.syls.len();
-			if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
-			if same_word(i + 1) && utt.segs[i + 1].phone == LX && matches!(p, AX | IX) {
-				apply("syllabic-l", SYLLABIC_L_SCHWA);
-			}
-			if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
-				if is_voiced(utt.segs[i + 1].phone) {
-					apply("before-voiced", BEFORE_VOICED_OBS);
-				} else {
-					apply("before-voiceless", BEFORE_VOICELESS_OBS);
-				}
-			}
-		} else {
-			let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
-			if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
-			if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
-			if matches!(p, S | Z | F | V) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, TH | DH) {
-				apply("before-dental", BEFORE_DENTAL);
-			}
-			if utt.segs[i].glide { apply("glide-through", GLIDE_THROUGH); }
-		}
-
-		if word.function { apply("function-word", FUNCTION_WORD); }
-
-		let pd = phone_dur(p);
+		let (factor, rules) = rule_factor(utt, i);
+		let pd = phone_dur(utt.segs[i].phone);
 		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / tempo(rate);
 		utt.segs[i].rules = rules;
 	}
+}
+
+// the product of the rule factors for segment i, and the names of the rules that fired
+fn rule_factor(utt: &Utterance, i: usize) -> (f32, Vec<&'static str>) {
+	let p = utt.segs[i].phone;
+	let vowel = is_vowel(p);
+	let w = utt.segs[i].word;
+	let syl = utt.segs[i].syl;
+	let word = &utt.words[w];
+	let same_word = |j: usize| j < utt.segs.len() && utt.segs[j].word == w;
+	let mut factor: f32 = 1.0;
+	let mut rules: Vec<&'static str> = Vec::new();
+	let mut apply = |name: &'static str, x: f32| { factor *= x; rules.push(name); };
+
+	// phrase-final lengthening: the nucleus and coda of the last syllable of a phrase
+	if utt.is_last_syl_of_phrase(syl) {
+		let nucleus = utt.syls[syl].nucleus;
+		let is_nucleus = nucleus == Some(i);
+		let is_coda = !vowel && nucleus.is_some_and(|n| i > n);
+		if is_nucleus || is_coda {
+			apply("phrase-final", if is_nucleus { PHRASE_FINAL_VOWEL } else { PHRASE_FINAL_CODA });
+			if !matches!(utt.phrases[word.phrase].end, Boundary::Comma | Boundary::Minor) {
+				apply("sentence-final", SENTENCE_FINAL);
+			}
+		}
+	}
+
+	if vowel {
+		match utt.segs[i].stress {
+			0 => apply("unstressed", UNSTRESSED_VOWEL),
+			2 => apply("secondary", SECONDARY_VOWEL),
+			_ => {},
+		}
+		if matches!(p, AA | AE | AO | AW | AY | ER | EY | IY | OW | OY | UW) { apply("tense", TENSE_VOWEL); }
+		let n = word.syls.len();
+		if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
+		if same_word(i + 1) && utt.segs[i + 1].phone == LX && matches!(p, AX | IX) {
+			apply("syllabic-l", SYLLABIC_L_SCHWA);
+		}
+		if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
+			if is_voiced(utt.segs[i + 1].phone) {
+				apply("before-voiced", BEFORE_VOICED_OBS);
+			} else {
+				apply("before-voiceless", BEFORE_VOICELESS_OBS);
+			}
+		}
+	} else {
+		let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
+		if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
+		if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
+		if matches!(p, S | Z | F | V) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, TH | DH) {
+			apply("before-dental", BEFORE_DENTAL);
+		}
+		if utt.segs[i].glide { apply("glide-through", GLIDE_THROUGH); }
+	}
+
+	if word.function { apply("function-word", FUNCTION_WORD); }
+
+	(factor, rules)
 }
 
 #[cfg(test)]

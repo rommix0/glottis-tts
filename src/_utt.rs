@@ -130,53 +130,10 @@ impl Utterance {
 				},
 				COMMA | PERIOD | QMARK | BANG => {
 					u.close_word();
-					let end = match pa {
-						COMMA  => Boundary::Comma,
-						PERIOD => Boundary::Period,
-						QMARK  => Boundary::Question,
-						_  => Boundary::Exclaim
-					};
-					if u.words.len() > phrase_start {
-						u.phrases.push(Phrase { words: phrase_start..u.words.len(), end });
-						phrase_start = u.words.len();
-					} else if let Some(last) = u.phrases.last_mut() {
-						// punctuation with no words since the last phrase end replaces that end
-						last.end = end;
-					}
+					u.end_phrase(pa, &mut phrase_start);
 				},
 				SIL => {},
-				_ => {
-					if u.words.last().is_none_or(|w| w.phrase != u.phrases.len()) {
-						// phones before any word boundary, or after punctuation: start a content word
-						let n = u.segs.len();
-						let ns = u.syls.len();
-						u.words.push(Word {
-							segs: n..n, syls: ns..ns, function: false, text: String::new(), phrase: u.phrases.len(),
-						});
-					}
-					let w = u.words.len() - 1;
-					for (p, s) in [(pa, sa), (pb, sb)] {
-						if p == SIL { continue; }
-						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower",
-						// "being"), and into an unstressed vowel starting the next word of its phrase ("go away"); a
-						// stressed one starts with a glottal catch instead
-						let first = u.words[w].segs.is_empty();
-						let prev = u.segs.last()
-							.filter(|x| x.word == w
-								|| (first && s == 0 && x.word + 1 == w && u.words[x.word].phrase == u.words[w].phrase))
-							.map(|x| x.phone);
-						if is_vowel(p) && let Some(g) = prev.and_then(offglide) {
-							u.segs.push(Seg {
-								phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: true,
-							});
-						}
-						u.segs.push(Seg {
-							phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0,
-							rules: Vec::new(), glide: false,
-						});
-						u.words[w].segs.end = u.segs.len();
-					}
-				},
+				_ => u.add_phones([(pa, sa), (pb, sb)]),
 			}
 		}
 		u.close_word();
@@ -190,18 +147,70 @@ impl Utterance {
 		u.break_long_phrases();
 		u.flap();
 		u.dark_l();
-		u.kind = match u.phrases.last().map(|p| p.end) {
+		u.kind = u.sentence_kind();
+		u
+	}
+	// a punctuation token: end the phrase begun at phrase_start
+	fn end_phrase(&mut self, pa: u8, phrase_start: &mut usize) {
+		let end = match pa {
+			COMMA  => Boundary::Comma,
+			PERIOD => Boundary::Period,
+			QMARK  => Boundary::Question,
+			_  => Boundary::Exclaim
+		};
+		if self.words.len() > *phrase_start {
+			self.phrases.push(Phrase { words: *phrase_start..self.words.len(), end });
+			*phrase_start = self.words.len();
+		} else if let Some(last) = self.phrases.last_mut() {
+			// punctuation with no words since the last phrase end replaces that end
+			last.end = end;
+		}
+	}
+	// the (phone, stress) pairs of a phone token, added to the last word
+	fn add_phones(&mut self, phones: [(u8, u8); 2]) {
+		if self.words.last().is_none_or(|w| w.phrase != self.phrases.len()) {
+			// phones before any word boundary, or after punctuation: start a content word
+			let n = self.segs.len();
+			let ns = self.syls.len();
+			self.words.push(Word {
+				segs: n..n, syls: ns..ns, function: false, text: String::new(), phrase: self.phrases.len(),
+			});
+		}
+		let w = self.words.len() - 1;
+		for (p, s) in phones {
+			if p == SIL { continue; }
+			// a vowel ending on a w or y glides through it into the next vowel of its word ("follower",
+			// "being"), and into an unstressed vowel starting the next word of its phrase ("go away"); a
+			// stressed one starts with a glottal catch instead
+			let first = self.words[w].segs.is_empty();
+			let prev = self.segs.last()
+				.filter(|x| x.word == w
+					|| (first && s == 0 && x.word + 1 == w && self.words[x.word].phrase == self.words[w].phrase))
+				.map(|x| x.phone);
+			if is_vowel(p) && let Some(g) = prev.and_then(offglide) {
+				self.segs.push(Seg {
+					phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: true,
+				});
+			}
+			self.segs.push(Seg {
+				phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0,
+				rules: Vec::new(), glide: false,
+			});
+			self.words[w].segs.end = self.segs.len();
+		}
+	}
+	fn sentence_kind(&self) -> Kind {
+		match self.phrases.last().map(|p| p.end) {
 			Some(Boundary::Exclaim) => Kind::Exclamation,
 			Some(Boundary::Question) => {
-				let first = u.words.iter()
+				let first = self.words.iter()
 					.find(|w| !w.text.is_empty())
 					.map(|w| w.text.to_lowercase())
 					.unwrap_or_default();
 				if WH_WORDS.contains(&first.as_str()) { Kind::Wh } else { Kind::YesNo }
 			},
 			_ => Kind::Statement,
-		};
-		u
+		}
 	}
 	fn break_long_phrases(&mut self) {
 		let old = core::mem::take(&mut self.phrases);

@@ -158,10 +158,22 @@ impl Contour {
 	pub fn add_utterance(&mut self, utt: &Utterance, stream: &[usize]) {
 		// stream[i] is the stream index of utt.segs[i]
 		if utt.segs.is_empty() { return; }
+		self.drop_old(stream[0]);
+		let mut lay = Layout::new(utt, stream, self.clock);
+		lay.place_phrases();
+		let kept = merge_close(core::mem::take(&mut lay.placed));
+		// time order is stream order, and a later utterance has later stream indices, so targets and starts stay sorted
+		self.targets.extend(kept.into_iter().map(|(_, _, tg)| tg));
+		self.starts.extend(utt.segs.iter().enumerate().map(|(i, s)| (stream[i], lay.clock + lay.t0[i], s.dur_ms)));
+		self.clock += lay.t0[utt.segs.len()];
+		lay.add_offsets();
+		self.bumps.extend(lay.bumps);
+	}
 
-		// the synthesizer is at most a phone or two behind, so nothing before the previous utterance is asked for
-		// again: drop it; past CLOCK_LIMIT_MS move the clock back to where that utterance starts, so an f32 still
-		// counts it finely
+	// the synthesizer is at most a phone or two behind, so nothing before the previous utterance is asked for
+	// again: drop it; past CLOCK_LIMIT_MS move the clock back to where that utterance starts, so an f32 still
+	// counts it finely
+	fn drop_old(&mut self, first_seg: usize) {
 		let keep = self.prev_seg;
 		let back = if self.clock > CLOCK_LIMIT_MS { self.prev_ms } else { 0.0 };
 		self.targets.drain(..self.targets.partition_point(|t| t.seg < keep));
@@ -171,183 +183,7 @@ impl Contour {
 		for s in &mut self.starts { s.1 -= back; }
 		self.clock -= back;
 		(self.target_hint, self.bump_hint, self.start_hint) = (0, 0, 0);
-		(self.prev_seg, self.prev_ms) = (stream[0], self.clock);
-
-		// start time of each segment (ms) within the utterance
-		let mut t0: Vec<f32> = Vec::with_capacity(utt.segs.len() + 1);
-		let mut acc = 0.0;
-		for s in &utt.segs { t0.push(acc); acc += s.dur_ms; }
-		t0.push(acc);
-		let time = |i: usize, frac: f32| t0[i] + frac * utt.segs[i].dur_ms;
-
-		// the accented syllable nucleus of each content word
-		let accent_of = |w: usize| -> Option<usize> {
-			let word = &utt.words[w];
-			if word.function { return None; }
-			let syls = &utt.syls[word.syls.clone()];
-			syls.iter().find(|s| s.stress == 1).or_else(|| syls.iter().find(|s| s.stress == 2)).and_then(|s| s.nucleus)
-		};
-
-		let clock = self.clock;
-		let mut placed: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
-		let mut push = |i: usize, frac: f32, st: f32, base: f32, kind: TargetKind| {
-			placed.push((
-				utt.phrase_of_seg(i),
-				time(i, frac),
-				Target { seg: stream[i], frac, st, base, kind, time: clock + time(i, frac) },
-			));
-		};
-
-		let last_phrase = utt.phrases.len() - 1;
-		let mut first_height = ACCENT_ST;
-		let last_accent_seg = (0..utt.words.len()).rev().find_map(accent_of);
-		for (k, ph) in utt.phrases.iter().enumerate() {
-			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
-			let voiced = |i: &usize| is_voiced(utt.segs[*i].phone);
-			let (Some(first_v), Some(last_v)) = (segs.clone().find(voiced), segs.clone().rfind(voiced)) else {
-				continue;
-			};
-
-			let b0 = (-PHRASE_RESET_ST * k as f32).max(-PHRASE_RESET_MAX_ST);
-			let (ts, te) = (t0[segs.start], t0[segs.end]);
-			let base = |t: f32| b0 - BASELINE_FALL_ST * if te > ts { (t - ts) / (te - ts) } else { 0.0 };
-
-			push(first_v, 0.0, base(time(first_v, 0.0)), base(time(first_v, 0.0)), TargetKind::Start);
-
-			// accents, stepping down within the phrase
-			if k > 0 { first_height = (first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
-			let mut h = first_height;
-			let mut n_acc = 0;
-			let mut prev_peak: Option<(usize, f32, f32)> = None;
-			let last_content = ph.words.clone().rev().find(|&w| accent_of(w).is_some());
-			let mut accented: Option<usize> = None;
-			for w in ph.words.clone() {
-				let Some(n) = accent_of(w) else { continue; };
-				if accented.is_some_and(|a| a + 1 == w) && Some(w) != last_content { continue; }
-				accented = Some(w);
-				if n_acc > 0 { h = (h * DOWNSTEP).max(ACCENT_FLOOR_ST); }
-				n_acc += 1;
-				let is_last = Some(n) == last_accent_seg && k == last_phrase;
-				let (frac, kind) = match (is_last, utt.kind) {
-					(true, Kind::YesNo) => (LOW_ACCENT_FRAC, TargetKind::Low),
-					(true, _) => (NUCLEAR_FRAC, TargetKind::Accent),
-					_ => (ACCENT_FRAC, TargetKind::Accent),
-				};
-				let tp = time(n, frac);
-				let height = match kind {
-					TargetKind::Low => LOW_ACCENT_ST,
-					_ if utt.kind != Kind::Exclamation => h,
-					_ if is_last => (h + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE,
-					_ => h * EXCLAIM_RANGE,
-				};
-				if let Some((prev_i, prev_t, prev_h)) = prev_peak {
-					if tp - prev_t > TROUGH_GAP_MS {
-						// trough on the baseline halfway between the peaks
-						let tm = (prev_t + tp) / 2.0;
-						let i = (prev_i..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
-						let fr = if utt.segs[i].dur_ms > 0.0 {
-							((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0)
-						} else {
-							0.0
-						};
-						let apart = ((tp - prev_t - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
-						let sag = (1.0 - apart) * prev_h.min(height).max(0.0);
-						push(i, fr, base(tm) + sag, base(tm), TargetKind::Trough);
-					}
-				}
-				push(n, frac, base(tp) + height, base(tp), kind);
-				prev_peak = Some((n, tp, height));
-			}
-
-			// phrase end
-			let be = base(time(last_v, 1.0));
-			let end_st = match (ph.end, utt.kind) {
-				(Boundary::Comma, _)   => CONTINUATION_RISE_ST,
-				(Boundary::Minor, _)   => MINOR_RISE_ST,
-				(_, Kind::YesNo)       => QUESTION_RISE_ST,
-				(_, Kind::Exclamation) => FINAL_FALL_ST * EXCLAIM_RANGE,
-				_                      => FINAL_FALL_ST,
-			};
-			push(last_v, 1.0, be + end_st, be, TargetKind::End);
-		}
-
-		// targets closer than MERGE_MS within a phrase: keep the later one
-		// (phrases are apart by their pause, which utterance time leaves out)
-		placed.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
-		let mut kept: Vec<(usize, f32, Target)> = Vec::new();
-		for (ph, t, tg) in placed {
-			if let Some(&(pph, pt, _)) = kept.last() {
-				if pph == ph && t - pt < MERGE_MS { kept.pop(); }
-			}
-			kept.push((ph, t, tg));
-		}
-		// time order is stream order, and a later utterance has later stream indices, so targets and starts stay sorted
-		self.targets.extend(kept.into_iter().map(|(_, _, tg)| tg));
-		self.starts.extend(utt.segs.iter().enumerate().map(|(i, s)| (stream[i], clock + t0[i], s.dur_ms)));
-		self.clock += acc;
-
-		// short offsets: microprosody and glottal dips
-		let n = utt.segs.len();
-		let phone = |i: usize| utt.segs[i].phone;
-		let word_start = |i: usize| utt.words[utt.segs[i].word].segs.start == i;
-		let word_end = |i: usize| utt.words[utt.segs[i].word].segs.end == i + 1;
-		let same_phrase = |i: usize, j: usize| utt.phrase_of_seg(i) == utt.phrase_of_seg(j);
-		let mut bumps: Vec<Bump> = Vec::new();
-		let mut draw = |segs: core::ops::Range<usize>, start: f32, shape: Shape| {
-			for j in segs { bumps.push(Bump { seg: stream[j], age0: t0[j] - start, dur: utt.segs[j].dur_ms, shape }); }
-		};
-		for i in 0..n {
-			let after_pause = i == 0 || !same_phrase(i - 1, i);
-			let (p, prev) = (phone(i), if after_pause { PAU } else { phone(i - 1) });
-
-			// a sonorant or vowel after an obstruent (not a flap), until the next obstruent or the phrase end: after a
-			// voiceless one raised and decaying; a voiced one lowers F0 through itself, back up in the next sound
-			if !after_pause && is_sonorant(p) && is_obstruent(prev) && prev != DX {
-				let voiced = is_voiced(prev);
-				let span = if voiced { VOICED_DIP_UP_MS } else { BUMP_SPAN_MS };
-				let end = (i..n)
-					.find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= span)
-					.unwrap_or(n);
-				if voiced {
-					draw(i - 1..end, t0[i - 1],
-						Shape::Vee { st: VOICED_DIP_ST, down: t0[i] - t0[i - 1], up: VOICED_DIP_UP_MS });
-				} else {
-					draw(i..end, t0[i], Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS });
-				}
-			}
-
-			// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays
-			// low through it
-			if p == T && !after_pause && is_sonorant(prev) && word_end(i) && i + 1 < n && same_phrase(i, i + 1)
-				&& !is_vowel(phone(i + 1)) {
-				let start = t0[i] - T_DIP_MS;
-				let first = (0..i).rev().take_while(|&j| t0[j + 1] > start && same_phrase(j, i)).last().unwrap_or(i);
-				draw(first..i + 1, start, Shape::Fall { st: T_DIP_ST, ms: T_DIP_MS });
-			}
-
-			// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
-			let s = &utt.segs[i];
-			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function
-				&& (after_pause || is_sonorant(prev)) {
-				let (span, shape) = if !after_pause {
-					(
-						ONSET_LEAD_MS + ONSET_DIP_MS,
-						Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS },
-					)
-				} else {
-					(ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: 0.0, up: ONSET_DIP_MS })
-				};
-				let end = (i..n).find(|&j| t0[j] - t0[i] >= span || !same_phrase(i, j)).unwrap_or(n);
-				draw(i..end, t0[i], shape);
-			}
-
-			// ih iy uh uw: intrinsically a little higher
-			if matches!(p, IH | IY | UH | UW) {
-				draw(i..i + 1, t0[i], Shape::Hump { st: HIGH_VOWEL_ST, ms: s.dur_ms });
-			}
-		}
-		bumps.sort_by_key(|b| b.seg);
-		self.bumps.extend(bumps);
+		(self.prev_seg, self.prev_ms) = (first_seg, self.clock);
 	}
 
 	// the short offsets at a position, in semitones
@@ -380,6 +216,253 @@ impl Contour {
 			},
 		};
 		(REF_HZ * libm::exp2f((st + self.bump_at(seg, frac)) / 12.0)).clamp(MIN_HZ, MAX_HZ)
+	}
+}
+
+// targets closer than MERGE_MS within a phrase: keep the later one
+// (phrases are apart by their pause, which utterance time leaves out)
+fn merge_close(mut placed: Vec<(usize, f32, Target)>) -> Vec<(usize, f32, Target)> {
+	placed.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
+	let mut kept: Vec<(usize, f32, Target)> = Vec::new();
+	for (ph, t, tg) in placed {
+		if let Some(&(pph, pt, _)) = kept.last() {
+			if pph == ph && t - pt < MERGE_MS { kept.pop(); }
+		}
+		kept.push((ph, t, tg));
+	}
+	kept
+}
+
+// an utterance being added to the contour: its segment times, and the targets and offsets placed on them
+struct Layout<'a> {
+	utt:    &'a Utterance,
+	stream: &'a [usize],				// stream[i] is the stream index of utt.segs[i]
+	t0:     Vec<f32>,					// start time of each segment (ms) within the utterance, then its end
+	clock:  f32,						// the contour's clock where the utterance starts
+	placed: Vec<(usize, f32, Target)>,	// (phrase, time, target)
+	bumps:  Vec<Bump>,
+}
+
+impl<'a> Layout<'a> {
+	fn new(utt: &'a Utterance, stream: &'a [usize], clock: f32) -> Layout<'a> {
+		// start time of each segment (ms) within the utterance
+		let mut t0: Vec<f32> = Vec::with_capacity(utt.segs.len() + 1);
+		let mut acc = 0.0;
+		for s in &utt.segs {
+			t0.push(acc);
+			acc += s.dur_ms;
+		}
+		t0.push(acc);
+		Layout { utt, stream, t0, clock, placed: Vec::new(), bumps: Vec::new() }
+	}
+
+	fn time(&self, i: usize, frac: f32) -> f32 { self.t0[i] + frac * self.utt.segs[i].dur_ms }
+
+	// the accented syllable nucleus of each content word
+	fn accent_of(&self, w: usize) -> Option<usize> {
+		let word = &self.utt.words[w];
+		if word.function { return None; }
+		let syls = &self.utt.syls[word.syls.clone()];
+		syls.iter().find(|s| s.stress == 1).or_else(|| syls.iter().find(|s| s.stress == 2)).and_then(|s| s.nucleus)
+	}
+
+	fn push(&mut self, i: usize, frac: f32, st: f32, base: f32, kind: TargetKind) {
+		self.placed.push((
+			self.utt.phrase_of_seg(i),
+			self.time(i, frac),
+			Target { seg: self.stream[i], frac, st, base, kind, time: self.clock + self.time(i, frac) },
+		));
+	}
+
+	fn phrase_segs(&self, k: usize) -> core::ops::Range<usize> {
+		let ph = &self.utt.phrases[k];
+		self.utt.words[ph.words.start].segs.start..self.utt.words[ph.words.end - 1].segs.end
+	}
+
+	// phrase k's baseline at utterance time t
+	fn base(&self, k: usize, t: f32) -> f32 {
+		let segs = self.phrase_segs(k);
+		let b0 = (-PHRASE_RESET_ST * k as f32).max(-PHRASE_RESET_MAX_ST);
+		let (ts, te) = (self.t0[segs.start], self.t0[segs.end]);
+		b0 - BASELINE_FALL_ST * if te > ts { (t - ts) / (te - ts) } else { 0.0 }
+	}
+
+	fn place_phrases(&mut self) {
+		let mut first_height = ACCENT_ST;
+		let last_accent_seg = (0..self.utt.words.len()).rev().find_map(|w| self.accent_of(w));
+		for k in 0..self.utt.phrases.len() {
+			self.place_phrase(k, &mut first_height, last_accent_seg);
+		}
+	}
+
+	// phrase k's start, accents and end
+	fn place_phrase(&mut self, k: usize, first_height: &mut f32, last_accent_seg: Option<usize>) {
+		let utt = self.utt;
+		let ph = &utt.phrases[k];
+		let segs = self.phrase_segs(k);
+		let voiced = |i: &usize| is_voiced(utt.segs[*i].phone);
+		let (Some(first_v), Some(last_v)) = (segs.clone().find(voiced), segs.clone().rfind(voiced)) else {
+			return;
+		};
+
+		let b = self.base(k, self.time(first_v, 0.0));
+		self.push(first_v, 0.0, b, b, TargetKind::Start);
+
+		// accents, stepping down within the phrase
+		if k > 0 { *first_height = (*first_height * PHRASE_ACCENT_RATIO).max(ACCENT_FLOOR_ST); }
+		self.place_accents(k, *first_height, last_accent_seg);
+
+		// phrase end
+		let be = self.base(k, self.time(last_v, 1.0));
+		let end_st = match (ph.end, utt.kind) {
+			(Boundary::Comma, _)   => CONTINUATION_RISE_ST,
+			(Boundary::Minor, _)   => MINOR_RISE_ST,
+			(_, Kind::YesNo)       => QUESTION_RISE_ST,
+			(_, Kind::Exclamation) => FINAL_FALL_ST * EXCLAIM_RANGE,
+			_                      => FINAL_FALL_ST,
+		};
+		self.push(last_v, 1.0, be + end_st, be, TargetKind::End);
+	}
+
+	fn place_accents(&mut self, k: usize, first_height: f32, last_accent_seg: Option<usize>) {
+		let utt = self.utt;
+		let ph = &utt.phrases[k];
+		let last_phrase = utt.phrases.len() - 1;
+		let mut h = first_height;
+		let mut n_acc = 0;
+		let mut prev_peak: Option<(usize, f32, f32)> = None;
+		let last_content = ph.words.clone().rev().find(|&w| self.accent_of(w).is_some());
+		let mut accented: Option<usize> = None;
+		for w in ph.words.clone() {
+			let Some(n) = self.accent_of(w) else { continue; };
+			if accented.is_some_and(|a| a + 1 == w) && Some(w) != last_content { continue; }
+			accented = Some(w);
+			if n_acc > 0 { h = (h * DOWNSTEP).max(ACCENT_FLOOR_ST); }
+			n_acc += 1;
+			let is_last = Some(n) == last_accent_seg && k == last_phrase;
+			let (frac, kind) = match (is_last, utt.kind) {
+				(true, Kind::YesNo) => (LOW_ACCENT_FRAC, TargetKind::Low),
+				(true, _) => (NUCLEAR_FRAC, TargetKind::Accent),
+				_ => (ACCENT_FRAC, TargetKind::Accent),
+			};
+			let tp = self.time(n, frac);
+			let height = match kind {
+				TargetKind::Low => LOW_ACCENT_ST,
+				_ if utt.kind != Kind::Exclamation => h,
+				_ if is_last => (h + EXCLAIM_BOOST_ST) * EXCLAIM_RANGE,
+				_ => h * EXCLAIM_RANGE,
+			};
+			if let Some(prev) = prev_peak {
+				if tp - prev.1 > TROUGH_GAP_MS { self.place_trough(k, prev, (n, tp, height)); }
+			}
+			self.push(n, frac, self.base(k, tp) + height, self.base(k, tp), kind);
+			prev_peak = Some((n, tp, height));
+		}
+	}
+
+	// trough on the baseline halfway between the peaks, each (segment, time, height)
+	fn place_trough(&mut self, k: usize, prev: (usize, f32, f32), next: (usize, f32, f32)) {
+		let ((prev_i, prev_t, prev_h), (n, tp, height)) = (prev, next);
+		let tm = (prev_t + tp) / 2.0;
+		let i = (prev_i..=n).find(|&i| self.t0[i + 1] >= tm).unwrap_or(n);
+		let fr = if self.utt.segs[i].dur_ms > 0.0 {
+			((tm - self.t0[i]) / self.utt.segs[i].dur_ms).clamp(0.0, 1.0)
+		} else {
+			0.0
+		};
+		let apart = ((tp - prev_t - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
+		let sag = (1.0 - apart) * prev_h.min(height).max(0.0);
+		self.push(i, fr, self.base(k, tm) + sag, self.base(k, tm), TargetKind::Trough);
+	}
+
+	fn phone(&self, i: usize) -> u8 { self.utt.segs[i].phone }
+	fn word_start(&self, i: usize) -> bool { self.utt.words[self.utt.segs[i].word].segs.start == i }
+	fn word_end(&self, i: usize) -> bool { self.utt.words[self.utt.segs[i].word].segs.end == i + 1 }
+	fn same_phrase(&self, i: usize, j: usize) -> bool { self.utt.phrase_of_seg(i) == self.utt.phrase_of_seg(j) }
+	fn after_pause(&self, i: usize) -> bool { i == 0 || !self.same_phrase(i - 1, i) }
+	// the phone before segment i, PAU at a phrase start
+	fn prev_phone(&self, i: usize) -> u8 { if self.after_pause(i) { PAU } else { self.phone(i - 1) } }
+
+	fn draw(&mut self, segs: core::ops::Range<usize>, start: f32, shape: Shape) {
+		for j in segs {
+			let bump = Bump { seg: self.stream[j], age0: self.t0[j] - start, dur: self.utt.segs[j].dur_ms, shape };
+			self.bumps.push(bump);
+		}
+	}
+
+	// short offsets: microprosody and glottal dips
+	fn add_offsets(&mut self) {
+		let utt = self.utt;
+		for i in 0..utt.segs.len() {
+			self.add_microprosody(i);
+			self.add_t_dip(i);
+			self.add_glottal_onset(i);
+			// ih iy uh uw: intrinsically a little higher
+			let s = &utt.segs[i];
+			if matches!(s.phone, IH | IY | UH | UW) {
+				self.draw(i..i + 1, self.t0[i], Shape::Hump { st: HIGH_VOWEL_ST, ms: s.dur_ms });
+			}
+		}
+		self.bumps.sort_by_key(|b| b.seg);
+	}
+
+	// a sonorant or vowel after an obstruent (not a flap), until the next obstruent or the phrase end: after a
+	// voiceless one raised and decaying; a voiced one lowers F0 through itself, back up in the next sound
+	fn add_microprosody(&mut self, i: usize) {
+		let n = self.utt.segs.len();
+		let (p, prev) = (self.phone(i), self.prev_phone(i));
+		if !self.after_pause(i) && is_sonorant(p) && is_obstruent(prev) && prev != DX {
+			let voiced = is_voiced(prev);
+			let span = if voiced { VOICED_DIP_UP_MS } else { BUMP_SPAN_MS };
+			let t0 = &self.t0;
+			let end = (i..n)
+				.find(|&j| is_obstruent(self.phone(j)) || !self.same_phrase(i, j) || t0[j] - t0[i] >= span)
+				.unwrap_or(n);
+			if voiced {
+				self.draw(i - 1..end, self.t0[i - 1],
+					Shape::Vee { st: VOICED_DIP_ST, down: self.t0[i] - self.t0[i - 1], up: VOICED_DIP_UP_MS });
+			} else {
+				self.draw(i..end, self.t0[i], Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS });
+			}
+		}
+	}
+
+	// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays
+	// low through it
+	fn add_t_dip(&mut self, i: usize) {
+		let n = self.utt.segs.len();
+		let (p, prev) = (self.phone(i), self.prev_phone(i));
+		if p == T && !self.after_pause(i) && is_sonorant(prev) && self.word_end(i) && i + 1 < n
+			&& self.same_phrase(i, i + 1) && !is_vowel(self.phone(i + 1)) {
+			let start = self.t0[i] - T_DIP_MS;
+			let first = (0..i).rev()
+				.take_while(|&j| self.t0[j + 1] > start && self.same_phrase(j, i))
+				.last()
+				.unwrap_or(i);
+			self.draw(first..i + 1, start, Shape::Fall { st: T_DIP_ST, ms: T_DIP_MS });
+		}
+	}
+
+	// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
+	fn add_glottal_onset(&mut self, i: usize) {
+		let utt = self.utt;
+		let n = utt.segs.len();
+		let after_pause = self.after_pause(i);
+		let (p, prev) = (self.phone(i), self.prev_phone(i));
+		let s = &utt.segs[i];
+		if is_vowel(p) && s.stress > 0 && self.word_start(i) && !utt.words[s.word].function
+			&& (after_pause || is_sonorant(prev)) {
+			let (span, shape) = if !after_pause {
+				(
+					ONSET_LEAD_MS + ONSET_DIP_MS,
+					Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS },
+				)
+			} else {
+				(ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: 0.0, up: ONSET_DIP_MS })
+			};
+			let end = (i..n).find(|&j| self.t0[j] - self.t0[i] >= span || !self.same_phrase(i, j)).unwrap_or(n);
+			self.draw(i..end, self.t0[i], shape);
+		}
 	}
 }
 

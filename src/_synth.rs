@@ -301,6 +301,11 @@ fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
 fn fricative(p: u8) -> bool { matches!(p, F | TH | V | DH | S | Z | SH | ZH) }
 fn sibilant(f: u16) -> bool { f & (SIBILANT | AFFRICATE) == SIBILANT }
+fn obstruent(f: u16) -> bool { f != 0 && f & VOWEL == 0 && f & (NASAL | APPROXIMANT) == 0 }
+fn nasal(f: u16) -> bool { f & NASAL != 0 }
+fn sonorant(f: u16) -> bool { f & VOWEL != 0 || f & (NASAL | APPROXIMANT) != 0 }
+fn quiet(p: u8) -> bool { p == PAU || p == SIL || p == AXP || p == IXP }
+fn hiss(p: u8) -> bool { fricative(p) || p == HH }
 // aw, ay, ow, oy (feats' DIPHTHONG marks only ay and oy)
 fn diphthong(p: u8) -> bool { matches!(p, AW | AY | OW | OY) }
 // the formant table row a phone plays: the pause plays the silent row
@@ -709,6 +714,11 @@ impl engine {
 		let row = table_row(self.phn_c);
 		// the phrase-end release after a nasal is that nasal dying away
 		let row = if matches!(row, AXP | IXP) && self.pft_l1 & NASAL != 0 { self.phn_l1 } else { row };
+		self.read_table_row(row);
+		self.copy_a_to_empty_b();
+		self.hold_formants_in_pause();
+	}
+	fn read_table_row(&mut self, row: u8) {
 		let offset_src: usize = row as usize * 31;
 		//---------------source---------------------
 		self.C_A_src   = self.tbl[offset_src+0] as u8;						// also target during transition time
@@ -741,14 +751,17 @@ impl engine {
 		self.B1_B_src  = self.tbl[offset_src+28] as f32;
 		self.B2_B_src  = self.tbl[offset_src+29] as f32;
 		self.B3_B_src  = self.tbl[offset_src+30] as f32;
-
+	}
+	fn copy_a_to_empty_b(&mut self) {
+		// a B target left at 0 in the table is the A target
 		if self.F1_B_src == 0.0 { self.F1_B_src = self.F1_A_src; }
 		if self.F2_B_src == 0.0 { self.F2_B_src = self.F2_A_src; }
 		if self.F3_B_src == 0.0 { self.F3_B_src = self.F3_A_src; }
 		if self.B1_B_src == 0.0 { self.B1_B_src = self.B1_A_src; }
 		if self.B2_B_src == 0.0 { self.B2_B_src = self.B2_A_src; }
 		if self.B3_B_src == 0.0 { self.B3_B_src = self.B3_A_src; }
-
+	}
+	fn hold_formants_in_pause(&mut self) {
 		if self.phn_c == PAU && !self.is_first {
 			// hold the formants where they are during a pause
 			// (a first pause has nothing to hold and keeps the silent row's values)
@@ -770,131 +783,141 @@ impl engine {
 		if self.pft_c & VOWEL != 0 {
 			// STRESS COLORING FOR VOWEL
 			let factor: f32 = if self.pst_c { 0.75 } else { 1.25 };
-
-			// VOWEL BEFORE R
-			// sits higher, and for the back vowels further back ("air", "four", "tour")
-			if self.pft_r1 & RHOTIC != 0 {
-				if let Some(&(_, f1a, f2a, f1b, f2b)) = BEFORE_R.iter().find(|v| v.0 == self.phn_c) {
-					(self.F1_A_src, self.F2_A_src, self.F1_B_src, self.F2_B_src) = (f1a, f2a, f1b, f2b);
-				}
-			}
-
-			// VELAR PINCHING RULE (more on a front vowel's F2)
-			if self.pft_l1 & VELAR != 0 && self.phn_l1 != W {
-				self.F2_A_src += if self.pft_c & FRONT != 0 { 130.0 } else { 80.0 } * factor;
-				self.F3_A_src -= 100.0 * factor;
-			}
-			if self.pft_r1 & VELAR != 0 && self.phn_r1 != W {
-				// a back vowel's F2 stays put before a velar
-				if self.F2_B_src > 1500.0 { self.F2_B_src += 80.0 * factor; }
-				self.F3_B_src -= 100.0 * factor;
-			}
-
-			// BILABIAL ROUNDING RULE
-			if self.pft_l1 & BILABIAL != 0 {
-				self.F2_A_src -= 50.0 * factor;
-			}
-			if self.pft_r1 & BILABIAL != 0 {
-				self.F2_B_src -= 50.0 * factor;
-			}
-
-			// SONORANT ADJUSTMENT
-			// after r and w; an l and a y keep their F3 high
-			if matches!(self.phn_l1, R | RX | W) {
-				self.F3_A_src -= 150.0 * factor;
-			}
-			if self.phn_r1 == W {
-				// before w; an l and a y keep their F3 high, an r has its own rule
-				self.F3_B_src -= 150.0 * factor;
-			}
-
-			// NASALIZATION
-			if self.pft_r1 & NASAL != 0 {
-				self.F2_A_src += 110.0 * factor;
-				self.F2_B_src += 110.0 * factor;
-			}
-
-			// WIDEN BANDWIDTH AFTER A NASAL
-			if self.pft_l1 & NASAL != 0 {
-				self.B1_A_src += 70.0 * factor;
-				self.B1_B_src += 70.0 * factor;
-			}
-
-			// LATERAL ADJUSTMENT
-			if self.pft_r1 & LATERAL != 0 {
-				if self.pft_c & FRONT != 0 {
-					self.F2_A_src -= 150.0 * factor;
-					self.F2_B_src -= 150.0 * factor;
-				} else if self.pft_c & DIPHTHONG != 0 {
-					// diphthong next to lateral
-					self.F2_B_src -= 250.0 * factor;
-				}
-			}
-
-			// VOWEL RHOTICIZATION
-			if self.pft_r1 & RHOTIC != 0 {
-				// the vowel takes on r-coloring as it moves into the r, not from its start, by the same amount
-				// stressed or not; its F2 does not rise away from the r ("tour")
-				self.F3_B_src -= RHOTIC_F3;
-				self.F2_B_src = self.F2_B_src.min(self.F2_A_src);
-			}
-
-			// GLIDE TOWARD THE NEXT CONSONANT
-			// a vowel's own F2 glide does not head away from where the next consonant takes F2 ("cat", "pick");
-			// the diphthongs aw, ay, ow and oy keep theirs
-			if !diphthong(self.phn_c) && self.pft_r1 & VOWEL == 0
-				&& !matches!(self.phn_r1, SIL | HH | AXP | IXP | PAU) {
-				let next_f2 = match locus(self.phn_r1) {
-					Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
-					None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
-				};
-				if (self.F2_B_src - self.F2_A_src) * (next_f2 - self.F2_B_src) < 0.0 {
-					self.F2_B_src = self.F2_A_src;
-				}
-			}
-
-			// BACK VOWEL ALVEOLARIZATION
-			// not before an r, where the vowel has its own place
-			if self.pft_c == VOWEL | VOICED | BACK && self.pft_r1 & RHOTIC == 0 {
-				if self.pft_l1 & ALVEOLAR != 0 {
-					self.F2_A_src += 250.0 * factor;
-				}
-				// not into a dark l, which pulls F2 down: the vowel went up and back down ("full")
-				if self.pft_r1 & ALVEOLAR != 0 && self.phn_r1 != LX {
-					self.F2_B_src += 250.0 * factor;
-				}
-			}
-
+			self.apply_vowel_place_rules(factor);
+			self.apply_vowel_sonorant_rules(factor);
+			self.apply_vowel_glide_rules(factor);
 		} else {
-			// F2 and the velars' F3 are left to loci(), which places them from the neighbouring vowels
-			// BEFORE A FRONT VOWEL: w moves up toward it; a sibilant's F3 (which A3 follows) rises
-			if self.pft_r1 & (VOWEL | FRONT) == VOWEL | FRONT {
-				if self.phn_c == W {
-					self.F2_A_src += 150.0;
-					self.F2_B_src += 150.0;
-				}
-				if self.phn_c == W || self.pft_c & SIBILANT != 0 {
-					self.F3_A_src += 175.0;
-					self.F3_B_src += 175.0;
-				}
-			}
-			// NASALS (m, n, ng)
-			if self.pft_c & NASAL != 0 {
-				// after a front vowel, a lower F3 (ng's F3 is its pinch)
-				if self.phn_c != NG && self.pft_l1 & (VOWEL | FRONT) == VOWEL | FRONT {
-					self.F3_A_src -= 100.0;
-					self.F3_B_src -= 100.0;
-				}
-				// a wider B1
-				self.B1_A_src += 107.0;
-				self.B1_B_src += 107.0;
-				// quieter after an unstressed vowel, unless the nasal starts the word
-				if self.pft_l1 & VOWEL != 0 && !self.pst_l1 && !self.pwi_c {
-					self.AV_src -= NASAL_AFTER_UNSTRESSED_DB;
-				}
+			self.apply_consonant_rules();
+		}
+		self.apply_frication_rules();
+	}
+	fn apply_vowel_place_rules(&mut self, factor: f32) {
+		// VOWEL BEFORE R
+		// sits higher, and for the back vowels further back ("air", "four", "tour")
+		if self.pft_r1 & RHOTIC != 0 {
+			if let Some(&(_, f1a, f2a, f1b, f2b)) = BEFORE_R.iter().find(|v| v.0 == self.phn_c) {
+				(self.F1_A_src, self.F2_A_src, self.F1_B_src, self.F2_B_src) = (f1a, f2a, f1b, f2b);
 			}
 		}
 
+		// VELAR PINCHING RULE (more on a front vowel's F2)
+		if self.pft_l1 & VELAR != 0 && self.phn_l1 != W {
+			self.F2_A_src += if self.pft_c & FRONT != 0 { 130.0 } else { 80.0 } * factor;
+			self.F3_A_src -= 100.0 * factor;
+		}
+		if self.pft_r1 & VELAR != 0 && self.phn_r1 != W {
+			// a back vowel's F2 stays put before a velar
+			if self.F2_B_src > 1500.0 { self.F2_B_src += 80.0 * factor; }
+			self.F3_B_src -= 100.0 * factor;
+		}
+
+		// BILABIAL ROUNDING RULE
+		if self.pft_l1 & BILABIAL != 0 {
+			self.F2_A_src -= 50.0 * factor;
+		}
+		if self.pft_r1 & BILABIAL != 0 {
+			self.F2_B_src -= 50.0 * factor;
+		}
+	}
+	fn apply_vowel_sonorant_rules(&mut self, factor: f32) {
+		// SONORANT ADJUSTMENT
+		// after r and w; an l and a y keep their F3 high
+		if matches!(self.phn_l1, R | RX | W) {
+			self.F3_A_src -= 150.0 * factor;
+		}
+		if self.phn_r1 == W {
+			// before w; an l and a y keep their F3 high, an r has its own rule
+			self.F3_B_src -= 150.0 * factor;
+		}
+
+		// NASALIZATION
+		if self.pft_r1 & NASAL != 0 {
+			self.F2_A_src += 110.0 * factor;
+			self.F2_B_src += 110.0 * factor;
+		}
+
+		// WIDEN BANDWIDTH AFTER A NASAL
+		if self.pft_l1 & NASAL != 0 {
+			self.B1_A_src += 70.0 * factor;
+			self.B1_B_src += 70.0 * factor;
+		}
+
+		// LATERAL ADJUSTMENT
+		if self.pft_r1 & LATERAL != 0 {
+			if self.pft_c & FRONT != 0 {
+				self.F2_A_src -= 150.0 * factor;
+				self.F2_B_src -= 150.0 * factor;
+			} else if self.pft_c & DIPHTHONG != 0 {
+				// diphthong next to lateral
+				self.F2_B_src -= 250.0 * factor;
+			}
+		}
+	}
+	fn apply_vowel_glide_rules(&mut self, factor: f32) {
+		// VOWEL RHOTICIZATION
+		if self.pft_r1 & RHOTIC != 0 {
+			// the vowel takes on r-coloring as it moves into the r, not from its start, by the same amount
+			// stressed or not; its F2 does not rise away from the r ("tour")
+			self.F3_B_src -= RHOTIC_F3;
+			self.F2_B_src = self.F2_B_src.min(self.F2_A_src);
+		}
+
+		// GLIDE TOWARD THE NEXT CONSONANT
+		// a vowel's own F2 glide does not head away from where the next consonant takes F2 ("cat", "pick");
+		// the diphthongs aw, ay, ow and oy keep theirs
+		if !diphthong(self.phn_c) && self.pft_r1 & VOWEL == 0
+			&& !matches!(self.phn_r1, SIL | HH | AXP | IXP | PAU) {
+			let next_f2 = match locus(self.phn_r1) {
+				Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
+				None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
+			};
+			if (self.F2_B_src - self.F2_A_src) * (next_f2 - self.F2_B_src) < 0.0 {
+				self.F2_B_src = self.F2_A_src;
+			}
+		}
+
+		// BACK VOWEL ALVEOLARIZATION
+		// not before an r, where the vowel has its own place
+		if self.pft_c == VOWEL | VOICED | BACK && self.pft_r1 & RHOTIC == 0 {
+			if self.pft_l1 & ALVEOLAR != 0 {
+				self.F2_A_src += 250.0 * factor;
+			}
+			// not into a dark l, which pulls F2 down: the vowel went up and back down ("full")
+			if self.pft_r1 & ALVEOLAR != 0 && self.phn_r1 != LX {
+				self.F2_B_src += 250.0 * factor;
+			}
+		}
+	}
+	fn apply_consonant_rules(&mut self) {
+		// F2 and the velars' F3 are left to loci(), which places them from the neighbouring vowels
+		// BEFORE A FRONT VOWEL: w moves up toward it; a sibilant's F3 (which A3 follows) rises
+		if self.pft_r1 & (VOWEL | FRONT) == VOWEL | FRONT {
+			if self.phn_c == W {
+				self.F2_A_src += 150.0;
+				self.F2_B_src += 150.0;
+			}
+			if self.phn_c == W || self.pft_c & SIBILANT != 0 {
+				self.F3_A_src += 175.0;
+				self.F3_B_src += 175.0;
+			}
+		}
+		// NASALS (m, n, ng)
+		if self.pft_c & NASAL != 0 {
+			// after a front vowel, a lower F3 (ng's F3 is its pinch)
+			if self.phn_c != NG && self.pft_l1 & (VOWEL | FRONT) == VOWEL | FRONT {
+				self.F3_A_src -= 100.0;
+				self.F3_B_src -= 100.0;
+			}
+			// a wider B1
+			self.B1_A_src += 107.0;
+			self.B1_B_src += 107.0;
+			// quieter after an unstressed vowel, unless the nasal starts the word
+			if self.pft_l1 & VOWEL != 0 && !self.pst_l1 && !self.pwi_c {
+				self.AV_src -= NASAL_AFTER_UNSTRESSED_DB;
+			}
+		}
+	}
+	fn apply_frication_rules(&mut self) {
 		// a sibilant next to another fricative keeps its level, so the other doesn't drown it ("thieves fished")
 		let sib_cluster = sibilant(self.pft_c) && (fricative(self.phn_l1) || fricative(self.phn_r1));
 		// frication level: not for vowels, stops or affricates (which keep the table's)
@@ -1090,7 +1113,20 @@ impl engine {
 		} else {
 			0.0
 		};
-
+		self.update_nasal_coupling(y);
+		self.update_parallel_amps(y);
+		self.update_main_amps(y);
+		if self.stop_on && now >= 0 {
+			self.shape_stop_amps();
+		}
+		if self.asp_db > 0.0 && now >= 0 {
+			// aspiration fades out under the first voicing pulses
+			let k = 1.0 - now as f32 / self.asp_fade.max(1) as f32;
+			if k > 0.0 { self.AH_reg = self.AH_reg.max(fade(db_gain(self.asp_db), self.master_fade * k)); }
+		}
+	}
+	fn update_nasal_coupling(&mut self, y: f32) {
+		let now = self.counter;
 		// the nasal coupling switches with the amplitudes
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
 		// the velum lowers during a vowel before a nasal and is still rising after one, so the vowel is partly nasal;
@@ -1105,7 +1141,8 @@ impl engine {
 				.max(near(self.pft_l1 & NASAL != 0, now, NASAL_CARRY_MS));
 			self.NZP_reg = self.NZP_reg.max(k);
 		}
-
+	}
+	fn update_parallel_amps(&mut self, y: f32) {
 		// update the interpolator for the parallel amps
 		self.A2_reg  = lerp_gain(self.A2_reg_src, self.A2_reg_trg, y);
 		self.A3_reg  = lerp_gain(self.A3_reg_src, self.A3_reg_trg, y);
@@ -1116,7 +1153,9 @@ impl engine {
 		self.A8_reg  = lerp_gain(self.A8_reg_src, self.A8_reg_trg, y);
 		self.A9_reg  = lerp_gain(self.A9_reg_src, self.A9_reg_trg, y);
 		self.A10_reg = lerp_gain(self.A10_reg_src, self.A10_reg_trg, y);
-
+	}
+	fn update_main_amps(&mut self, y: f32) {
+		let now = self.counter;
 		// update the interpolator for main amps
 		self.AB_reg = lerp_gain(self.AB_reg_src, self.AB_reg_trg, y);
 		let (mut g_af, mut g_ah, mut g_av) = (1.0, 1.0, 1.0);
@@ -1144,40 +1183,35 @@ impl engine {
 			y
 		};
 		self.AV_reg = fade(lerp_gain(self.AV_reg_src, self.AV_reg_trg, yv), self.master_fade * g_av);
-
-		if self.stop_on && now >= 0 {
-			// the voice bar fades over the closure and holds through the burst
-			let bar = if self.stop_bar {
-				let t = (now.min(self.marker_A) as f32 / self.marker_A.max(1) as f32).min(1.0);
-				fade(self.AV_reg, libm::exp2f(-VOICE_BAR_FADE_DB / DB_PER_HALF * t))
-			} else { 0.0 };
-			if now < self.marker_A || self.burst_len == 0 {
-				// closure (all of an unreleased stop): the previous phone's sound dies away over 5 ms
-				let g = self.master_fade * (1.0 - now as f32 / five_ms as f32).max(0.0);
-				self.AF_reg = fade(self.AF_reg_src, g);
-				self.AH_reg = fade(self.AH_reg_src, g);
-				self.AV_reg = if self.stop_bar { bar } else { fade(self.AV_reg_src, g) };
+	}
+	fn shape_stop_amps(&mut self) {
+		let now = self.counter;
+		// the voice bar fades over the closure and holds through the burst
+		let bar = if self.stop_bar {
+			let t = (now.min(self.marker_A) as f32 / self.marker_A.max(1) as f32).min(1.0);
+			fade(self.AV_reg, libm::exp2f(-VOICE_BAR_FADE_DB / DB_PER_HALF * t))
+		} else { 0.0 };
+		if now < self.marker_A || self.burst_len == 0 {
+			// closure (all of an unreleased stop): the previous phone's sound dies away over 5 ms
+			let g = self.master_fade * (1.0 - now as f32 / five_ms as f32).max(0.0);
+			self.AF_reg = fade(self.AF_reg_src, g);
+			self.AH_reg = fade(self.AH_reg_src, g);
+			self.AV_reg = if self.stop_bar { bar } else { fade(self.AV_reg_src, g) };
+		} else {
+			// burst: a sharp onset, then an exponential decay over its length
+			let t = (now - self.marker_A) as f32 / self.burst_len.max(1) as f32;
+			let g = self.burst_gain * libm::exp2f(-self.burst_decay / DB_PER_HALF * t);
+			if self.stop_labial {
+				// a lip release: weak noise through the vocal tract, low and falling
+				self.AF_reg = 0.0;
+				self.AH_reg = fade(db_gain(LABIAL_BURST_AH[(self.pft_c & VOICED != 0) as usize]),
+					self.master_fade * g);
 			} else {
-				// burst: a sharp onset, then an exponential decay over its length
-				let t = (now - self.marker_A) as f32 / self.burst_len.max(1) as f32;
-				let g = self.burst_gain * libm::exp2f(-self.burst_decay / DB_PER_HALF * t);
-				if self.stop_labial {
-					// a lip release: weak noise through the vocal tract, low and falling
-					self.AF_reg = 0.0;
-					self.AH_reg = fade(db_gain(LABIAL_BURST_AH[(self.pft_c & VOICED != 0) as usize]),
-						self.master_fade * g);
-				} else {
-					self.AF_reg = fade(self.AF_reg, g);
-					self.AH_reg = 0.0;
-				}
-				// a voiced affricate's frication is voiced; a stop's burst keeps the voice bar
-				if !self.stop_affric { self.AV_reg = bar; }
+				self.AF_reg = fade(self.AF_reg, g);
+				self.AH_reg = 0.0;
 			}
-		}
-		if self.asp_db > 0.0 && now >= 0 {
-			// aspiration fades out under the first voicing pulses
-			let k = 1.0 - now as f32 / self.asp_fade.max(1) as f32;
-			if k > 0.0 { self.AH_reg = self.AH_reg.max(fade(db_gain(self.asp_db), self.master_fade * k)); }
+			// a voiced affricate's frication is voiced; a stop's burst keeps the voice bar
+			if !self.stop_affric { self.AV_reg = bar; }
 		}
 	}
 	fn update_A_to_B(&mut self) {
@@ -1224,7 +1258,10 @@ impl engine {
 
 		// negative: the move into this phone plays out in the previous phone's tail
 		self.counter = -(self.marker_BA);
-
+		self.set_sources_from_registers();
+		self.set_targets_to_a();
+	}
+	fn set_sources_from_registers(&mut self) {
 		// source (A)
 		self.RD_reg_src  = self.RD_reg;
 		self.NZP_reg_src = self.NZP_reg;
@@ -1247,6 +1284,8 @@ impl engine {
 		self.AF_reg_src  = self.AF_reg;
 		self.AH_reg_src  = self.AH_reg;
 		self.AV_reg_src  = self.AV_reg;
+	}
+	fn set_targets_to_a(&mut self) {
 		// target (B)
 		self.RD_reg_trg  = self.RD_A_src;
 		self.NZP_reg_trg = self.NZP_A_src;
@@ -1274,271 +1313,304 @@ impl engine {
 		// seg: the segment's stream index, reported back by position()
 		self.advance(phone, dur_ms, stressed, seg, word_start);
 		if self.is_ready() {
-			// aspiration left by a voiceless stop plays in this phone's carried-over region
-			self.asp_db = self.asp_db_next;
-			self.asp_seg = self.asp_seg_next;
-			self.asp_db_next = 0.0;
-			self.after_stop = self.after_stop_next;
-			self.after_stop_next = false;
-			self.stop_on = false;
-			self.stop_labial = false;
-			self.f1_len = 0;
-			let mut stop_asp = 0;
-
-			// the previous phone's formant targets at its end, before fetch replaces them
-			let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
-			let prev_rd = self.RD_B_src;
-			let (prev_b, prev_av) = ([self.B1_B_src, self.B2_B_src, self.B3_B_src], self.AV_src);
-
-			self.fetch();
-
-			// do formant target re-adjustments before doing anything else
-			self.ftar();
-
-			// short vowels fall short of their targets
-			self.reduce();
-
-			// consonants take their formants at each edge from the neighbouring vowel
-			self.loci(prev_f[1]);
-
-			// the phrase-end release is the last phone's voice dying away, so it keeps that voice's Rd
-			if matches!(self.phn_c, AXP | IXP) {
-				(self.RD_A_src, self.RD_B_src) = (prev_rd, prev_rd);
-				// at the end of a phrase an r or a nasal keeps its tongue in place while the voice dies away
-				if matches!(self.phn_l1, R | RX | ER | AXR) || self.pft_l1 & NASAL != 0 {
-					[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
-					[self.F1_B_src, self.F2_B_src, self.F3_B_src] = prev_f;
-				}
-				// and a nasal its velum, damping and level
-				if self.pft_l1 & NASAL != 0 {
-					[self.B1_A_src, self.B2_A_src, self.B3_A_src] = prev_b;
-					[self.B1_B_src, self.B2_B_src, self.B3_B_src] = prev_b;
-					self.AV_src = prev_av;
-				}
-			}
-
-			// get duration markers so slopes can be calculated
-			if self.phn_c == PAU {
-				// pause plays out its whole duration
-				self.marker_A = self.pdr_c.min(twenty_ms);
-				self.marker_B = self.pdr_c;
-			} else if self.pft_c & (STOP | AFFRICATE) == 0 {
-				// not plosive nor affricate
-				if self.pft_c & NASAL != 0 {
-					// nasal: the formants arrive by the closure, the murmur holds
-					self.marker_A = 0;
-				} else if self.pft_c & (VOWEL | APPROXIMANT) == 0 {
-					// fricative transition
-					if self.pft_r1 & (NASAL | APPROXIMANT) != 0 {
-						// shorter before a sonorant consonant
-						self.marker_A = twenty_ms;
-					} else if self.pft_c & SIBILANT != 0 {
-						// length sibilant a bit
-						self.marker_A = sixty_ms;
-					} else {
-						self.marker_A = forty_ms;
-					}
-				} else if self.pft_c & VOWEL != 0 {
-					// vowel transition: quicker after a nasal's release,
-					// slower out of a tongue consonant into a back vowel
-					let tongue = matches!(self.phn_l1, D | T | N | S | Z | DX | SH | ZH | CH | JH | G | K | NG);
-					let back = self.pft_l1 & NASAL == 0 && tongue && self.F2_A_src < 1400.0;
-					self.marker_A = if self.pft_l1 & NASAL != 0 { samples(NASAL_RELEASE_MS) }
-						else if back { samples(BACK_TRANSITION_MS) }
-						else { fifty_ms };
-					if back { self.f1_len = samples(BACK_F1_MS); }
-				} else {
-					// l, r, w and y: get transition from formant table
-					self.marker_A = share_of(self.pdr_c, self.C_A_src);
-				}
-				self.marker_B = share_of(self.pdr_c, 100 - self.C_B_src);
-				if self.pft_c & VOWEL != 0 {
-					// short vowels get a shorter transition so they still reach their target
-					self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
-				}
-			} else {
-				// plosive or affricate: closure, then burst or frication;
-				// a voiceless stop's aspiration is carried into the next phone
-				let stop = stop_timeline(
-					self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c, self.pwi_r1
-				);
-				self.marker_A = stop.closure;
-				self.marker_B = stop.closure + stop.burst;
-				self.burst_len = stop.burst;
-				self.stop_on = true;
-				self.stop_bar = self.pft_c & VOICED != 0 && self.pft_l1 & VOICED != 0;
-				self.stop_affric = self.pft_c & AFFRICATE != 0;
-				self.stop_labial = !self.stop_affric && stop_place(self.phn_c) == 0;
-				self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
-				let unstressed = self.pft_r1 & VOWEL != 0 && !self.pst_r1;
-				let sibilant = (self.pft_l1 | self.pft_r1) & SIBILANT != 0;
-				// a voiced stop or a t before a liquid or glide keeps its release ("gloves", "bridge", "tree")
-				let follow = if (self.pft_c & VOICED != 0 || self.phn_c == T) && self.pft_r1 & VOWEL == 0 {
-					0.0
-				} else {
-					-RELEASE_FOLLOW * self.quiet_next_db()
-				};
-				let gain_db = if self.stop_affric { 0.0 } else {
-					BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 }
-						+ if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
-				};
-				self.burst_gain = libm::exp2f(gain_db / DB_PER_HALF);
-				self.after_stop_next = stop.burst > 0;
-				stop_asp = stop.asp;
-			}
-			if self.is_first {
-				self.marker_BA = share_of(self.pdr_c, self.C_B_src);
-				self.is_first = false;
-				self.load_registers();
-			} else {
-				self.update_B_to_Next();
-				self.marker_BA = share_of(self.pdr_c, self.C_B_src);
-			}
-			if self.pft_c & VOWEL != 0 && self.marker_BA > samples(VOWEL_EXIT_MS) {
-				// a long vowel keeps its own formants longer, the move into the next phone takes the same time
-				self.marker_B += self.marker_BA - samples(VOWEL_EXIT_MS);
-				self.marker_BA = samples(VOWEL_EXIT_MS);
-			}
-			if self.phn_c == PAU {
-				// no transition carried into the next phone, so the pause keeps its length
-				self.marker_BA = 0;
-			}
+			self.reset_phone_state();
+			self.set_formant_targets();
+			let stop_asp = self.set_duration_markers();
+			self.set_exit_markers();
 			if self.stop_on {
-				self.marker_BA = stop_asp;
-				if stop_asp > 0 {
-					let mut level = ASP_DB;
-					// softer before a front, close vowel, or one quiet above F2
-					let front = if self.pft_r1 & VOWEL != 0 {
-						let [f1, f2, _] = self.next_vowel_formants();
-						asp_front_cut(f1, f2)
-					} else { 0.0 };
-					level -= front.max(if self.phn_c == T && self.pft_r1 & VOWEL == 0 {
-						0.0
-					} else {
-						ASP_FOLLOW * self.quiet_next_db()
-					});
-					if schwa_t(self.phn_c, self.pwi_c, self.phn_r1, self.pst_r1) { level -= SCHWA_T_ASP_DB; }
-					self.asp_db_next = level.max(1.0);
-					self.asp_seg_next = self.seg_c;
-				}
+				self.carry_stop_aspiration(stop_asp);
 			}
-			// a consonant's formants move to their B (right-side) targets early enough to arrive by its end
-			self.ab_at = if self.pft_c & VOWEL == 0 && self.phn_c != PAU {
-				self.marker_A.min(self.marker_B - thirty_ms).max(0)
-			} else {
-				self.marker_A
-			};
-			let glides = (self.F1_B_src - self.F1_A_src).abs() >= GLIDE_HZ
-				|| (self.F2_B_src - self.F2_A_src).abs() >= GLIDE_HZ;
-			if self.f1_len > 0 && glides {
-				self.ab_at = self.marker_A.min(fifty_ms);
-			}
-			// step() counts before it checks, so a move due at the phone's first sample starts at its second;
-			// with A and B the same (a nasal after silence) there is nothing to move,
-			// and starting one would cut short its glide into A
-			if self.ab_at <= self.counter {
-				let a = [self.F1_A_src, self.F2_A_src, self.F3_A_src,
-					self.B1_A_src, self.B2_A_src, self.B3_A_src, self.RD_A_src];
-				let b = [self.F1_B_src, self.F2_B_src, self.F3_B_src,
-					self.B1_B_src, self.B2_B_src, self.B3_B_src, self.RD_B_src];
-				self.ab_at = if a == b { i32::MIN } else { self.counter + 1 };
-			}
-			// sources switch quickly at obstruent edges; formants keep their own transition
-			fn obstruent(f: u16) -> bool { f != 0 && f & VOWEL == 0 && f & (NASAL | APPROXIMANT) == 0 }
-			self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) {
-				self.marker_A.min(fifteen_ms)
-			} else {
-				self.marker_A
-			};
+			self.set_ab_at();
 			self.seg_start = self.counter;
-			if self.after_stop {
-				// voicing builds up quickly after a release
-				self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
-			}
-			fn nasal(f: u16) -> bool { f & NASAL != 0 }
-			if nasal(self.pft_c) || nasal(self.pft_l1) {
-				// a nasal's closure and release are quick
-				self.amp_len = samples(NASAL_EDGE_MS);
-			}
-			if self.phn_c == HH || self.phn_l1 == HH {
-				self.amp_len = samples(H_EDGE_MS);
-			}
+			self.set_amp_len();
 			self.amp_start = 0;
 			self.voice_len = 0;
-			fn sonorant(f: u16) -> bool { f & VOWEL != 0 || f & (NASAL | APPROXIMANT) != 0 }
-			fn quiet(p: u8) -> bool { p == PAU || p == SIL || p == AXP || p == IXP }
-			self.dip_half = 0;
-			// h is breath noise too: without the dip a fricative runs into it as one hiss
-			fn hiss(p: u8) -> bool { fricative(p) || p == HH }
-			if hiss(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
-				self.dip_mid = self.amp_len / 2;
-				self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
-				self.dip_db = FRIC_DIP_DB;
-			}
-			if nasal(self.pft_c) && nasal(self.pft_l1) && self.phn_c != self.phn_l1 {
-				// centred on the join, or starting at this phone's first sample when less of the last one carries over
-				let half = samples(NASAL_DIP_MS / 2.0);
-				self.dip_mid = (self.counter + half).max(0);
-				self.dip_half = half;
-				self.dip_db = NASAL_DIP_DB;
-			}
-			if self.pft_c & VOWEL != 0 && self.pwi_c && self.pft_l1 & VOWEL != 0 && !quiet(self.phn_l1)
-				&& (self.pst_c || !matches!(self.phn_l1, AXR | ER)) {
-				self.dip_mid = 0;
-				self.dip_half = samples(GLOTTAL_DIP_MS / 2.0).min(-self.counter);
-				self.dip_db = if self.pst_c { GLOTTAL_DIP_DB } else { GLOTTAL_DIP_UNSTRESSED_DB };
-			}
-			// a word-final voiced fricative before a voiceless obstruent devoices ("thieves fished")
-			self.devoice_len = if fricative(self.phn_c) && self.pft_c & VOICED != 0 && self.pwi_r1
-				&& self.pft_r1 & VOICED == 0 && (fricative(self.phn_r1) || self.pft_r1 & STOP != 0) {
-				self.pdr_c
-			} else {
-				0
-			};
-			self.gap = if nasal(self.pft_l1) && fricative(self.phn_c) && self.pft_c & VOICED == 0 {
-				samples(NASAL_GAP_MS)
-			} else {
-				0
-			};
-			if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
-				// a fricative fades in and out across its boundary, as far as the carried-over region allows
-				let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
-				let entry = fricative(self.phn_c);
-				let len = match (sib, entry) {
-					(true, true) => SIB_ENTRY_MS,
-					(true, false) => SIB_RAMP_MS,
-					(false, true) => FRIC_ENTRY_MS,
-					(false, false) => FRIC_RAMP_MS,
-				};
-				let half = samples(len / 2.0);
-				self.amp_start = (-half).max(self.counter);
-				self.amp_len = half - self.amp_start;
-				let hv = samples(VOICE_SWITCH_MS / 2.0);
-				self.voice_start = (-hv).max(self.counter);
-				self.voice_len = hv - self.voice_start;
-			} else if (fricative(self.phn_c) && quiet(self.phn_l1)) || (fricative(self.phn_l1) && quiet(self.phn_c)) {
-				// out of and into silence, fricative noise rises and falls slowly
-				self.amp_len = samples(FRIC_SILENCE_MS);
-			}
-			if self.asp_db > 0.0 {
-				// aspiration: no voicing or frication until this phone's own part starts
-				self.AF_reg_src = 0.0;
-				self.AV_reg_src = 0.0;
-				self.AH_reg_src = db_gain(self.asp_db);
-				self.asp_start = self.counter;
-				self.seg_start = 0;
-			}
-			self.asp_fade = samples(ASP_OVERLAP_MS);
-			if self.asp_db > 0.0 && matches!(self.phn_c, L | R) && !self.pwi_c {
-				let span = (LIQUID_DEVOICE * self.marker_B as f32) as i32;
-				if span > 0 {
-					self.voice_start = 0;
-					self.voice_len = span;
-					self.asp_fade = span.max(self.asp_fade);
-				}
-			}
+			self.set_dips();
+			self.set_fricative_edges();
+			self.start_carried_aspiration();
 		}
 		self.is_ready()
+	}
+	fn reset_phone_state(&mut self) {
+		// aspiration left by a voiceless stop plays in this phone's carried-over region
+		self.asp_db = self.asp_db_next;
+		self.asp_seg = self.asp_seg_next;
+		self.asp_db_next = 0.0;
+		self.after_stop = self.after_stop_next;
+		self.after_stop_next = false;
+		self.stop_on = false;
+		self.stop_labial = false;
+		self.f1_len = 0;
+	}
+	fn set_formant_targets(&mut self) {
+		// the previous phone's formant targets at its end, before fetch replaces them
+		let prev_f = [self.F1_B_src, self.F2_B_src, self.F3_B_src];
+		let prev_rd = self.RD_B_src;
+		let (prev_b, prev_av) = ([self.B1_B_src, self.B2_B_src, self.B3_B_src], self.AV_src);
+
+		self.fetch();
+
+		// do formant target re-adjustments before doing anything else
+		self.ftar();
+
+		// short vowels fall short of their targets
+		self.reduce();
+
+		// consonants take their formants at each edge from the neighbouring vowel
+		self.loci(prev_f[1]);
+
+		// the phrase-end release is the last phone's voice dying away, so it keeps that voice's Rd
+		if matches!(self.phn_c, AXP | IXP) {
+			(self.RD_A_src, self.RD_B_src) = (prev_rd, prev_rd);
+			// at the end of a phrase an r or a nasal keeps its tongue in place while the voice dies away
+			if matches!(self.phn_l1, R | RX | ER | AXR) || self.pft_l1 & NASAL != 0 {
+				[self.F1_A_src, self.F2_A_src, self.F3_A_src] = prev_f;
+				[self.F1_B_src, self.F2_B_src, self.F3_B_src] = prev_f;
+			}
+			// and a nasal its velum, damping and level
+			if self.pft_l1 & NASAL != 0 {
+				[self.B1_A_src, self.B2_A_src, self.B3_A_src] = prev_b;
+				[self.B1_B_src, self.B2_B_src, self.B3_B_src] = prev_b;
+				self.AV_src = prev_av;
+			}
+		}
+	}
+	fn set_duration_markers(&mut self) -> i32 {
+		// get duration markers so slopes can be calculated
+		// (returns the aspiration a stop carries into the next phone, in samples)
+		let mut stop_asp = 0;
+		if self.phn_c == PAU {
+			// pause plays out its whole duration
+			self.marker_A = self.pdr_c.min(twenty_ms);
+			self.marker_B = self.pdr_c;
+		} else if self.pft_c & (STOP | AFFRICATE) == 0 {
+			// not plosive nor affricate
+			self.set_non_plosive_markers();
+		} else {
+			// plosive or affricate: closure, then burst or frication;
+			// a voiceless stop's aspiration is carried into the next phone
+			stop_asp = self.set_stop_markers();
+		}
+		stop_asp
+	}
+	fn set_non_plosive_markers(&mut self) {
+		if self.pft_c & NASAL != 0 {
+			// nasal: the formants arrive by the closure, the murmur holds
+			self.marker_A = 0;
+		} else if self.pft_c & (VOWEL | APPROXIMANT) == 0 {
+			// fricative transition
+			if self.pft_r1 & (NASAL | APPROXIMANT) != 0 {
+				// shorter before a sonorant consonant
+				self.marker_A = twenty_ms;
+			} else if self.pft_c & SIBILANT != 0 {
+				// length sibilant a bit
+				self.marker_A = sixty_ms;
+			} else {
+				self.marker_A = forty_ms;
+			}
+		} else if self.pft_c & VOWEL != 0 {
+			// vowel transition: quicker after a nasal's release,
+			// slower out of a tongue consonant into a back vowel
+			let tongue = matches!(self.phn_l1, D | T | N | S | Z | DX | SH | ZH | CH | JH | G | K | NG);
+			let back = self.pft_l1 & NASAL == 0 && tongue && self.F2_A_src < 1400.0;
+			self.marker_A = if self.pft_l1 & NASAL != 0 { samples(NASAL_RELEASE_MS) }
+				else if back { samples(BACK_TRANSITION_MS) }
+				else { fifty_ms };
+			if back { self.f1_len = samples(BACK_F1_MS); }
+		} else {
+			// l, r, w and y: get transition from formant table
+			self.marker_A = share_of(self.pdr_c, self.C_A_src);
+		}
+		self.marker_B = share_of(self.pdr_c, 100 - self.C_B_src);
+		if self.pft_c & VOWEL != 0 {
+			// short vowels get a shorter transition so they still reach their target
+			self.marker_A = self.marker_A.min((ramp_share * self.marker_B as f32) as i32);
+		}
+	}
+	fn set_stop_markers(&mut self) -> i32 {
+		// returns the aspiration carried into the next phone, in samples
+		let stop = stop_timeline(
+			self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c, self.pwi_r1
+		);
+		self.marker_A = stop.closure;
+		self.marker_B = stop.closure + stop.burst;
+		self.burst_len = stop.burst;
+		self.stop_on = true;
+		self.stop_bar = self.pft_c & VOICED != 0 && self.pft_l1 & VOICED != 0;
+		self.stop_affric = self.pft_c & AFFRICATE != 0;
+		self.stop_labial = !self.stop_affric && stop_place(self.phn_c) == 0;
+		self.burst_decay = if self.stop_affric { AFFRIC_DECAY_DB } else { BURST_DECAY_DB };
+		let unstressed = self.pft_r1 & VOWEL != 0 && !self.pst_r1;
+		let sibilant = (self.pft_l1 | self.pft_r1) & SIBILANT != 0;
+		// a voiced stop or a t before a liquid or glide keeps its release ("gloves", "bridge", "tree")
+		let follow = if (self.pft_c & VOICED != 0 || self.phn_c == T) && self.pft_r1 & VOWEL == 0 {
+			0.0
+		} else {
+			-RELEASE_FOLLOW * self.quiet_next_db()
+		};
+		let gain_db = if self.stop_affric { 0.0 } else {
+			BURST_GAIN_DB + if unstressed { BURST_UNSTRESSED_DB } else { 0.0 }
+				+ if sibilant { BURST_SIBILANT_DB } else { 0.0 } + follow
+		};
+		self.burst_gain = libm::exp2f(gain_db / DB_PER_HALF);
+		self.after_stop_next = stop.burst > 0;
+		stop.asp
+	}
+	fn set_exit_markers(&mut self) {
+		if self.is_first {
+			self.marker_BA = share_of(self.pdr_c, self.C_B_src);
+			self.is_first = false;
+			self.load_registers();
+		} else {
+			self.update_B_to_Next();
+			self.marker_BA = share_of(self.pdr_c, self.C_B_src);
+		}
+		if self.pft_c & VOWEL != 0 && self.marker_BA > samples(VOWEL_EXIT_MS) {
+			// a long vowel keeps its own formants longer, the move into the next phone takes the same time
+			self.marker_B += self.marker_BA - samples(VOWEL_EXIT_MS);
+			self.marker_BA = samples(VOWEL_EXIT_MS);
+		}
+		if self.phn_c == PAU {
+			// no transition carried into the next phone, so the pause keeps its length
+			self.marker_BA = 0;
+		}
+	}
+	fn carry_stop_aspiration(&mut self, stop_asp: i32) {
+		self.marker_BA = stop_asp;
+		if stop_asp > 0 {
+			let mut level = ASP_DB;
+			// softer before a front, close vowel, or one quiet above F2
+			let front = if self.pft_r1 & VOWEL != 0 {
+				let [f1, f2, _] = self.next_vowel_formants();
+				asp_front_cut(f1, f2)
+			} else { 0.0 };
+			level -= front.max(if self.phn_c == T && self.pft_r1 & VOWEL == 0 {
+				0.0
+			} else {
+				ASP_FOLLOW * self.quiet_next_db()
+			});
+			if schwa_t(self.phn_c, self.pwi_c, self.phn_r1, self.pst_r1) { level -= SCHWA_T_ASP_DB; }
+			self.asp_db_next = level.max(1.0);
+			self.asp_seg_next = self.seg_c;
+		}
+	}
+	fn set_ab_at(&mut self) {
+		// a consonant's formants move to their B (right-side) targets early enough to arrive by its end
+		self.ab_at = if self.pft_c & VOWEL == 0 && self.phn_c != PAU {
+			self.marker_A.min(self.marker_B - thirty_ms).max(0)
+		} else {
+			self.marker_A
+		};
+		let glides = (self.F1_B_src - self.F1_A_src).abs() >= GLIDE_HZ
+			|| (self.F2_B_src - self.F2_A_src).abs() >= GLIDE_HZ;
+		if self.f1_len > 0 && glides {
+			self.ab_at = self.marker_A.min(fifty_ms);
+		}
+		// step() counts before it checks, so a move due at the phone's first sample starts at its second;
+		// with A and B the same (a nasal after silence) there is nothing to move,
+		// and starting one would cut short its glide into A
+		if self.ab_at <= self.counter {
+			let a = [self.F1_A_src, self.F2_A_src, self.F3_A_src,
+				self.B1_A_src, self.B2_A_src, self.B3_A_src, self.RD_A_src];
+			let b = [self.F1_B_src, self.F2_B_src, self.F3_B_src,
+				self.B1_B_src, self.B2_B_src, self.B3_B_src, self.RD_B_src];
+			self.ab_at = if a == b { i32::MIN } else { self.counter + 1 };
+		}
+	}
+	fn set_amp_len(&mut self) {
+		// sources switch quickly at obstruent edges; formants keep their own transition
+		self.amp_len = if obstruent(self.pft_c) || obstruent(self.pft_l1) {
+			self.marker_A.min(fifteen_ms)
+		} else {
+			self.marker_A
+		};
+		if self.after_stop {
+			// voicing builds up quickly after a release
+			self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
+		}
+		if nasal(self.pft_c) || nasal(self.pft_l1) {
+			// a nasal's closure and release are quick
+			self.amp_len = samples(NASAL_EDGE_MS);
+		}
+		if self.phn_c == HH || self.phn_l1 == HH {
+			self.amp_len = samples(H_EDGE_MS);
+		}
+	}
+	fn set_dips(&mut self) {
+		// a dip in the sources between two fricatives, two nasals, or vowels across a word boundary
+		self.dip_half = 0;
+		// h is breath noise too: without the dip a fricative runs into it as one hiss
+		if hiss(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
+			self.dip_mid = self.amp_len / 2;
+			self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
+			self.dip_db = FRIC_DIP_DB;
+		}
+		if nasal(self.pft_c) && nasal(self.pft_l1) && self.phn_c != self.phn_l1 {
+			// centred on the join, or starting at this phone's first sample when less of the last one carries over
+			let half = samples(NASAL_DIP_MS / 2.0);
+			self.dip_mid = (self.counter + half).max(0);
+			self.dip_half = half;
+			self.dip_db = NASAL_DIP_DB;
+		}
+		if self.pft_c & VOWEL != 0 && self.pwi_c && self.pft_l1 & VOWEL != 0 && !quiet(self.phn_l1)
+			&& (self.pst_c || !matches!(self.phn_l1, AXR | ER)) {
+			self.dip_mid = 0;
+			self.dip_half = samples(GLOTTAL_DIP_MS / 2.0).min(-self.counter);
+			self.dip_db = if self.pst_c { GLOTTAL_DIP_DB } else { GLOTTAL_DIP_UNSTRESSED_DB };
+		}
+	}
+	fn set_fricative_edges(&mut self) {
+		// a word-final voiced fricative before a voiceless obstruent devoices ("thieves fished")
+		self.devoice_len = if fricative(self.phn_c) && self.pft_c & VOICED != 0 && self.pwi_r1
+			&& self.pft_r1 & VOICED == 0 && (fricative(self.phn_r1) || self.pft_r1 & STOP != 0) {
+			self.pdr_c
+		} else {
+			0
+		};
+		self.gap = if nasal(self.pft_l1) && fricative(self.phn_c) && self.pft_c & VOICED == 0 {
+			samples(NASAL_GAP_MS)
+		} else {
+			0
+		};
+		if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
+			// a fricative fades in and out across its boundary, as far as the carried-over region allows
+			let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
+			let entry = fricative(self.phn_c);
+			let len = match (sib, entry) {
+				(true, true) => SIB_ENTRY_MS,
+				(true, false) => SIB_RAMP_MS,
+				(false, true) => FRIC_ENTRY_MS,
+				(false, false) => FRIC_RAMP_MS,
+			};
+			let half = samples(len / 2.0);
+			self.amp_start = (-half).max(self.counter);
+			self.amp_len = half - self.amp_start;
+			let hv = samples(VOICE_SWITCH_MS / 2.0);
+			self.voice_start = (-hv).max(self.counter);
+			self.voice_len = hv - self.voice_start;
+		} else if (fricative(self.phn_c) && quiet(self.phn_l1)) || (fricative(self.phn_l1) && quiet(self.phn_c)) {
+			// out of and into silence, fricative noise rises and falls slowly
+			self.amp_len = samples(FRIC_SILENCE_MS);
+		}
+	}
+	fn start_carried_aspiration(&mut self) {
+		if self.asp_db > 0.0 {
+			// aspiration: no voicing or frication until this phone's own part starts
+			self.AF_reg_src = 0.0;
+			self.AV_reg_src = 0.0;
+			self.AH_reg_src = db_gain(self.asp_db);
+			self.asp_start = self.counter;
+			self.seg_start = 0;
+		}
+		self.asp_fade = samples(ASP_OVERLAP_MS);
+		if self.asp_db > 0.0 && matches!(self.phn_c, L | R) && !self.pwi_c {
+			let span = (LIQUID_DEVOICE * self.marker_B as f32) as i32;
+			if span > 0 {
+				self.voice_start = 0;
+				self.voice_len = span;
+				self.asp_fade = span.max(self.asp_fade);
+			}
+		}
 	}
 	pub fn position(&self) -> (usize, f32) {
 		// the playing segment and how far through it we are (0..1)
