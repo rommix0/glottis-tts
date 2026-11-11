@@ -1,3 +1,11 @@
+/*
+
+UTILITIES
+
+the ring buffer the front end streams text and tokens through,
+and the table from phone tokens to phones and stress
+
+*/
 use alloc::{vec, vec::Vec};
 
 // ring buffer

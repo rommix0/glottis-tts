@@ -1,6 +1,14 @@
-// suffix matching: say a word the dictionary lacks as a known stem plus an inflection or common suffix.
-// a stem is known if the dictionary has it, or if it's a word the letter-to-sound tree says right
-// (the KNOWN hashes). mirrors compose() in tools/build_lexicon.py
+/*
+
+SUFFIX MATCHING
+
+say a word the dictionary lacks as a known stem plus an inflection or a
+common suffix. a stem is known if the dictionary has it, or if it's a word
+the letter-to-sound tree says right (the KNOWN hashes).
+
+mirrors compose() in tools/build_lexicon.py
+
+*/
 use crate::_known::*;
 use crate::_lts;
 use alloc::{format, string::{String, ToString}, vec, vec::Vec};

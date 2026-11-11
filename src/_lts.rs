@@ -1,8 +1,16 @@
-// letter-to-sound: two decision trees pick a phone class for each letter, left to right.
-// each looks at the 4 letters either side, which of them are vowels, and the classes of the 2 letters before;
-// the second tree also sees the first tree's classes for the 2 letters after.
-// then the word gets exactly one primary stress.
-// tree tables are in _lts_tree.rs, built by tools/build_lexicon.py (its decode() is this file in Python)
+/*
+
+LETTER-TO-SOUND
+
+two decision trees pick a phone class for each letter, left to right.
+each looks at the 4 letters either side, which of them are vowels, and the
+classes of the 2 letters before; the second tree also sees the first tree's
+classes for the 2 letters after. then the word gets exactly one primary stress.
+
+tree tables are in _lts_tree.rs, built by tools/build_lexicon.py
+(its decode() is this file in Python)
+
+*/
 use crate::_lts_tree::*;
 use alloc::vec::Vec;
 

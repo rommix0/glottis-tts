@@ -1,3 +1,18 @@
+/*
+
+TEXT-TO-SPEECH SYNTHESIZER
+
+english text in, mono signed 16-bit samples out at SAMPLE_RATE.
+no_std: needs only an allocator.
+
+text -> normalizer -> dictionary, suffix matching or letter-to-sound
+     -> utterance -> durations and pitch -> formant synthesizer -> samples
+
+synthesize() speaks with the default voice. Speaker keeps the rate, trace
+and voice (through its synth) across sentences. the samples go to a
+WriteSample, or to a SpeechSink for the float samples and the trace.
+
+*/
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![cfg_attr(not(test), no_std)]
 

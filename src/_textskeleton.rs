@@ -1,3 +1,15 @@
+/*
+
+TEXT NORMALIZER
+
+reads numbers, dates, money, roman numerals, abbreviations, units and
+homographs out as words, so the rest of the front end sees only words
+and punctuation.
+
+_textskeleton.rs is the re2c source of _text.rs: edit the skeleton,
+then run tools/build_normalizer.py to regenerate _text.rs.
+
+*/
 use crate::_utils::cbuf;
 // fixed-text rules (homographs, abbreviations, units, emoji) from tools/normalizer_rules.txt
 use crate::_text_rules::{RULES, FIRST};
