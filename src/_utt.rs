@@ -90,10 +90,19 @@ pub struct Utterance {
 const MAX_PHRASE_SYL: usize = 14;
 const MIN_PIECE_SYL:  usize = 5;
 // the break goes before one of these words best ...
-const BREAK_BEFORE: [&str; 23] = [
-	"and", "but", "or", "nor", "so", "yet", "because", "while",
+// not "that" ("say | that they", "picked | that lingo") or "so" ("quite | so much"): they rarely start a new phrase
+const BREAK_BEFORE: [&str; 21] = [
+	"and", "but", "or", "nor", "yet", "because", "while",
 	"although", "though", "unless", "whereas", "until", "if", "when", "whether",
-	"since", "that", "which", "who", "whom", "whose", "where"
+	"since", "which", "who", "whom", "whose", "where"
+];
+// never right after one of these: "one hundred | and forty" is one number
+const NUMBER_WORDS: [&str; 5] = ["hundred", "thousand", "million", "billion", "trillion"];
+// verbs that take the preposition after them: "look | after", "believe | in", "call | upon"
+// (a verb in -ed is caught by its ending)
+const PREPOSITION_VERBS: [&str; 15] = [
+	"go", "goes", "went", "come", "comes", "came", "look", "looks",
+	"believe", "believes", "call", "calls", "put", "puts", "speculate"
 ];
 // ... else before a preposition
 // "to", "into", and "onto" are all infinitive "to" words, and are not included here.
@@ -234,9 +243,13 @@ impl Utterance {
 			let left = syls(words.start..j);
 			if left < MIN_PIECE_SYL || total - left < MIN_PIECE_SYL || self.words[j - 1].function { continue; }
 			let text = self.words[j].text.to_lowercase();
+			let prev = self.words[j - 1].text.to_lowercase();
+			if NUMBER_WORDS.contains(&prev.as_str()) { continue; }
 			let score = if BREAK_BEFORE.contains(&text.as_str()) {
 				3.0
-			} else if PREPOSITIONS.contains(&text.as_str()) {
+			} else if PREPOSITIONS.contains(&text.as_str()) && !prev.ends_with("ed")
+				&& !PREPOSITION_VERBS.contains(&prev.as_str()) {
+				// not after a verb that takes the preposition ("carried | on", "believe | in")
 				2.0
 			} else {
 				continue
@@ -484,6 +497,26 @@ mod tests {
 		let (c, f) = ((false, "w"), |t| (true, t));
 		let u = sentence(&[c, c, c, c, c, f("the"), c, c, c, f("of"), f("the"), c, f("to"), c, c, c, c]);
 		assert_eq!(u.phrases.len(), 1);
+	}
+
+	#[test]
+	fn no_break_before_that_or_so_inside_a_number_or_between_a_verb_and_its_preposition() {
+		// "... called to say | that they ...", "one hundred | and forty ...", "carried | on", "believe | in"
+		let (c, f) = ((false, "w"), |t| (true, t));
+		let cw = |t| (false, t);
+		let pairs = [
+			("say", f("that")), ("quite", f("so")), ("hundred", f("and")), ("carried", f("on")), ("believe", f("in")),
+		];
+		for (prev, next) in pairs {
+			let mut words = vec![c; 15];
+			words.insert(7, cw(prev));
+			words.insert(8, next);
+			assert_eq!(sentence(&words).phrases.len(), 1, "a break between {} and {}", prev, next.1);
+		}
+		// the same places after another word still break
+		let mut words = vec![c; 16];
+		words.insert(8, f("and"));
+		assert_eq!(sentence(&words).phrases.len(), 2);
 	}
 
 	#[test]
