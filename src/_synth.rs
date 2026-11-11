@@ -1069,8 +1069,9 @@ impl engine {
 
 		// the nasal coupling switches with the amplitudes
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
-		if self.pft_c & 0x1 != 0 {
-			// the velum lowers during a vowel before a nasal and is still rising after one, so the vowel is partly nasal
+		// the velum lowers during a vowel before a nasal and is still rising after one, so the vowel is partly nasal;
+		// not the diphthongs aw, ay, ow and oy, which sound too nasal with it ("joined")
+		if self.pft_c & 0x1 != 0 && !matches!(self.phn_c, 5 | 8 | 29 | 30) {
 			let near = |nasal: bool, d: i32, len: f32| if nasal { NASAL_VOWEL_K * (1.0 - d as f32 / samples(len) as f32).clamp(0.0, 1.0) } else { 0.0 };
 			let k = near(self.pft_r1 & 0x10 != 0, self.marker_B - now, NASAL_ANTIC_MS).max(near(self.pft_l1 & 0x10 != 0, now, NASAL_CARRY_MS));
 			self.NZP_reg = self.NZP_reg.max(k);
@@ -2144,6 +2145,20 @@ mod tests {
 		let low = band_db(&m, 250.0);
 		let f2 = band_db(&m, 1100.0);
 		assert!(f2 - low > -35.0, "murmur F2 region {} dB under its low peak", low - f2);
+	}
+
+	#[test]
+	fn diphthongs_stay_oral_next_to_a_nasal() {
+		// the most nasal coupling a vowel gets while it plays before an N: some for AA, none for OY ("joined")
+		let most = |v: u8| {
+			let mut k = 0.0f32;
+			drive(&[(PAU, 50, true), (22, 80, true), (v, 250, true), (27, 100, true), (48, 100, true), (0, 50, true)], |e, _| {
+				if e.phn_c == v { k = k.max(e.vtm_eng.NC); }
+			});
+			k
+		};
+		assert!(most(1) > NASAL_VOWEL_K / 2.0, "AA before N: {}", most(1));
+		assert_eq!(most(30), 0.0, "OY before N");
 	}
 
 	#[test]
