@@ -566,6 +566,9 @@ mod tests {
 		says_all(&[("It is 100 km away.", "one hundred kilometers"), ("It is 1 km away.", "one kilometer away")]);
 		// a rule that starts with a space starts at a tab or newline too
 		says_all(&[("5\tbps now.", "five bits per second now"), ("5\nbps now.", "five bits per second now")]);
+		// a spaced "in" is inches before punctuation or a size word, the preposition before anything else
+		says_all(&[("12 ft, 6 in, 2 lb.", "six inches , two pounds"), ("It is 5 in. long.", "five inches long ."),
+			("At 6 in the morning.", "six in the morning"), ("1 in 10 people.", "one in ten people")]);
 	}
 
 	#[test]

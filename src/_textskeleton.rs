@@ -512,15 +512,32 @@ impl engine {
 				let low = a[j..].to_ascii_lowercase();
 				// "m" only in lower case and not before more of a unit: "3 M", "m/s" and "m\u{b2}" are not meters
 				let meter = at(j) == b'm' && !matches!(at(j + 1), b'0'..=b'9' | b'/' | 0x80..=0xFF);
+				// a spaced "in" is inches before punctuation, the end or a size word ("6 in, 2 lb", "12 in tall"), else the
+				// preposition ("6 in the morning", "1 in 10")
+				let inch = {
+					let mut k = j + 2;
+					if at(k) == b'.' { k += 1; }
+					while is_space(at(k)) { k += 1; }
+					let mut e = k;
+					while at(e).is_ascii_alphabetic() { e += 1; }
+					let next = a.get(k..e).unwrap_or(&[]).to_ascii_lowercase();
+					!at(k).is_ascii_alphanumeric() && at(k) != b'$'
+						|| matches!(&next[..], b"tall" | b"long" | b"wide" | b"high" | b"deep" | b"thick" | b"by" | b"x" | b"across" | b"square")
+				};
 				let unit = UNITS.iter()
-					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !at(j + u.0.len()).is_ascii_alphabetic() && (u.0 != "m" || meter))
+					.filter(|u| (joined || !u.3 || (u.0 == "in" && inch)) && low.starts_with(u.0.as_bytes())
+						&& !at(j + u.0.len()).is_ascii_alphabetic() && (u.0 != "m" || meter))
 					.max_by_key(|u| u.0.len());
 				if let Some(&(ab, one, many, _)) = unit {
 					let num = self.words(v, false, false);
 					let point = self.point(&frac);
 					let name = if v == 1 && frac.is_empty() { one } else { many };
 					self.scratch_pad.write_text(&format!(" {}{} {} ", num, point, name));
-					consume(buf, j + ab.len());
+					// the abbreviation's own period, when the sentence goes on in lower case ("5 ft. long")
+					let mut k = j + ab.len() + 1;
+					while is_space(at(k)) { k += 1; }
+					let dot = at(j + ab.len()) == b'.' && k > j + ab.len() + 1 && at(k).is_ascii_lowercase();
+					consume(buf, j + ab.len() + dot as usize);
 					self.digit_prev = false;
 					return true;
 				}
