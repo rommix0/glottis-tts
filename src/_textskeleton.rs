@@ -90,9 +90,9 @@ impl engine {
 	fn process_number(&mut self, x: u64, zero_oh: bool, is_ordinal: bool) {
 		const ONES: [&str; 20] = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
 			"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
-		const ONES_TH: [&str; 20] = ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
-			"ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth",
-			"eighteenth", "nineteenth"];
+		const ONES_TH: [&str; 20] = ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+			"eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth",
+			"seventeenth", "eighteenth", "nineteenth"];
 		const TENS: [&str; 10] = ["", "", "twen", "thir", "for", "fif", "six", "seven", "eigh", "nine"];
 		const SCALES: [(u64, &str); 6] = [(1_000_000_000_000_000, "quadrillion"), (1_000_000_000_000, "trillion"),
 			(1_000_000_000, "billion"), (1_000_000, "million"), (1000, "thousand"), (100, "hundred")];
@@ -206,7 +206,13 @@ impl engine {
 		// 1999 nineteen ninety nine, 1905 nineteen oh five, 1900 nineteen hundred, 2005 two thousand five
 		if (2000..=2009).contains(&y) || y < 1000 { return self.words(y, false, false); }
 		let (hi, lo) = (y / 100, y % 100);
-		let lo = if lo == 0 { "hundred".to_string() } else if lo < 10 { format!("oh {}", self.words(lo, false, false)) } else { self.words(lo, false, false) };
+		let lo = if lo == 0 {
+			"hundred".to_string()
+		} else if lo < 10 {
+			format!("oh {}", self.words(lo, false, false))
+		} else {
+			self.words(lo, false, false)
+		};
 		format!("{} {}", self.words(hi, false, false), lo)
 	}
 	fn plural_last(s: &str) -> String {
@@ -252,7 +258,8 @@ impl engine {
 		while is_space(at(j)) { j += 1; }
 		if j == k { return None; }
 		["thousand", "million", "billion", "trillion"].into_iter()
-			.find(|w| a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes())) && !at(j + w.len()).is_ascii_alphabetic())
+			.find(|w| a.get(j..j + w.len()).is_some_and(|x| x.eq_ignore_ascii_case(w.as_bytes()))
+				&& !at(j + w.len()).is_ascii_alphabetic())
 			.map(|w| (w, j + w.len()))
 	}
 	fn point(&mut self, frac: &[u8]) -> String {
@@ -263,31 +270,33 @@ impl engine {
 	fn context_rule(&mut self, buf: &mut cbuf) -> bool {
 		const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august",
 			"september", "october", "november", "december"];
-		const SHORT_MONTHS: [(&str, usize); 13] = [("jan.", 0), ("feb.", 1), ("mar.", 2), ("apr.", 3), ("jun.", 5), ("jul.", 6),
-			("aug.", 7), ("sep.", 8), ("sept.", 8), ("oct.", 9), ("nov.", 10), ("dec.", 11), ("may", 4)];
+		const SHORT_MONTHS: [(&str, usize); 13] = [("jan.", 0), ("feb.", 1), ("mar.", 2), ("apr.", 3), ("jun.", 5),
+			("jul.", 6), ("aug.", 7), ("sep.", 8), ("sept.", 8), ("oct.", 9), ("nov.", 10), ("dec.", 11), ("may", 4)];
 		// a numeral after one of these words is a plain number ("chapter four"); after another name, a ruler's
 		// ordinal ("henry the eighth")
-		const CARDINAL_AFTER: [&str; 16] = ["chapter", "part", "volume", "book", "act", "scene", "war", "phase", "level",
-			"stage", "round", "season", "episode", "apollo", "rocky", "section"];
+		const CARDINAL_AFTER: [&str; 16] = ["chapter", "part", "volume", "book", "act", "scene", "war", "phase",
+			"level", "stage", "round", "season", "episode", "apollo", "rocky", "section"];
 		// a four-digit number after one of these words is a year ("in 2015 votes were cast")
-		const YEAR_AFTER: [&str; 15] = ["in", "since", "until", "till", "during", "circa", "year", "from", "by", "early", "late",
-			"mid", "spring", "summer", "winter"];
+		const YEAR_AFTER: [&str; 15] = ["in", "since", "until", "till", "during", "circa", "year", "from", "by",
+			"early", "late", "mid", "spring", "summer", "winter"];
 		// a four-digit number after one of these words is a count, not a year ("over 1500", "scored 2015")
-		const COUNT_AFTER: [&str; 21] = ["about", "over", "under", "nearly", "almost", "approximately", "roughly", "exactly",
-			"only", "just", "than", "some", "total", "scored", "won", "lost", "paid", "cost", "costs", "earned", "sold"];
+		const COUNT_AFTER: [&str; 21] = ["about", "over", "under", "nearly", "almost", "approximately", "roughly",
+			"exactly", "only", "just", "than", "some", "total", "scored", "won", "lost", "paid", "cost", "costs",
+			"earned", "sold"];
 		// a four-digit number after one of these words is read like the one before it ("1987 to 1990", "2015 to 1987")
 		const RANGE_AFTER: [&str; 4] = ["to", "and", "or", "through"];
 		// words ending in s that are not plural nouns
-		const NOT_PLURAL: [&str; 18] = ["was", "is", "has", "as", "its", "his", "hers", "ours", "yours", "theirs", "this", "thus",
-			"plus", "minus", "always", "perhaps", "besides", "unless"];
+		const NOT_PLURAL: [&str; 18] = ["was", "is", "has", "as", "its", "his", "hers", "ours", "yours", "theirs",
+			"this", "thus", "plus", "minus", "always", "perhaps", "besides", "unless"];
 		const PLURAL: [&str; 8] = ["people", "men", "women", "children", "feet", "teeth", "mice", "geese"];
 		// words whose reading follows the word before them: (word, the capitalized reading is the verb, the reading
 		// with no telling word before is the verb); the other reading is the noun or adjective
 		const STRESS_PAIRS: &[(&str, bool, bool)] = &[
 			("address", true, false), ("affect", true, true), ("affects", true, true), ("attribute", false, false),
-			("attributes", true, false), ("compound", true, false), ("conduct", true, false), ("conflict", false, false),
-			("conflicts", false, false), ("console", false, false), ("consoles", true, false), ("construct", true, false),
-			("constructs", true, false), ("contest", false, false), ("contests", false, false), ("contract", false, false),
+			("attributes", true, false), ("compound", true, false), ("conduct", true, false),
+			("conflict", false, false), ("conflicts", false, false), ("console", false, false),
+			("consoles", true, false), ("construct", true, false), ("constructs", true, false),
+			("contest", false, false), ("contests", false, false), ("contract", false, false),
 			("contracts", true, false), ("convert", false, true), ("convict", false, false), ("convicts", true, false),
 			("defect", true, false), ("defects", true, false), ("desert", true, false), ("deserts", true, false),
 			("object", false, false), ("objects", false, false), ("perfect", true, false), ("permit", true, false),
@@ -295,36 +304,41 @@ impl engine {
 			("progress", true, false), ("progresses", true, true), ("project", false, false), ("projects", true, false),
 			("rebel", true, false), ("rebels", true, false), ("record", true, false), ("records", true, false),
 			("reject", true, true), ("rejects", true, true), ("survey", false, false), ("suspect", false, false),
-			("suspects", false, false), ("advocate", true, false), ("advocates", true, false), ("aggregate", true, false),
-			("alternate", true, false), ("animate", false, true), ("appropriate", true, false), ("approximate", true, false),
-			("articulate", true, false), ("associate", false, false), ("associates", false, false), ("coordinate", true, false),
-			("coordinates", true, false), ("duplicate", false, false), ("duplicates", true, false), ("estimate", false, false),
-			("estimates", true, false), ("graduate", false, false), ("graduates", true, false), ("moderate", false, false),
-			("moderates", true, false), ("separate", false, false), ("increase", false, true), ("increases", false, true),
+			("suspects", false, false), ("advocate", true, false), ("advocates", true, false),
+			("aggregate", true, false), ("alternate", true, false), ("animate", false, true),
+			("appropriate", true, false), ("approximate", true, false), ("articulate", true, false),
+			("associate", false, false), ("associates", false, false), ("coordinate", true, false),
+			("coordinates", true, false), ("duplicate", false, false), ("duplicates", true, false),
+			("estimate", false, false), ("estimates", true, false), ("graduate", false, false),
+			("graduates", true, false), ("moderate", false, false), ("moderates", true, false),
+			("separate", false, false), ("increase", false, true), ("increases", false, true),
 			("decrease", false, true), ("decreases", false, true), ("import", false, true), ("imports", false, false),
 			("export", true, false), ("exports", true, false), ("insult", false, true), ("insults", false, false),
 			("protest", true, false), ("protests", true, false), ("subject", false, false), ("subjects", true, false),
-			("transfer", false, true), ("transfers", false, false), ("transport", false, false), ("transports", false, true),
-			("refund", false, false), ("refunds", false, false), ("contrast", true, false), ("contrasts", true, false),
-			("update", false, true), ("updates", false, false), ("upgrade", false, true), ("upgrades", false, false),
-			("discount", false, false), ("discounts", false, false)];
+			("transfer", false, true), ("transfers", false, false), ("transport", false, false),
+			("transports", false, true), ("refund", false, false), ("refunds", false, false), ("contrast", true, false),
+			("contrasts", true, false), ("update", false, true), ("updates", false, false), ("upgrade", false, true),
+			("upgrades", false, false), ("discount", false, false), ("discounts", false, false)];
 		// a verb follows these (the plain form) ...
-		const BEFORE_VERB: &[&str] = &["to", "will", "would", "can", "could", "shall", "should", "may", "might", "must", "i", "you",
-			"we", "they", "don't", "didn't", "won't", "can't", "cannot", "not", "never", "please", "let's", "who", "doesn't"];
+		const BEFORE_VERB: &[&str] = &["to", "will", "would", "can", "could", "shall", "should", "may", "might", "must",
+			"i", "you", "we", "they", "don't", "didn't", "won't", "can't", "cannot", "not", "never", "please", "let's",
+			"who", "doesn't"];
 		// ... and these (the form in -s)
 		const BEFORE_VERB_S: &[&str] = &["he", "she", "it", "who", "that", "which"];
 		// a noun or adjective follows these
-		const BEFORE_NOUN: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our",
-			"their", "no", "every", "each", "any", "some", "another", "of", "new", "old", "first", "last", "final", "big", "great",
-			"good", "best", "is", "are", "was", "were", "be", "been", "very", "so", "too", "quite"];
-		// these come before a noun, so a word of STRESS_PAIRS (or wind, bow) right before one is a verb ("Record a song")
-		const DETERMINERS: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our",
-			"their", "some", "every", "each"];
+		const BEFORE_NOUN: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her",
+			"its", "our", "their", "no", "every", "each", "any", "some", "another", "of", "new", "old", "first", "last",
+			"final", "big", "great", "good", "best", "is", "are", "was", "were", "be", "been", "very", "so", "too",
+			"quite"];
+		// these come before a noun, so a word of STRESS_PAIRS (or wind, bow) right before one is a verb
+		// ("Record a song")
+		const DETERMINERS: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her",
+			"its", "our", "their", "some", "every", "each"];
 		// "tear" before these is the rip ("a tear in the paper", "tear it up")
 		const RIP_NEXT: &[&str] = &["in", "on", "up", "down", "apart", "off", "out", "through", "into", "it", "them"];
 		// an adjective follows these ("it is close", "she was content")
-		const BEFORE_ADJ: &[&str] = &["is", "are", "was", "were", "be", "been", "am", "so", "very", "too", "quite", "really",
-			"fairly", "pretty", "stay", "stayed", "remain", "feel"];
+		const BEFORE_ADJ: &[&str] = &["is", "are", "was", "were", "be", "been", "am", "so", "very", "too", "quite",
+			"really", "fairly", "pretty", "stay", "stayed", "remain", "feel"];
 		let a = Self::ahead(buf, 48);
 		if a.is_empty() { return false; }
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
@@ -342,7 +356,13 @@ impl engine {
 
 		// an opening double quote is not read out
 		if is_space(at(0)) {
-			let q = if at(1) == b'"' { 1 } else if at(1) == 0xE2 && at(2) == 0x80 && (0x9C..=0x9F).contains(&at(3)) { 3 } else { 0 };
+			let q = if at(1) == b'"' {
+				1
+			} else if at(1) == 0xE2 && at(2) == 0x80 && (0x9C..=0x9F).contains(&at(3)) {
+				3
+			} else {
+				0
+			};
 			if q > 0 && at(1 + q).is_ascii_alphanumeric() {
 				self.scratch_pad.write_text(" ");
 				consume(buf, 1 + q);
@@ -352,10 +372,17 @@ impl engine {
 
 		// a quote after a space: a decade ('90s), a word that keeps its apostrophe ('twas), or an opening quote
 		if is_space(at(0)) {
-			let q = if at(1) == b'\'' { 1 } else if a[1..].starts_with(&[0xE2, 0x80, 0x99]) || a[1..].starts_with(&[0xE2, 0x80, 0x98]) { 3 } else { 0 };
+			let q = if at(1) == b'\'' {
+				1
+			} else if a[1..].starts_with(&[0xE2, 0x80, 0x99]) || a[1..].starts_with(&[0xE2, 0x80, 0x98]) {
+				3
+			} else {
+				0
+			};
 			if q > 0 {
 				let r = 1 + q;
-				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's' && !at(r + 3).is_ascii_alphabetic() {
+				if at(r).is_ascii_digit() && at(r + 1) == b'0' && at(r) != b'0' && at(r + 2) == b's'
+					&& !at(r + 3).is_ascii_alphabetic() {
 					let w = self.words(((at(r) - b'0') * 10) as u64, false, false);
 					self.say(&Self::plural_last(&w));
 					consume(buf, r + 3);
@@ -384,7 +411,11 @@ impl engine {
 			if q > 0 {
 				let mut k = 1 + q;
 				while is_space(at(k)) { k += 1; }
-				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { match at(0) { b'?' => "?", b'!' => "!", _ => "." } };
+				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() {
+					","
+				} else {
+					match at(0) { b'?' => "?", b'!' => "!", _ => "." }
+				};
 				self.pause(mark);
 				consume(buf, 1 + q);
 				return true;
@@ -413,7 +444,8 @@ impl engine {
 
 		// a decimal without its leading zero: .75 point seven five, also after a bracket or a quote ("(.5)")
 		let d = is_space(at(0)) as usize;
-		if at(d) == b'.' && at(d + 1).is_ascii_digit() && (d == 1 || (!prev.is_ascii_alphanumeric() && !matches!(prev, b'.' | b'$'))) {
+		if at(d) == b'.' && at(d + 1).is_ascii_digit()
+			&& (d == 1 || (!prev.is_ascii_alphanumeric() && !matches!(prev, b'.' | b'$'))) {
 			let (frac, k) = Self::fraction(&a, d);
 			let p = self.point(&frac);
 			self.say(&p);
@@ -423,7 +455,8 @@ impl engine {
 		}
 
 		// the minutes of a time under ten: 10:05 ten oh five
-		if at(0) == b':' && prev.is_ascii_digit() && at(1) == b'0' && (b'1'..=b'9').contains(&at(2)) && !at(3).is_ascii_digit() {
+		if at(0) == b':' && prev.is_ascii_digit() && at(1) == b'0' && (b'1'..=b'9').contains(&at(2))
+			&& !at(3).is_ascii_digit() {
 			let m = self.words((at(2) - b'0') as u64, false, false);
 			self.scratch_pad.write_text(&format!(" oh {} ", m));
 			consume(buf, 3);
@@ -434,7 +467,8 @@ impl engine {
 		// a web address's scheme is spelled
 		if !prev.is_ascii_alphabetic() {
 			let low = a.to_ascii_lowercase();
-			for (scheme, say) in [(&b"https://"[..], " h t t p s colon slash slash "), (b"http://", " h t t p colon slash slash ")] {
+			for (scheme, say) in [(&b"https://"[..], " h t t p s colon slash slash "),
+				(b"http://", " h t t p colon slash slash ")] {
 				if low.starts_with(scheme) && at(scheme.len()).is_ascii_alphabetic() {
 					self.scratch_pad.write_text(say);
 					consume(buf, scheme.len());
@@ -463,10 +497,18 @@ impl engine {
 					let unit = if v == 1 { one } else { many };
 					let subunit = if frac.is_empty() || sub_one.is_empty() { String::new() } else {
 						let c = frac[0] as u64 * 10 + frac.get(1).copied().unwrap_or(0) as u64;
-						if c == 0 { String::new() } else { format!(" and {} {}", self.words(c, false, false), if c == 1 { sub_one } else { sub_many }) }
+						if c == 0 {
+							String::new()
+						} else {
+							format!(" and {} {}", self.words(c, false, false), if c == 1 { sub_one } else { sub_many })
+						}
 					};
 					// under one: only the pence or cents
-					if v == 0 && !subunit.is_empty() { format!(" {} ", &subunit[5..]) } else { format!(" {} {}{} ", num, unit, subunit) }
+					if v == 0 && !subunit.is_empty() {
+						format!(" {} ", &subunit[5..])
+					} else {
+						format!(" {} {}{} ", num, unit, subunit)
+					}
 				};
 				self.scratch_pad.write_text(&text);
 				consume(buf, k);
@@ -482,7 +524,13 @@ impl engine {
 			// a height in feet and inches: 6'2" six foot two
 			if n1 == 1 && at(1) == b'\'' {
 				let (v2, n2) = Self::digits(&a, 2);
-				let q = if at(2 + n2) == b'"' { 1 } else if a.get(2 + n2..5 + n2) == Some(&[0xE2, 0x80, 0x9D][..]) { 3 } else { 0 };
+				let q = if at(2 + n2) == b'"' {
+					1
+				} else if a.get(2 + n2..5 + n2) == Some(&[0xE2, 0x80, 0x9D][..]) {
+					3
+				} else {
+					0
+				};
 				if (1..=2).contains(&n2) && v2 < 12 && q > 0 {
 					let (f, i) = (self.words(v1, false, false), self.words(v2, false, false));
 					self.scratch_pad.write_text(&format!(" {} foot {} ", f, i));
@@ -496,28 +544,41 @@ impl engine {
 				let mut j = n1 + 1 + nc;
 				while is_space(at(j)) { j += 1; }
 				let low = a[j..].to_ascii_lowercase();
-				let unit = [("dollars", "dollar"), ("dollar", "dollar"), ("euros", "euro"), ("euro", "euro")].into_iter()
+				let unit = [("dollars", "dollar"), ("dollar", "dollar"), ("euros", "euro"), ("euro", "euro")]
+					.into_iter()
 					.find(|(w, _)| low.starts_with(w.as_bytes()) && !at(j + w.len()).is_ascii_alphabetic());
 				if let (2, true, Some((w, one))) = (nc, j > n1 + 3, unit) {
-					let cents = if c == 1 { " one cent".to_string() } else { format!(" {} cents", self.words(c, false, false)) };
+					let cents = if c == 1 {
+						" one cent".to_string()
+					} else {
+						format!(" {} cents", self.words(c, false, false))
+					};
 					let whole = format!(" {} {}{}", self.words(v1, false, false), one, if v1 == 1 { "" } else { "s" });
-					let text = match (v1, c) { (0, _) => cents, (_, 0) => whole, _ => format!("{} and{}", whole, cents) };
+					let text = match (v1, c) {
+						(0, _) => cents,
+						(_, 0) => whole,
+						_ => format!("{} and{}", whole, cents)
+					};
 					self.scratch_pad.write_text(&format!("{} ", text));
 					consume(buf, j + w.len());
 					return true;
 				}
 			}
-			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined to it)
+			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined
+			// to it)
 			const UNITS: [(&str, &str, &str, bool); 26] = [
 				("ft", "foot", "feet", false), ("in", "inch", "inches", true), ("yd", "yard", "yards", false),
 				("yds", "yard", "yards", false), ("mi", "mile", "miles", false), ("hr", "hour", "hours", false),
-				("hrs", "hour", "hours", false), ("min", "minute", "minutes", false), ("mins", "minute", "minutes", false),
-				("sec", "second", "seconds", false), ("secs", "second", "seconds", false), ("ms", "millisecond", "milliseconds", true),
-				("mg", "milligram", "milligrams", false), ("kg", "kilogram", "kilograms", false), ("kgs", "kilogram", "kilograms", false),
-				("lb", "pound", "pounds", false), ("lbs", "pound", "pounds", false), ("oz", "ounce", "ounces", false),
+				("hrs", "hour", "hours", false), ("min", "minute", "minutes", false),
+				("mins", "minute", "minutes", false), ("sec", "second", "seconds", false),
+				("secs", "second", "seconds", false), ("ms", "millisecond", "milliseconds", true),
+				("mg", "milligram", "milligrams", false), ("kg", "kilogram", "kilograms", false),
+				("kgs", "kilogram", "kilograms", false), ("lb", "pound", "pounds", false),
+				("lbs", "pound", "pounds", false), ("oz", "ounce", "ounces", false),
 				("ml", "milliliter", "milliliters", false), ("km", "kilometer", "kilometers", false),
 				("cm", "centimeter", "centimeters", false), ("mm", "millimeter", "millimeters", false),
-				("mph", "mile per hour", "miles per hour", false), ("km/h", "kilometer per hour", "kilometers per hour", false),
+				("mph", "mile per hour", "miles per hour", false),
+				("km/h", "kilometer per hour", "kilometers per hour", false),
 				("km/hr", "kilometer per hour", "kilometers per hour", false), ("m", "meter", "meters", false)];
 			{
 				let (v, frac, k) = Self::amount(&a, 0);
@@ -527,8 +588,8 @@ impl engine {
 				let low = a[j..].to_ascii_lowercase();
 				// "m" only in lower case and not before more of a unit: "3 M", "m/s" and "m\u{b2}" are not meters
 				let meter = at(j) == b'm' && !matches!(at(j + 1), b'0'..=b'9' | b'/' | 0x80..=0xFF);
-				// a spaced "in" is inches before punctuation, the end or a size word ("6 in, 2 lb", "12 in tall"), else the
-				// preposition ("6 in the morning", "1 in 10")
+				// a spaced "in" is inches before punctuation, the end or a size word ("6 in, 2 lb", "12 in tall"),
+				// else the preposition ("6 in the morning", "1 in 10")
 				let inch = {
 					let mut k = j + 2;
 					if at(k) == b'.' { k += 1; }
@@ -537,7 +598,8 @@ impl engine {
 					while at(e).is_ascii_alphabetic() { e += 1; }
 					let next = a.get(k..e).unwrap_or(&[]).to_ascii_lowercase();
 					!at(k).is_ascii_alphanumeric() && at(k) != b'$'
-						|| matches!(&next[..], b"tall" | b"long" | b"wide" | b"high" | b"deep" | b"thick" | b"by" | b"x" | b"across" | b"square")
+						|| matches!(&next[..], b"tall" | b"long" | b"wide" | b"high" | b"deep" | b"thick" | b"by" | b"x"
+							| b"across" | b"square")
 				};
 				let unit = UNITS.iter()
 					.filter(|u| (joined || !u.3 || (u.0 == "in" && inch)) && low.starts_with(u.0.as_bytes())
@@ -561,7 +623,8 @@ impl engine {
 			if n1 == 4 && at(4) == b'-' {
 				let (m, nm) = Self::digits(&a, 5);
 				let (d, nd) = Self::digits(&a, 8);
-				if nm == 2 && at(7) == b'-' && nd == 2 && !at(10).is_ascii_digit() && (1..=12).contains(&m) && (1..=31).contains(&d) {
+				if nm == 2 && at(7) == b'-' && nd == 2 && !at(10).is_ascii_digit() && (1..=12).contains(&m)
+					&& (1..=31).contains(&d) {
 					let day = self.words(d, true, false);
 					let year = self.year_words(v1);
 					self.scratch_pad.write_text(&format!(" {} {} , {} ", MONTHS[m as usize - 1], day, year));
@@ -595,11 +658,18 @@ impl engine {
 				let (v2, n2) = Self::digits(&a, n1 + 1);
 				let p2 = n1 + 1 + n2;
 				// a date: month / day / year
-				if n1 <= 2 && (1..=2).contains(&n2) && at(p2) == b'/' && (1..=12).contains(&v1) && (1..=31).contains(&v2) {
+				if n1 <= 2 && (1..=2).contains(&n2) && at(p2) == b'/' && (1..=12).contains(&v1)
+					&& (1..=31).contains(&v2) {
 					let (v3, n3) = Self::digits(&a, p2 + 1);
 					if (n3 == 2 || n3 == 4) && after(p2 + 1 + n3) {
 						let day = self.words(v2, true, false);
-						let year = if n3 == 4 { self.year_words(v3) } else if v3 < 10 { format!("oh {}", self.words(v3, false, false)) } else { self.words(v3, false, false) };
+						let year = if n3 == 4 {
+							self.year_words(v3)
+						} else if v3 < 10 {
+							format!("oh {}", self.words(v3, false, false))
+						} else {
+							self.words(v3, false, false)
+						};
 						self.scratch_pad.write_text(&format!(" {} {} , {} ", MONTHS[v1 as usize - 1], day, year));
 						consume(buf, p2 + 1 + n3);
 						self.digit_prev = true;
@@ -612,7 +682,10 @@ impl engine {
 					let den = match (v2, v1 > 1) {
 						(2, false) => "half".to_string(), (2, true) => "halves".to_string(),
 						(4, false) => "quarter".to_string(), (4, true) => "quarters".to_string(),
-						(_, plural) => { let d = self.words(v2, true, false); if plural { format!("{}s", d) } else { d } },
+						(_, plural) => {
+							let d = self.words(v2, true, false);
+							if plural { format!("{}s", d) } else { d }
+						},
 					};
 					self.scratch_pad.write_text(&format!(" {} {} ", num, den));
 					consume(buf, p2);
@@ -629,7 +702,13 @@ impl engine {
 			let ends = |i: usize| !at(i).is_ascii_alphanumeric();
 			let plain = !(matches!(at(n1), b',' | b'\'' | b'_' | b'.' | b':') && at(n1 + 1).is_ascii_digit());
 			// a decade: the 1990s, the 2000s, the 90s (a possessive s may follow an apostrophe)
-			let s_at = if at(n1) == b's' { Some(n1) } else if at(n1) == b'\'' && at(n1 + 1) == b's' { Some(n1 + 1) } else { None };
+			let s_at = if at(n1) == b's' {
+				Some(n1)
+			} else if at(n1) == b'\'' && at(n1 + 1) == b's' {
+				Some(n1 + 1)
+			} else {
+				None
+			};
 			if let Some(s) = s_at {
 				if v1 % 10 == 0 && ends(s + 1) && ((n1 == 4 && (1100..=2099).contains(&v1)) || (n1 == 2 && v1 >= 10)) {
 					let w = if n1 == 4 { self.year_words(v1) } else { self.words(v1, false, false) };
@@ -640,7 +719,8 @@ impl engine {
 			}
 			// a year: four plain digits from 1100 to 2099, or from 1001 after a word that leads a year ("in 2015 votes
 			// were cast", "in 1066"); not when a plural noun follows ("2015 votes"), after a count word ("over 1500"),
-			// or falling to the next number ("the vote was 2015 to 1987"); after "to", "and"... read like the one before
+			// or falling to the next number ("the vote was 2015 to 1987"); after "to", "and"... read like the one
+			// before
 			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
 			let before = if is_space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
 			let cue = YEAR_AFTER.contains(&before.as_str());
@@ -656,7 +736,8 @@ impl engine {
 			let in_range = (1100..=1999).contains(&v1) || (2010..=2099).contains(&v1);
 			let year = if cue { (1001..=1999).contains(&v1) || (2010..=2099).contains(&v1) }
 				else if counted || range_count || COUNT_AFTER.contains(&before.as_str()) { false }
-				else if RANGE_AFTER.contains(&before.as_str()) && Self::number_before_prev_word(buf) && let Some(y) = self.last_year { y && in_range }
+				else if RANGE_AFTER.contains(&before.as_str()) && Self::number_before_prev_word(buf)
+					&& let Some(y) = self.last_year { y && in_range }
 				else { in_range };
 			if n1 == 4 && plain && !ordinal && ends(n1) && at(n1) != b'/' {
 				self.last_year = Some(year);
@@ -691,7 +772,9 @@ impl engine {
 				if low[1..].starts_with(name.as_bytes()) { found = Some((m, name.len())); }
 			}
 			for (name, m) in SHORT_MONTHS {
-				if low[1..].starts_with(name.as_bytes()) && found.is_none_or(|(_, n)| name.len() > n) { found = Some((m, name.len())); }
+				if low[1..].starts_with(name.as_bytes()) && found.is_none_or(|(_, n)| name.len() > n) {
+					found = Some((m, name.len()));
+				}
 			}
 			if let Some((m, n)) = found {
 				let mut k = 1 + n;
@@ -745,8 +828,11 @@ impl engine {
 			let cap = if !plain { None } else if let Some(&(_, cap_verb, default_verb)) = pair {
 				let verb = if w.ends_with('s') { BEFORE_VERB_S.contains(&b) } else { BEFORE_VERB.contains(&b) };
 				let noun = !verb && BEFORE_NOUN.contains(&b);
-				// no cue before but a determiner after: a verb ("Record a song"), not after a preposition ("in contrast the")
-				let verb = verb || (!noun && det_next && !matches!(b, "in" | "on" | "at" | "by" | "for" | "with" | "from" | "into" | "without" | "under"));
+				// no cue before but a determiner after: a verb ("Record a song"), not after a preposition
+				// ("in contrast the")
+				let verb = verb || (!noun && det_next
+					&& !matches!(b, "in" | "on" | "at" | "by" | "for" | "with" | "from" | "into" | "without"
+						| "under"));
 				Some(if verb { cap_verb } else if noun { !cap_verb } else { cap_verb == default_verb })
 			} else {
 				match w.as_str() {
@@ -758,16 +844,20 @@ impl engine {
 						let modal = BEFORE_VERB.contains(&b) && !matches!(b, "i" | "you" | "we" | "they" | "who");
 						let past = ["yesterday", "last", "earlier", "ago"];
 						let gone = past.contains(&next.as_str()) || (!det_next && past.contains(&next2.as_str()));
-						Some(matches!(b, "have" | "has" | "had" | "having" | "was" | "were" | "been" | "being" | "ve") || (!modal && gone))
+						Some(matches!(b, "have" | "has" | "had" | "having" | "was" | "were" | "been" | "being" | "ve")
+							|| (!modal && gone))
 					},
-					"wind" => Some(BEFORE_VERB.contains(&b) || (!BEFORE_NOUN.contains(&b) && (det_next || next == "up" || next == "down"))),
-					"bow" => Some(BEFORE_VERB.contains(&b) || det_next || matches!(next.as_str(), "to" | "down" | "out" | "before")),
+					"wind" => Some(BEFORE_VERB.contains(&b)
+						|| (!BEFORE_NOUN.contains(&b) && (det_next || next == "up" || next == "down"))),
+					"bow" => Some(BEFORE_VERB.contains(&b) || det_next
+						|| matches!(next.as_str(), "to" | "down" | "out" | "before")),
 					// crying after a determiner ("a tear fell"), the rip before a particle ("a tear in the paper")
 					"tear" => Some(DETERMINERS.contains(&b) && !RIP_NEXT.contains(&next.as_str())),
 					"tears" => Some(!BEFORE_VERB_S.contains(&b) && !det_next && !RIP_NEXT.contains(&next.as_str())),
 					// tiny before a plural noun ("the minute details") or after very/so/too
 					"minute" => Some(matches!(b, "very" | "so" | "too") || (plural(&next) && next != "minutes"
-						&& !matches!(b, "a" | "an" | "one" | "every" | "each" | "per" | "last" | "next" | "this" | "that"))),
+						&& !matches!(b, "a" | "an" | "one" | "every" | "each" | "per" | "last" | "next" | "this"
+							| "that"))),
 					_ => None,
 				}
 			};
@@ -791,8 +881,13 @@ impl engine {
 				let run = core::str::from_utf8(&a[..n]).unwrap_or("");
 				if let Some(v) = roman(run) {
 					let before = Self::prev_word(buf);
-					let ruler = before.as_bytes().first().is_some_and(|c| c.is_ascii_uppercase()) && !CARDINAL_AFTER.contains(&before.to_ascii_lowercase().as_str());
-					let w = if ruler { format!("the {}", self.words(v, true, false)) } else { self.words(v, false, false) };
+					let ruler = before.as_bytes().first().is_some_and(|c| c.is_ascii_uppercase())
+						&& !CARDINAL_AFTER.contains(&before.to_ascii_lowercase().as_str());
+					let w = if ruler {
+						format!("the {}", self.words(v, true, false))
+					} else {
+						self.words(v, false, false)
+					};
 					self.say(&w);
 					consume(buf, n);
 					return true;
@@ -803,7 +898,8 @@ impl engine {
 				let caps = |w: &[u8]| w.len() >= 2 && w.iter().all(u8::is_ascii_uppercase);
 				let k = n + a[n..].iter().take_while(|c| is_space(**c)).count();
 				let next = &a[k..k + a[k..].iter().take_while(|c| c.is_ascii_alphabetic()).count()];
-				let in_caps = n == 2 && !self.digit_prev && (caps(Self::prev_word(buf).as_bytes()) || (k > n && caps(next)));
+				let in_caps = n == 2 && !self.digit_prev
+					&& (caps(Self::prev_word(buf).as_bytes()) || (k > n && caps(next)));
 				if (n >= 3 || in_caps) && Self::is_word(&low) {
 					self.say(&low);
 					consume(buf, n);
@@ -946,9 +1042,9 @@ impl engine {
 		out
 	}
 	fn initial(buf: &mut cbuf) -> bool {
-		// whether the capital and period before the cursor are a name's initial ("John F. Kennedy", "J. R. R. Tolkien"):
-		// an initial next to it, or a capitalized word before it inside the sentence. A name starting a sentence is
-		// taken for a sentence end ("John F. Kennedy spoke." reads "john f . kennedy")
+		// whether the capital and period before the cursor are a name's initial ("John F. Kennedy",
+		// "J. R. R. Tolkien"): an initial next to it, or a capitalized word before it inside the sentence. A name
+		// starting a sentence is taken for a sentence end ("John F. Kennedy spoke." reads "john f . kennedy")
 		let a = Self::ahead(buf, 8);
 		let k = a.iter().take_while(|c| is_space(**c)).count();
 		if a.get(k).is_some_and(u8::is_ascii_uppercase) && a.get(k + 1) == Some(&b'.') { return true; }
@@ -958,7 +1054,8 @@ impl engine {
 		if b.len() >= 3 && at(b.len() - 3).is_ascii_alphabetic() { return false; }
 		let mut i = b.len().saturating_sub(2);
 		while i > 0 && is_space(at(i - 1)) { i -= 1; }
-		if i >= 2 && at(i - 1) == b'.' && at(i - 2).is_ascii_uppercase() && (i < 3 || !at(i - 3).is_ascii_alphabetic()) { return true; }
+		if i >= 2 && at(i - 1) == b'.' && at(i - 2).is_ascii_uppercase()
+			&& (i < 3 || !at(i - 3).is_ascii_alphabetic()) { return true; }
 		let end = i;
 		while i > 0 && at(i - 1).is_ascii_alphabetic() { i -= 1; }
 		let capital = end > i && at(i).is_ascii_uppercase();
@@ -966,10 +1063,12 @@ impl engine {
 		capital && i > 0 && (at(i - 1).is_ascii_alphabetic() || at(i - 1) == b',')
 	}
 	fn fold(buf: &mut cbuf) {
-		// accented Latin letters to plain ones ("café" cafe, "Straße" strasse): the whole text, before any of it is read
-		const FOLD: [(&str, &str); 21] = [("ÀÁÂÃÄÅ", "A"), ("àáâãäå", "a"), ("Ç", "C"), ("ç", "c"), ("ÈÉÊË", "E"), ("èéêë", "e"),
-			("ÌÍÎÏ", "I"), ("ìíîï", "i"), ("Ñ", "N"), ("ñ", "n"), ("ÒÓÔÕÖØ", "O"), ("òóôõöø", "o"), ("ÙÚÛÜ", "U"), ("ùúûü", "u"),
-			("Ý", "Y"), ("ýÿ", "y"), ("ß", "ss"), ("Æ", "AE"), ("æ", "ae"), ("Œ", "OE"), ("œ", "oe")];
+		// accented Latin letters to plain ones ("café" cafe, "Straße" strasse): the whole text, before any of it is
+		// read
+		const FOLD: [(&str, &str); 21] = [("ÀÁÂÃÄÅ", "A"), ("àáâãäå", "a"), ("Ç", "C"), ("ç", "c"),
+			("ÈÉÊË", "E"), ("èéêë", "e"), ("ÌÍÎÏ", "I"), ("ìíîï", "i"), ("Ñ", "N"), ("ñ", "n"),
+			("ÒÓÔÕÖØ", "O"), ("òóôõöø", "o"), ("ÙÚÛÜ", "U"), ("ùúûü", "u"), ("Ý", "Y"),
+			("ýÿ", "y"), ("ß", "ss"), ("Æ", "AE"), ("æ", "ae"), ("Œ", "OE"), ("œ", "oe")];
 		let start = buf.getcurs();
 		let mut text = Vec::new();
 		while buf.is_not_empty() { text.push(buf.read()); buf.advance(); }
@@ -1028,9 +1127,11 @@ impl engine {
 		self.digit_prev = false;
 		// a title stays with the name after it ("Dr. Smith"); other abbreviations end a sentence before a capital
 		const TITLES: [&str; 20] = ["mister", "missus", "miz", "misters", "doctor", "professor", "sergeant", "corporal",
-			"lieutenant", "major", "general", "colonel", "captain", "commander", "governor", "mount", "fort", "attorney general",
-			"for example ,", "in other words ,"];
-		if pat.last() == Some(&b'.') && !text.trim_end().ends_with('.') { self.end_after_period(buf, !TITLES.contains(&text.trim())); }
+			"lieutenant", "major", "general", "colonel", "captain", "commander", "governor", "mount", "fort",
+			"attorney general", "for example ,", "in other words ,"];
+		if pat.last() == Some(&b'.') && !text.trim_end().ends_with('.') {
+			self.end_after_period(buf, !TITLES.contains(&text.trim()));
+		}
 		true
 	}
 
@@ -1116,8 +1217,8 @@ impl engine {
 			/*---------------------*/
 
 			@t1 comma [ ]+ @t2 letter letter period? space {
-				// a state after a comma, in capitals: "Austin, TX" reads texas, while "or", "pa" and "al" are words. Any other two
-				// letters are just the comma
+				// a state after a comma, in capitals: "Austin, TX" reads texas, while "or", "pa" and "al" are words.
+				// Any other two letters are just the comma
 				const STATES: [(&[u8; 2], &str); 51] = [
 					(b"AK", "alaska"), (b"AL", "alabama"), (b"AR", "arkansas"), (b"AZ", "arizona"),
 					(b"CA", "california"), (b"CO", "colorado"), (b"CT", "connecticut"), (b"DC", "district of columbia"),
@@ -1183,7 +1284,11 @@ impl engine {
 				buf.recede();
 				let before = Self::behind(buf, 8).into_iter().rev().find(|c| !is_space(*c)).unwrap_or(0);
 				buf.advance();
-				self.scratch_pad.write_text(if before.is_ascii_digit() && next.is_ascii_digit() { " times " } else { " asterisk " });
+				self.scratch_pad.write_text(if before.is_ascii_digit() && next.is_ascii_digit() {
+					" times "
+				} else {
+					" asterisk "
+				});
 				break;
 			}
 			space comma {
@@ -1439,8 +1544,8 @@ impl engine {
 				}
 				if t1 != t2 {
 					buf.setcurs(t1);
-					// the word before, when the text already names the sign ("Negative -42", "plus +5"); a "minus" or "plus"
-					// after a number is the operator ("5 minus -3")
+					// the word before, when the text already names the sign ("Negative -42", "plus +5"); a "minus" or
+					// "plus" after a number is the operator ("5 minus -3")
 					let said = Self::prev_word(buf).to_ascii_lowercase();
 					let operator = {
 						let b = Self::behind(buf, 48);
@@ -1451,13 +1556,17 @@ impl engine {
 					if buf.read() == b'+' {
 						if !named("positive", "plus") { self.scratch_pad.write_text(" positive "); }
 					} else if self.digit_prev && Self::prev_byte(buf).is_ascii_digit() {
-						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5); not
-						// after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read digit by digit
+						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5);
+						// not after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read
+						// digit by digit
 						let b = Self::behind(buf, 24);
 						let mut i = b.len();
 						while i > 0 && (b[i - 1].is_ascii_digit() || b[i - 1] == b',') { i -= 1; }
-						let whole = i < b.len() && b[i].is_ascii_digit() && (b[i] != b'0' || b.len() - i == 1) && b.len() - i < 19 && (i == 0 || !matches!(b[i - 1], b':' | b'.' | b'-'));
-						let value = |d: &[u8]| d.iter().filter(|c| c.is_ascii_digit()).fold(0u64, |v, c| v.saturating_mul(10).saturating_add((c - b'0') as u64));
+						let whole = i < b.len() && b[i].is_ascii_digit() && (b[i] != b'0' || b.len() - i == 1)
+							&& b.len() - i < 19 && (i == 0 || !matches!(b[i - 1], b':' | b'.' | b'-'));
+						let value = |d: &[u8]| d.iter()
+							.filter(|c| c.is_ascii_digit())
+							.fold(0u64, |v, c| v.saturating_mul(10).saturating_add((c - b'0') as u64));
 						let was = value(&b[i..]);
 						buf.setcurs(t3);
 						let mut now = Vec::new();

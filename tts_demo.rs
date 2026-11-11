@@ -28,7 +28,10 @@ struct Opts {
 }
 
 fn parse_args() -> Result<Opts, String> {
-	let mut opts = Opts { text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0, phone: None, table: None };
+	let mut opts = Opts {
+		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0,
+		phone: None, table: None
+	};
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
 	while let Some(arg) = args.next() {
@@ -47,7 +50,9 @@ fn parse_args() -> Result<Opts, String> {
 			opts.phone = Some(phone_token(p).ok_or(format!("phone {} can't be said on its own", p))?);
 		} else if arg == "--voice" {
 			let n = args.next().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
-			if n >= _vtm::VOICES.len() { return Err(format!("voice must be between 0 and {}", _vtm::VOICES.len() - 1)); }
+			if n >= _vtm::VOICES.len() {
+				return Err(format!("voice must be between 0 and {}", _vtm::VOICES.len() - 1));
+			}
 			opts.voice = n;
 		} else if arg == "--rate" {
 			let r: f32 = args.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
@@ -97,7 +102,8 @@ fn read_table(path: &str) -> Result<&'static [u16; 1550], String> {
 	let text = std::fs::read_to_string(path).map_err(|e| format!("can't read {path}: {e}"))?;
 	let vals = text.split(|c: char| !c.is_ascii_digit()).filter(|t| !t.is_empty())
 		.map(|t| t.parse().map_err(|_| format!("{path}: {t} is out of range"))).collect::<Result<Vec<u16>, _>>()?;
-	let tbl: [u16; 1550] = vals.try_into().map_err(|v: Vec<u16>| format!("{path} has {} numbers, expected 1550", v.len()))?;
+	let tbl: [u16; 1550] = vals.try_into()
+		.map_err(|v: Vec<u16>| format!("{path} has {} numbers, expected 1550", v.len()))?;
 	Ok(Box::leak(Box::new(tbl)))
 }
 

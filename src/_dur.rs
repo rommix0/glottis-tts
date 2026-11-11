@@ -123,7 +123,9 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let is_coda = !vowel && nucleus.is_some_and(|n| i > n);
 			if is_nucleus || is_coda {
 				apply("phrase-final", if is_nucleus { PHRASE_FINAL_VOWEL } else { PHRASE_FINAL_CODA });
-				if !matches!(utt.phrases[word.phrase].end, Boundary::Comma | Boundary::Minor) { apply("sentence-final", SENTENCE_FINAL); }
+				if !matches!(utt.phrases[word.phrase].end, Boundary::Comma | Boundary::Minor) {
+					apply("sentence-final", SENTENCE_FINAL);
+				}
 			}
 		}
 
@@ -136,15 +138,23 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			if matches!(p, AA | AE | AO | AW | AY | ER | EY | IY | OW | OY | UW) { apply("tense", TENSE_VOWEL); }
 			let n = word.syls.len();
 			if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
-			if same_word(i + 1) && utt.segs[i + 1].phone == LX && matches!(p, AX | IX) { apply("syllabic-l", SYLLABIC_L_SCHWA); }
+			if same_word(i + 1) && utt.segs[i + 1].phone == LX && matches!(p, AX | IX) {
+				apply("syllabic-l", SYLLABIC_L_SCHWA);
+			}
 			if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
-				if is_voiced(utt.segs[i + 1].phone) { apply("before-voiced", BEFORE_VOICED_OBS); } else { apply("before-voiceless", BEFORE_VOICELESS_OBS); }
+				if is_voiced(utt.segs[i + 1].phone) {
+					apply("before-voiced", BEFORE_VOICED_OBS);
+				} else {
+					apply("before-voiceless", BEFORE_VOICELESS_OBS);
+				}
 			}
 		} else {
 			let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
 			if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
 			if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
-			if matches!(p, S | Z | F | V) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, TH | DH) { apply("before-dental", BEFORE_DENTAL); }
+			if matches!(p, S | Z | F | V) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, TH | DH) {
+				apply("before-dental", BEFORE_DENTAL);
+			}
 			if utt.segs[i].glide { apply("glide-through", GLIDE_THROUGH); }
 		}
 
@@ -184,7 +194,8 @@ mod tests {
 		for i in 0..a.segs.len() {
 			let pd = phone_dur(a.segs[i].phone);
 			assert!(b.segs[i].dur_ms >= pd.min);
-			assert!((stretch(&b, i) * 1.5 - stretch(&a, i)).abs() < 0.01, "{}: {} ms at rate 1.5, {} at 1", i, b.segs[i].dur_ms, a.segs[i].dur_ms);
+			assert!((stretch(&b, i) * 1.5 - stretch(&a, i)).abs() < 0.01,
+				"{}: {} ms at rate 1.5, {} at 1", i, b.segs[i].dur_ms, a.segs[i].dur_ms);
 		}
 		// stops shrink with the rate like everything else
 		assert!(b.segs[0].dur_ms < a.segs[0].dur_ms);

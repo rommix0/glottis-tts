@@ -81,7 +81,8 @@ impl dictreader {
 				len += 1;
 				if c & 0x80 != 0 { break; }
 			}
-			if len == n && (entry[..n] == self.word[..n] || entry[..n].iter().zip(&self.word).all(|(&e, w)| e == w.to_ascii_lowercase())) {
+			if len == n && (entry[..n] == self.word[..n]
+				|| entry[..n].iter().zip(&self.word).all(|(&e, w)| e == w.to_ascii_lowercase())) {
 				self.funcword = head & 0x20 != 0;
 				self.pos = pos;
 				self.done = false;

@@ -46,17 +46,28 @@ pub const DB_PER_HALF: f32 = 6.0;
 
 // gain for each whole dB from 0 to G_MAX: 0.5^((G_MAX - dB) / 6), every 6 dB halving it
 pub const DB_GAIN: [f32; 88] = [
-	4.3158372e-05, 4.8443635e-05, 5.437614e-05, 6.1035156e-05, 6.8509646e-05, 7.689948e-05, 8.6316744e-05, 9.688727e-05,
-	0.00010875228, 0.00012207031, 0.00013701929, 0.00015379896, 0.00017263349, 0.00019377454, 0.00021750457, 0.00024414062,
-	0.00027403858, 0.00030759792, 0.00034526698, 0.00038754908, 0.00043500913, 0.00048828125, 0.00054807717, 0.00061519584,
-	0.00069053395, 0.00077509816, 0.00087001827, 0.0009765625, 0.0010961543, 0.0012303917, 0.0013810679, 0.0015501963,
-	0.0017400365, 0.001953125, 0.0021923087, 0.0024607833, 0.0027621358, 0.0031003926, 0.003480073, 0.00390625,
-	0.0043846173, 0.0049215667, 0.0055242716, 0.0062007853, 0.006960146, 0.0078125, 0.008769235, 0.009843133,
-	0.011048543, 0.012401571, 0.013920292, 0.015625, 0.01753847, 0.019686267, 0.022097087, 0.024803141,
-	0.027840585, 0.03125, 0.03507694, 0.039372534, 0.044194173, 0.049606282, 0.05568117, 0.0625,
-	0.07015388, 0.07874507, 0.088388346, 0.099212565, 0.11136234, 0.125, 0.14030775, 0.15749013,
-	0.17677669, 0.19842513, 0.22272468, 0.25, 0.2806155, 0.31498027, 0.35355338, 0.39685026,
-	0.44544935, 0.5, 0.561231, 0.62996054, 0.70710677, 0.7937005, 0.8908987, 1.0,
+	4.3158372e-05, 4.8443635e-05, 5.437614e-05, 6.1035156e-05,
+	6.8509646e-05, 7.689948e-05, 8.6316744e-05, 9.688727e-05,
+	0.00010875228, 0.00012207031, 0.00013701929, 0.00015379896,
+	0.00017263349, 0.00019377454, 0.00021750457, 0.00024414062,
+	0.00027403858, 0.00030759792, 0.00034526698, 0.00038754908,
+	0.00043500913, 0.00048828125, 0.00054807717, 0.00061519584,
+	0.00069053395, 0.00077509816, 0.00087001827, 0.0009765625,
+	0.0010961543, 0.0012303917, 0.0013810679, 0.0015501963,
+	0.0017400365, 0.001953125, 0.0021923087, 0.0024607833,
+	0.0027621358, 0.0031003926, 0.003480073, 0.00390625,
+	0.0043846173, 0.0049215667, 0.0055242716, 0.0062007853,
+	0.006960146, 0.0078125, 0.008769235, 0.009843133,
+	0.011048543, 0.012401571, 0.013920292, 0.015625,
+	0.01753847, 0.019686267, 0.022097087, 0.024803141,
+	0.027840585, 0.03125, 0.03507694, 0.039372534,
+	0.044194173, 0.049606282, 0.05568117, 0.0625,
+	0.07015388, 0.07874507, 0.088388346, 0.099212565,
+	0.11136234, 0.125, 0.14030775, 0.15749013,
+	0.17677669, 0.19842513, 0.22272468, 0.25,
+	0.2806155, 0.31498027, 0.35355338, 0.39685026,
+	0.44544935, 0.5, 0.561231, 0.62996054,
+	0.70710677, 0.7937005, 0.8908987, 1.0,
 ];
 
 // formants closer than MIN_D (Hz) get their bandwidths widened, by up to 1 + MUL_B times when they meet
@@ -130,14 +141,30 @@ pub struct Voice {
 
 // voice profiles, picked by number; 0-4 follow head size, 5 and up are silly
 pub const VOICES: [Voice; 8] = [
-	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },	// 0 table voice
-	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0, rd: 100.0, br: 0.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },	// 1 large head
-	Voice { f0: 150.0, range:  85.0, f1: 136.0, f2: 113.0, f3: 117.0, fhi: 111.0, rd: 240.0, br: 8.0, db:  2.2, fl:  25.0, jit: 0.2, shim: 0.2 },	// 2 female
-	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0, rd: 125.0, br: 2.0, db: -3.1, fl:  25.0, jit: 0.2, shim: 0.2 },	// 3 child
-	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0, rd:  95.0, br: 0.0, db:  2.1, fl:  25.0, jit: 0.6, shim: 0.4 },	// 4 giant
-	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0, rd: 100.0, br: 0.0, db:  2.6, fl:  25.0, jit: 0.2, shim: 0.2 },	// 5 deep voice, tiny head
-	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0, rd: 100.0, br: 0.0, db:  0.6, fl:  25.0, jit: 0.2, shim: 0.2 },	// 6 pulled apart
-	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  1.1, fl: 250.0, jit: 1.5, shim: 1.0 },	// 7 shaky
+	// 0 table voice
+	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0,
+		rd: 100.0, br: 0.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },
+	// 1 large head
+	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0,
+		rd: 100.0, br: 0.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },
+	// 2 female
+	Voice { f0: 150.0, range:  85.0, f1: 136.0, f2: 113.0, f3: 117.0, fhi: 111.0,
+		rd: 240.0, br: 8.0, db:  2.2, fl:  25.0, jit: 0.2, shim: 0.2 },
+	// 3 child
+	Voice { f0: 235.0, range: 120.0, f1: 135.0, f2: 130.0, f3: 127.0, fhi: 124.0,
+		rd: 125.0, br: 2.0, db: -3.1, fl:  25.0, jit: 0.2, shim: 0.2 },
+	// 4 giant
+	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0,
+		rd:  95.0, br: 0.0, db:  2.1, fl:  25.0, jit: 0.6, shim: 0.4 },
+	// 5 deep voice, tiny head
+	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0,
+		rd: 100.0, br: 0.0, db:  2.6, fl:  25.0, jit: 0.2, shim: 0.2 },
+	// 6 pulled apart
+	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0,
+		rd: 100.0, br: 0.0, db:  0.6, fl:  25.0, jit: 0.2, shim: 0.2 },
+	// 7 shaky
+	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0,
+		rd: 110.0, br: 2.0, db:  1.1, fl: 250.0, jit: 1.5, shim: 1.0 },
 ];
 
 // how loud white noise comes out of the cascade and the lips at a voice's scale, with its output level: aspiration's
@@ -148,9 +175,13 @@ fn asp_level(v: &Voice) -> f32 {
 	// F1-F3 as wide as in a release and widened as fix_bw does, the fixed upper formants as set_voice builds them
 	let (f1, f2, f3) = (400.0 * s1, 1600.0 * s2, 2600.0 * s3);
 	let [a1, a2, a3] = bw_widen3(f1, f2, f3, F4_INIT * (v.fhi / 100.0));
-	let mut rs = [resonator::new(f1.min(top), 300.0 * s1 * a1, false), resonator::new(f2.min(top), 120.0 * s2 * a2, false),
-		resonator::new(f3.min(top), 250.0 * s3 * a3, false), upper_formant(v, F4_INIT, B4_INIT), upper_formant(v, F5_INIT, B5_INIT),
-		upper_formant(v, F6_INIT, B6_INIT), upper_formant(v, F7_INIT, B7_INIT), upper_formant(v, F8_INIT, B8_INIT)];
+	let mut rs = [
+		resonator::new(f1.min(top), 300.0 * s1 * a1, false),
+		resonator::new(f2.min(top), 120.0 * s2 * a2, false),
+		resonator::new(f3.min(top), 250.0 * s3 * a3, false),
+		upper_formant(v, F4_INIT, B4_INIT), upper_formant(v, F5_INIT, B5_INIT),
+		upper_formant(v, F6_INIT, B6_INIT), upper_formant(v, F7_INIT, B7_INIT), upper_formant(v, F8_INIT, B8_INIT),
+	];
 	let (mut e, mut prev) = (0.0f32, 0.0f32);
 	for n in 0..4096 {
 		let mut y = if n == 0 { 1.0 } else { 0.0 };
@@ -297,8 +328,9 @@ const EXP_TABLE: [f32; EXP_STEPS + 1] = [
 	0.60653067,
 ];
 
-// a resonator's pole radius for bandwidth bw, from EXP_TABLE with a straight line between entries: within 0.01 Hz of bw;
-// wider than the table reaches (3.5 kHz at 22050 Hz, only the fixed upper resonators) it is worked out exactly
+// a resonator's pole radius for bandwidth bw, from EXP_TABLE with a straight line between entries:
+// within 0.01 Hz of bw; wider than the table reaches (3.5 kHz at 22050 Hz, only the fixed upper resonators)
+// it is worked out exactly
 fn pole_radius(bw: f32) -> f32 {
 	let x = PI * bw.max(0.0) / m_sr as f32;
 	if x >= EXP_TOP { return libm::expf(-x); }
@@ -397,7 +429,8 @@ impl LpPole {
 	}
 }
 
-// a glottal pulse is spread over this many samples either side of its exact time, so the voice plays this many samples late
+// a glottal pulse is spread over this many samples either side of its exact time, so the voice plays
+// this many samples late
 const PULSE_HALF: usize = 4;
 const PULSE_RING: usize = 16;
 
@@ -498,7 +531,10 @@ impl LfSource {
 		// the sines barely move in a millisecond: worked out at each end of one, a straight line between
 		let step = m_sr / 1000;
 		let n = self.flut_clock % step;
-		if n == 0 { (self.flut_from, self.flut_to) = (Self::flutter_sines(self.flut_clock), Self::flutter_sines(self.flut_clock + step)); }
+		if n == 0 {
+			(self.flut_from, self.flut_to) =
+				(Self::flutter_sines(self.flut_clock), Self::flutter_sines(self.flut_clock + step));
+		}
 		let a = self.flut_from + (self.flut_to - self.flut_from) * (n as f32 / step as f32);
 		// 10 s holds a whole number of cycles of all three, so the wrap is seamless
 		self.flut_clock = (self.flut_clock + 1) % (10 * m_sr);
@@ -514,7 +550,11 @@ impl LfSource {
 		// start a glottal pulse at the exact time the period ended, somewhere since the last sample
 		if self.pos_in_period == 0.0 || self.pos_in_period >= 1.0 {
 			self.calc_fant(f0, rd);
-			let ago = if self.last_inc > 0.0 { ((self.pos_in_period - 1.0) / self.last_inc).clamp(0.0, 0.999) } else { 0.0 };
+			let ago = if self.last_inc > 0.0 {
+				((self.pos_in_period - 1.0) / self.last_inc).clamp(0.0, 0.999)
+			} else {
+				0.0
+			};
 			self.pos_in_period %= 1.0;
 			// jitter stretches or shrinks this period, shimmer scales this pulse
 			self.jit_k = 1.0 / (1.0 + PERTURB_SPREAD * self.jitter / 100.0 * self.rand());
@@ -590,7 +630,8 @@ pub struct vtm {
 	voice:    Voice,	// voice profile
 	asp_gain: f32,		// aspiration noise, so it is as loud as the table voice's
 	vgain:    f32,		// the voice profile's output level, linear
-	min_bw:   f32,		// the cascade's B1/B2 floor: wider for a higher-pitched voice, whose rings have less time to die
+	// the cascade's B1/B2 floor: wider for a higher-pitched voice, whose rings have less time to die
+	min_bw:   f32,
 	fric_a:   f32,		// frication lowpass coefficient
 	lip_d:    f32,		// lip radiation coefficient at this rate
 	out_g:    f32,		// output trim, linear
@@ -726,8 +767,9 @@ impl vtm {
 		[self.B1_ADJ, self.B2_ADJ, self.B3_ADJ] = bw_widen3(self.F1, self.F2, self.F3, self.VR4.bf);
 	}
 	fn nasal_zero(&self, scale: f32, k: f32) -> f32 {
-		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
-		// sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at a vowel's nasalized edge
+		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole
+		// for an oral sound (they cancel), on F1 for a nasal (the pole is then its murmur), and in between at
+		// a vowel's nasalized edge
 		FN_INIT + k * ((self.F1 / scale) - FN_INIT)
 	}
 	fn parallel(&mut self, x: f32) -> f32 {
@@ -856,7 +898,8 @@ mod tests {
 
 	#[test]
 	fn aspiration_is_as_loud_in_every_voice() {
-		// the breath after a final stop: white noise through wide formants, which a bigger voice scale let through louder
+		// the breath after a final stop: white noise through wide formants, which a bigger voice scale let
+		// through louder
 		let level = |voice: Voice| {
 			let mut v = vtm::new();
 			v.set_voice(voice);
@@ -920,7 +963,16 @@ mod tests {
 		// whatever the source, the bandwidths a vowel asks for only get wider
 		for &rd in &[0.3f32, 0.6, 1.0, 2.0] {
 			let mut v = vtm::new();
-			for _ in 0..50 { v.F0 = 110.0; v.AV = DB_GAIN[60]; v.RD = rd; v.F1 = 750.0; v.F2 = 1250.0; v.B1 = 100.0; v.B2 = 88.0; v.step(); }
+			for _ in 0..50 {
+				v.F0 = 110.0;
+				v.AV = DB_GAIN[60];
+				v.RD = rd;
+				v.F1 = 750.0;
+				v.F2 = 1250.0;
+				v.B1 = 100.0;
+				v.B2 = 88.0;
+				v.step();
+			}
 			assert!(v.B1 >= 100.0 && v.B2 >= 88.0, "Rd {}: B1 {} B2 {}", rd, v.B1, v.B2);
 		}
 	}
@@ -1067,7 +1119,10 @@ mod tests {
 		for (i, &g) in DB_GAIN.iter().enumerate() {
 			assert!(((g as f64) / curve(i as f32) - 1.0).abs() < 1e-6, "{} dB: {} in the table", i, g);
 		}
-		let worst = (1..8700).map(|k| k as f32 / 100.0).map(|db| (20.0 * (vtm::db2lin(db) as f64 / curve(db)).log10()).abs()).fold(0.0, f64::max);
+		let worst = (1..8700)
+			.map(|k| k as f32 / 100.0)
+			.map(|db| (20.0 * (vtm::db2lin(db) as f64 / curve(db)).log10()).abs())
+			.fold(0.0, f64::max);
 		assert!(worst < 0.02, "the interpolated gain is off by {} dB", worst);
 	}
 

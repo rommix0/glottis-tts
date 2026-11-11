@@ -112,7 +112,9 @@ const WH_WORDS: [&str; 9] = [
 impl Utterance {
 	pub fn build(tokens: &[u8], texts: &[impl AsRef<str>]) -> Utterance {
 		// texts[i] is the text of the i-th word (one per word boundary token)
-		let mut u = Utterance { segs: Vec::new(), syls: Vec::new(), words: Vec::new(), phrases: Vec::new(), kind: Kind::Statement };
+		let mut u = Utterance {
+			segs: Vec::new(), syls: Vec::new(), words: Vec::new(), phrases: Vec::new(), kind: Kind::Statement,
+		};
 		let mut phrase_start: usize = 0;
 		let mut text_i: usize = 0;
 		for &tk in tokens {
@@ -148,21 +150,30 @@ impl Utterance {
 						// phones before any word boundary, or after punctuation: start a content word
 						let n = u.segs.len();
 						let ns = u.syls.len();
-						u.words.push(Word { segs: n..n, syls: ns..ns, function: false, text: String::new(), phrase: u.phrases.len() });
+						u.words.push(Word {
+							segs: n..n, syls: ns..ns, function: false, text: String::new(), phrase: u.phrases.len(),
+						});
 					}
 					let w = u.words.len() - 1;
 					for (p, s) in [(pa, sa), (pb, sb)] {
 						if p == SIL { continue; }
-						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower", "being"),
-						// and into an unstressed vowel starting the next word of its phrase ("go away"); a stressed one
-						// starts with a glottal catch instead
+						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower",
+						// "being"), and into an unstressed vowel starting the next word of its phrase ("go away"); a
+						// stressed one starts with a glottal catch instead
 						let first = u.words[w].segs.is_empty();
-						let prev = u.segs.last().filter(|x| x.word == w
-							|| (first && s == 0 && x.word + 1 == w && u.words[x.word].phrase == u.words[w].phrase)).map(|x| x.phone);
+						let prev = u.segs.last()
+							.filter(|x| x.word == w
+								|| (first && s == 0 && x.word + 1 == w && u.words[x.word].phrase == u.words[w].phrase))
+							.map(|x| x.phone);
 						if is_vowel(p) && let Some(g) = prev.and_then(offglide) {
-							u.segs.push(Seg { phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: true });
+							u.segs.push(Seg {
+								phone: g, stress: 0, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: true,
+							});
 						}
-						u.segs.push(Seg { phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0, rules: Vec::new(), glide: false });
+						u.segs.push(Seg {
+							phone: p, stress: if is_vowel(p) { s } else { 0 }, word: w, syl: 0, dur_ms: 0.0,
+							rules: Vec::new(), glide: false,
+						});
 						u.words[w].segs.end = u.segs.len();
 					}
 				},
@@ -182,7 +193,10 @@ impl Utterance {
 		u.kind = match u.phrases.last().map(|p| p.end) {
 			Some(Boundary::Exclaim) => Kind::Exclamation,
 			Some(Boundary::Question) => {
-				let first = u.words.iter().find(|w| !w.text.is_empty()).map(|w| w.text.to_lowercase()).unwrap_or_default();
+				let first = u.words.iter()
+					.find(|w| !w.text.is_empty())
+					.map(|w| w.text.to_lowercase())
+					.unwrap_or_default();
 				if WH_WORDS.contains(&first.as_str()) { Kind::Wh } else { Kind::YesNo }
 			},
 			_ => Kind::Statement,
@@ -211,8 +225,13 @@ impl Utterance {
 			let left = syls(words.start..j);
 			if left < MIN_PIECE_SYL || total - left < MIN_PIECE_SYL || self.words[j - 1].function { continue; }
 			let text = self.words[j].text.to_lowercase();
-			let score = if BREAK_BEFORE.contains(&text.as_str()) { 3.0 } else if PREPOSITIONS.contains(&text.as_str()) { 2.0 }
-				else { continue };
+			let score = if BREAK_BEFORE.contains(&text.as_str()) {
+				3.0
+			} else if PREPOSITIONS.contains(&text.as_str()) {
+				2.0
+			} else {
+				continue
+			};
 			let value = score - 2.0 * (left as f32 / total as f32 - 0.5).abs();
 			if best.is_none_or(|(v, _)| value > v) { best = Some((value, j)); }
 		}
@@ -228,13 +247,16 @@ impl Utterance {
 		fn vowel(p: u8) -> bool { is_vowel(p) && !matches!(p, AXP | IXP) }
 		for i in 1..self.segs.len().saturating_sub(1) {
 			let (prev, cur, next) = (&self.segs[i - 1], &self.segs[i], &self.segs[i + 1]);
-			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(vowel(prev.phone) || prev.phone == RX) { continue; }
+			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(vowel(prev.phone) || prev.phone == RX) {
+				continue;
+			}
 			let w = &self.words[cur.word];
 			let flaps = if next.word == cur.word {
 				let syllabic_n = matches!(next.phone, AX | IX) && i + 3 == w.segs.end && self.segs[i + 2].phone == N;
 				vowel(next.phone) && next.stress == 0 && !syllabic_n
 			} else {
-				vowel(next.phone) && self.words[next.word].phrase == w.phrase && self.words[next.word].segs.start == i + 1
+				vowel(next.phone) && self.words[next.word].phrase == w.phrase
+					&& self.words[next.word].segs.start == i + 1
 			};
 			if flaps { self.segs[i].phone = DX; }
 		}
@@ -244,7 +266,9 @@ impl Utterance {
 		// the l ending "feel"; the clear l made the schwa ring as a vowel of its own
 		for i in 1..self.segs.len() {
 			let w = self.segs[i].word;
-			if self.segs[i].phone != L || !matches!(self.segs[i - 1].phone, AX | IX) || self.segs[i - 1].word != w { continue; }
+			if self.segs[i].phone != L || !matches!(self.segs[i - 1].phone, AX | IX) || self.segs[i - 1].word != w {
+				continue;
+			}
 			let vowel_after = self.segs[i + 1..].iter().take_while(|s| s.word == w).any(|s| is_vowel(s.phone));
 			if !vowel_after { self.segs[i].phone = LX; }
 		}
@@ -308,7 +332,8 @@ mod tests {
 		let u = Utterance::build(&[CW, 46, 15, 60, 66, 37, PERIOD], &["follower"]);
 		assert_eq!(u.segs.iter().map(|s| s.phone).collect::<Vec<_>>(), vec![16, 1, 25, 29, 41, 7]);
 		assert_eq!(syl_phones(&u, 2), vec![41, 7]);
-		// across words into an unstressed vowel, which the w starts ("go away"); not into a stressed one, nor across a comma
+		// across words into an unstressed vowel, which the w starts ("go away"); not into a stressed one, nor
+		// across a comma
 		let u = Utterance::build(&[CW, 66, CW, 32, PERIOD], &["owe", "aa"]);
 		assert_eq!(u.segs.iter().map(|s| (s.phone, s.word)).collect::<Vec<_>>(), vec![(29, 0), (41, 1), (1, 1)]);
 		assert!(u.segs[1].glide && !u.segs[0].glide);

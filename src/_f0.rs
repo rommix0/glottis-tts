@@ -65,10 +65,13 @@ const VOICED_DIP_UP_MS:     f32 = 90.0;		// back up over this long
 const BUMP_SPAN_MS:         f32 = 200.0;	// a bump is drawn over this long at most
 const T_DIP_ST:             f32 = 1.5;		// fall into a pre-glottalized word-final t, over T_DIP_MS before it
 const T_DIP_MS:             f32 = 40.0;
-const ONSET_DIP_ST:         f32 = 1.5;		// glottal onset: a stressed word-initial vowel starts this low, back by ONSET_DIP_MS
+// glottal onset: a stressed word-initial vowel starts this low, back by ONSET_DIP_MS
+const ONSET_DIP_ST:         f32 = 1.5;
 const ONSET_DIP_MS:         f32 = 60.0;
-const ONSET_LEAD_MS:        f32 = 40.0;		// after a voiced sound the vowel's slot opens on that sound's tail: fall over this first
-const TROUGH_FULL_MS:       f32 = 500.0;	// accents this far apart dip to the baseline between them, closer ones sag less
+// after a voiced sound the vowel's slot opens on that sound's tail: fall over this first
+const ONSET_LEAD_MS:        f32 = 40.0;
+// accents this far apart dip to the baseline between them, closer ones sag less
+const TROUGH_FULL_MS:       f32 = 500.0;
 const MERGE_MS:             f32 = 20.0;
 const HIGH_VOWEL_ST:        f32 = 0.7;		// high vowels rise this much over their middle
 
@@ -102,7 +105,11 @@ impl Shape {
 		match self {
 			Shape::Decay { st, ms } => if age < BUMP_SPAN_MS { st * libm::expf(-age / ms) } else { 0.0 },
 			Shape::Fall  { st, ms } => -st * (age / ms).min(1.0),
-			Shape::Vee   { st, down, up } => if age < down { -st * age / down } else { -st * (1.0 - (age - down) / up).max(0.0) },
+			Shape::Vee   { st, down, up } => if age < down {
+				-st * age / down
+			} else {
+				-st * (1.0 - (age - down) / up).max(0.0)
+			},
 			Shape::Hump  { st, ms } => if age < ms { st * libm::sinf(PI * age / ms) } else { 0.0 },
 		}
 	}
@@ -127,14 +134,21 @@ pub struct Contour {
 // order, so the answer for the last one usually still holds and is checked before searching
 fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
 	let k = (*last).min(v.len());
-	let k = if (k == 0 || before(&v[k - 1])) && (k == v.len() || !before(&v[k])) { k } else { v.partition_point(before) };
+	let k = if (k == 0 || before(&v[k - 1])) && (k == v.len() || !before(&v[k])) {
+		k
+	} else {
+		v.partition_point(before)
+	};
 	*last = k;
 	k
 }
 
 impl Contour {
 	pub fn new() -> Contour {
-		Contour { targets: Vec::new(), bumps: Vec::new(), starts: Vec::new(), clock: 0.0, prev_seg: 0, prev_ms: 0.0, target_hint: 0, bump_hint: 0, start_hint: 0 }
+		Contour {
+			targets: Vec::new(), bumps: Vec::new(), starts: Vec::new(), clock: 0.0, prev_seg: 0, prev_ms: 0.0,
+			target_hint: 0, bump_hint: 0, start_hint: 0,
+		}
 	}
 
 	pub fn targets_of(&self, seg: usize) -> impl Iterator<Item = &Target> {
@@ -177,7 +191,11 @@ impl Contour {
 		let clock = self.clock;
 		let mut placed: Vec<(usize, f32, Target)> = Vec::new();		// (phrase, time, target)
 		let mut push = |i: usize, frac: f32, st: f32, base: f32, kind: TargetKind| {
-			placed.push((utt.phrase_of_seg(i), time(i, frac), Target { seg: stream[i], frac, st, base, kind, time: clock + time(i, frac) }));
+			placed.push((
+				utt.phrase_of_seg(i),
+				time(i, frac),
+				Target { seg: stream[i], frac, st, base, kind, time: clock + time(i, frac) },
+			));
 		};
 
 		let last_phrase = utt.phrases.len() - 1;
@@ -186,7 +204,9 @@ impl Contour {
 		for (k, ph) in utt.phrases.iter().enumerate() {
 			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			let voiced = |i: &usize| is_voiced(utt.segs[*i].phone);
-			let (Some(first_v), Some(last_v)) = (segs.clone().find(voiced), segs.clone().rfind(voiced)) else { continue; };
+			let (Some(first_v), Some(last_v)) = (segs.clone().find(voiced), segs.clone().rfind(voiced)) else {
+				continue;
+			};
 
 			let b0 = (-PHRASE_RESET_ST * k as f32).max(-PHRASE_RESET_MAX_ST);
 			let (ts, te) = (t0[segs.start], t0[segs.end]);
@@ -225,7 +245,11 @@ impl Contour {
 						// trough on the baseline halfway between the peaks
 						let tm = (prev_t + tp) / 2.0;
 						let i = (prev_i..=n).find(|&i| t0[i + 1] >= tm).unwrap_or(n);
-						let fr = if utt.segs[i].dur_ms > 0.0 { ((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0) } else { 0.0 };
+						let fr = if utt.segs[i].dur_ms > 0.0 {
+							((tm - t0[i]) / utt.segs[i].dur_ms).clamp(0.0, 1.0)
+						} else {
+							0.0
+						};
 						let apart = ((tp - prev_t - TROUGH_GAP_MS) / (TROUGH_FULL_MS - TROUGH_GAP_MS)).min(1.0);
 						let sag = (1.0 - apart) * prev_h.min(height).max(0.0);
 						push(i, fr, base(tm) + sag, base(tm), TargetKind::Trough);
@@ -281,16 +305,21 @@ impl Contour {
 			if !after_pause && is_sonorant(p) && is_obstruent(prev) && prev != DX {
 				let voiced = is_voiced(prev);
 				let span = if voiced { VOICED_DIP_UP_MS } else { BUMP_SPAN_MS };
-				let end = (i..n).find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= span).unwrap_or(n);
+				let end = (i..n)
+					.find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= span)
+					.unwrap_or(n);
 				if voiced {
-					draw(i - 1..end, t0[i - 1], Shape::Vee { st: VOICED_DIP_ST, down: t0[i] - t0[i - 1], up: VOICED_DIP_UP_MS });
+					draw(i - 1..end, t0[i - 1],
+						Shape::Vee { st: VOICED_DIP_ST, down: t0[i] - t0[i - 1], up: VOICED_DIP_UP_MS });
 				} else {
 					draw(i..end, t0[i], Shape::Decay { st: VOICELESS_BUMP_ST, ms: VOICELESS_BUMP_MS });
 				}
 			}
 
-			// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays low through it
-			if p == T && !after_pause && is_sonorant(prev) && word_end(i) && i + 1 < n && same_phrase(i, i + 1) && !is_vowel(phone(i + 1)) {
+			// a word-final t before a consonant in the same phrase, after a sonorant: F0 falls into it and stays
+			// low through it
+			if p == T && !after_pause && is_sonorant(prev) && word_end(i) && i + 1 < n && same_phrase(i, i + 1)
+				&& !is_vowel(phone(i + 1)) {
 				let start = t0[i] - T_DIP_MS;
 				let first = (0..i).rev().take_while(|&j| t0[j + 1] > start && same_phrase(j, i)).last().unwrap_or(i);
 				draw(first..i + 1, start, Shape::Fall { st: T_DIP_ST, ms: T_DIP_MS });
@@ -298,9 +327,13 @@ impl Contour {
 
 			// a stressed vowel starting a content word, after a sonorant or a pause: a glottal onset
 			let s = &utt.segs[i];
-			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function && (after_pause || is_sonorant(prev)) {
+			if is_vowel(p) && s.stress > 0 && word_start(i) && !utt.words[s.word].function
+				&& (after_pause || is_sonorant(prev)) {
 				let (span, shape) = if !after_pause {
-					(ONSET_LEAD_MS + ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS })
+					(
+						ONSET_LEAD_MS + ONSET_DIP_MS,
+						Shape::Vee { st: ONSET_DIP_ST, down: ONSET_LEAD_MS, up: ONSET_DIP_MS },
+					)
 				} else {
 					(ONSET_DIP_MS, Shape::Vee { st: ONSET_DIP_ST, down: 0.0, up: ONSET_DIP_MS })
 				};
@@ -338,7 +371,8 @@ impl Contour {
 					// between two targets inside a phrase every segment is an utterance segment, so it has a start time
 					let k = find(&self.starts, &mut self.start_hint, |s| s.0 < seg);
 					let x = match self.starts.get(k) {
-						Some(&(s, start, dur)) if s == seg && b.time > a.time => ((start + frac * dur - a.time) / (b.time - a.time)).clamp(0.0, 1.0),
+						Some(&(s, start, dur)) if s == seg && b.time > a.time =>
+							((start + frac * dur - a.time) / (b.time - a.time)).clamp(0.0, 1.0),
 						_ => 1.0,
 					};
 					a.st + (b.st - a.st) * (1.0 - libm::cosf(PI * x)) / 2.0
@@ -394,7 +428,8 @@ mod tests {
 		while (k as f32) * ms < 3.0 * CLOCK_LIMIT_MS {
 			let stream: Vec<usize> = (k * n..(k + 1) * n).collect();
 			c.add_utterance(&u, &stream);
-			assert!(c.starts.len() <= 2 * n && c.targets.len() <= 2 * fresh.targets.len(), "{} starts after {} sentences", c.starts.len(), k + 1);
+			assert!(c.starts.len() <= 2 * n && c.targets.len() <= 2 * fresh.targets.len(),
+				"{} starts after {} sentences", c.starts.len(), k + 1);
 			k += 1;
 		}
 		assert!(c.clock < CLOCK_LIMIT_MS + 3.0 * ms, "clock at {} ms after {} ms of speech", c.clock, k as f32 * ms);
@@ -409,7 +444,10 @@ mod tests {
 		// halfway in time between two targets the contour is halfway between them, whatever segments lie in between
 		let (u, mut c) = utt(&[BAA, DEE, GO, MA, NEE], &[(4, PERIOD)], "w");
 		let n = c.targets.len();
-		let (a, b) = (0..n - 1).map(|k| (&c.targets[k], &c.targets[k + 1])).find(|(a, b)| a.kind != TargetKind::End && b.seg > a.seg + 1).unwrap();
+		let (a, b) = (0..n - 1)
+			.map(|k| (&c.targets[k], &c.targets[k + 1]))
+			.find(|(a, b)| a.kind != TargetKind::End && b.seg > a.seg + 1)
+			.unwrap();
 		let (mid, half) = ((a.time + b.time) / 2.0, (a.st + b.st) / 2.0);
 		let mut t = 0.0;
 		let i = (0..u.segs.len()).find(|&i| { t += u.segs[i].dur_ms; t > mid }).unwrap();
@@ -492,7 +530,10 @@ mod tests {
 	fn an_exclamation_widens_accents_and_the_fall() {
 		let (_, cs) = utt(&[BAA, IT, DEE], &[(2, PERIOD)], "w");
 		let (_, ce) = utt(&[BAA, IT, DEE], &[(2, BANG)], "w");
-		let rise = |c: &Contour, kind: TargetKind| c.targets.iter().find(|t| t.kind == kind).map(|t| t.st - t.base).unwrap();
+		let rise = |c: &Contour, kind: TargetKind| c.targets.iter()
+			.find(|t| t.kind == kind)
+			.map(|t| t.st - t.base)
+			.unwrap();
 		assert!(rise(&ce, TargetKind::Accent) > rise(&cs, TargetKind::Accent) + 1.0);
 		assert!(rise(&ce, TargetKind::End) < rise(&cs, TargetKind::End) - 1.0);
 		assert!((rise(&ce, TargetKind::Accent) - EXCLAIM_RANGE * rise(&cs, TargetKind::Accent)).abs() < 0.01);
@@ -581,7 +622,8 @@ mod tests {
 			let gap = acc[1] - acc[0];
 			if gap >= TROUGH_FULL_MS {
 				far = true;
-				assert!((tr.st - tr.base).abs() < 0.01, "{} ms apart: trough {} st over the baseline", gap, tr.st - tr.base);
+				assert!((tr.st - tr.base).abs() < 0.01,
+					"{} ms apart: trough {} st over the baseline", gap, tr.st - tr.base);
 			} else {
 				close = true;
 				assert!(tr.st - tr.base > 0.1, "{} ms apart: trough on the baseline", gap);
@@ -642,7 +684,8 @@ mod tests {
 
 	#[test]
 	fn stressed_vowel_starting_a_content_word_has_a_glottal_onset() {
-		// "mow it" with "it" a content word: after the vowel F0 falls into the catch over ONSET_LEAD_MS, then comes back
+		// "mow it" with "it" a content word: after the vowel F0 falls into the catch over ONSET_LEAD_MS, then
+		// comes back
 		let (u, mut c) = offsets(&[CW, M, OW1, CW, IH1, T, PERIOD]);
 		let d = u.segs[2].dur_ms;
 		assert_eq!(c.bump_at(2, 0.0), 0.0);

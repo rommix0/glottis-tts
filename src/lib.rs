@@ -89,7 +89,13 @@ fn drawn_out(w: &[u8]) -> Vec<u8> {
 		let c = w[i];
 		let mut n = 1;
 		while w.get(i + n) == Some(&c) { n += 1; }
-		let keep = if n < 3 || !c.is_ascii_alphabetic() { n } else if b"aeiou".contains(&c.to_ascii_lowercase()) { 1 } else { 2 };
+		let keep = if n < 3 || !c.is_ascii_alphabetic() {
+			n
+		} else if b"aeiou".contains(&c.to_ascii_lowercase()) {
+			1
+		} else {
+			2
+		};
 		out.extend(core::iter::repeat_n(c, keep));
 		i += n;
 	}
@@ -155,7 +161,9 @@ impl Speaker {
 		}
 	}
 
-	async fn play<O: SpeechSink>(&mut self, out: &mut O, phone: u8, dur_ms: f32, stressed: bool, seg: usize, word_start: bool) -> Result<(), O::Error> {
+	async fn play<O: SpeechSink>(
+		&mut self, out: &mut O, phone: u8, dur_ms: f32, stressed: bool, seg: usize, word_start: bool
+	) -> Result<(), O::Error> {
 		// feed one phone into the synthesizer and send out what it plays
 		self.last_phone = phone;
 		if self.synth.load(phone, libm::roundf(dur_ms) as i32, stressed, seg, word_start) {
@@ -196,13 +204,17 @@ impl Speaker {
 	}
 
 	// synthesize one sentence of phone tokens
-	pub async fn sentence<O: SpeechSink>(&mut self, tokens: &[u8], texts: &[impl AsRef<str>], out: &mut O) -> Result<(), O::Error> {
+	pub async fn sentence<O: SpeechSink>(
+		&mut self, tokens: &[u8], texts: &[impl AsRef<str>], out: &mut O
+	) -> Result<(), O::Error> {
 		let mut utt = Utterance::build(tokens, texts);
 		_dur::assign(&mut utt, self.rate);
 
 		if self.trace {
 			for w in &utt.words {
-				out.trace(&format!("WORD {} fn={} phrase={} syls={}", w.text, w.function as u8, w.phrase, w.syls.len()));
+				out.trace(&format!(
+					"WORD {} fn={} phrase={} syls={}", w.text, w.function as u8, w.phrase, w.syls.len()
+				));
 			}
 		}
 
@@ -232,11 +244,18 @@ impl Speaker {
 			for i in segs.clone() {
 				let s = &utt.segs[i];
 				if self.trace {
-					let mut line = format!("TRACE {} {} seg={} dur={:.0} rules={}", s.phone, s.stress, stream[i], s.dur_ms, s.rules.first().copied().unwrap_or(""));
+					let mut line = format!(
+						"TRACE {} {} seg={} dur={:.0} rules={}",
+						s.phone, s.stress, stream[i], s.dur_ms, s.rules.first().copied().unwrap_or("")
+					);
 					for r in s.rules.iter().skip(1) { line.push(','); line.push_str(r); }
 					line.push_str(" targets=");
 					for (k, t) in self.contour.targets_of(stream[i]).enumerate() {
-						let _ = write!(line, "{}{:?}@{:.2}:{:+.1}/{:+.1}", if k == 0 { "" } else { " " }, t.kind, t.frac, t.st, t.base);
+						let _ = write!(
+							line,
+							"{}{:?}@{:.2}:{:+.1}/{:+.1}",
+							if k == 0 { "" } else { " " }, t.kind, t.frac, t.st, t.base
+						);
 					}
 					out.trace(&line);
 				}
@@ -395,7 +414,11 @@ mod tests {
 	struct Collect { x: Vec<f32>, segs: Vec<usize> }
 	impl SpeechSink for Collect {
 		type Error = Infallible;
-		async fn sample(&mut self, x: f32, seg: usize) -> Result<(), Infallible> { self.x.push(x); self.segs.push(seg); Ok(()) }
+		async fn sample(&mut self, x: f32, seg: usize) -> Result<(), Infallible> {
+			self.x.push(x);
+			self.segs.push(seg);
+			Ok(())
+		}
 	}
 
 	// render one sentence of tokens into samples
@@ -427,7 +450,11 @@ mod tests {
 	}
 	impl WriteSample for Slow {
 		type Error = Infallible;
-		async fn write_sample(&mut self, sample: i16) -> Result<(), Infallible> { WaitOnce(false).await; self.0.push(sample); Ok(()) }
+		async fn write_sample(&mut self, sample: i16) -> Result<(), Infallible> {
+			WaitOnce(false).await;
+			self.0.push(sample);
+			Ok(())
+		}
 	}
 
 	// a writer that fails after taking so many samples
@@ -530,20 +557,27 @@ mod tests {
 		for ph in &utt.phrases {
 			let range = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			durs.extend(range.map(|i| (utt.segs[i].dur_ms, false)));
-			if ph.end != Boundary::Unmarked { durs.extend([(_dur::RELEASE_MS, false), (_dur::pause_after(ph.end, 1.0), true)]); }
+			if ph.end != Boundary::Unmarked {
+				durs.extend([(_dur::RELEASE_MS, false), (_dur::pause_after(ph.end, 1.0), true)]);
+			}
 		}
 		let samples = |ms: f32| (ms.round() * m_sr as f32 / 1000.0) as i64;
 		let ms = |n: i64| n as f32 * 1000.0 / m_sr as f32;
 		assert!(segs.windows(2).all(|w| w[0] <= w[1]), "segments play out of order");
 		let mut due = 0;
 		for (k, &(d, _)) in durs.iter().enumerate() {
-			let start = segs.iter().position(|&s| s == k as u32).unwrap_or_else(|| panic!("segment {} never plays", k)) as i64;
+			let start = segs.iter()
+				.position(|&s| s == k as u32)
+				.unwrap_or_else(|| panic!("segment {} never plays", k)) as i64;
 			let off = ms(start - due);
 			if k > 0 {
 				let (prev, after_pause) = durs[k - 1];
 				// a pause carries nothing over, so the timeline is back on schedule after one
 				if after_pause { assert!(off.abs() <= 1.0, "segment {} after a pause starts {} ms off", k, off); }
-				assert!(off <= 1.0 && off >= -prev, "segment {} starts {} ms off (the phone before lasts {} ms)", k, off, prev);
+				assert!(
+					off <= 1.0 && off >= -prev,
+					"segment {} starts {} ms off (the phone before lasts {} ms)", k, off, prev
+				);
 			}
 			due += samples(d);
 		}
@@ -594,7 +628,8 @@ mod tests {
 
 	#[test]
 	fn junior_and_senior_run_on_from_the_name() {
-		says_all(&[("Prof. Lee, Jr. at 5.", "professor lee junior at five"), ("John Smith, Sr. came.", "john smith senior came")]);
+		says_all(&[("Prof. Lee, Jr. at 5.", "professor lee junior at five"),
+			("John Smith, Sr. came.", "john smith senior came")]);
 	}
 
 	#[test]
@@ -603,20 +638,25 @@ mod tests {
 			("It was minus -3 today.", "minus three today"), ("It fell to -3 today.", "to negative three today"),
 			// after a number, "minus" is the operator, and a sign set off by a space or "+" is no range
 			("5 minus -3 is 8.", "five minus negative three is eight"), ("2 + -3 is 5.", "two plus negative three"),
-			("Between 5 -3 and 4.", "five negative three"), ("They tied 0-0 today.", "zero to zero"), ("A 0-5 run.", "zero through five")]);
+			("Between 5 -3 and 4.", "five negative three"), ("They tied 0-0 today.", "zero to zero"),
+			("A 0-5 run.", "zero through five")]);
 	}
 
 	#[test]
 	fn long_numbers_keep_their_digits_and_signs() {
-		says_all(&[("-1,234,567,890,123,456,789,012 now", "negative one two three four five six seven eight nine oh one two three four five six seven eight nine oh one two now"),
-			("$12345678901234567890123.45 now", "one two three four five six seven eight nine oh one two three four five six seven eight nine oh one two three dollars and forty five cents"),
+		says_all(&[("-1,234,567,890,123,456,789,012 now",
+				"negative one two three four five six seven eight nine oh one two three four five six seven eight nine \
+				oh one two now"),
+			("$12345678901234567890123.45 now",
+				"one two three four five six seven eight nine oh one two three four five six seven eight nine oh one \
+				two three dollars and forty five cents"),
 			("1,234,567,890,123,456,789,012 now", "seven eight nine oh one two now")]);
 	}
 
 	#[test]
 	fn states_are_capitals_after_a_comma() {
-		says_all(&[("Austin, TX and Portland, OR.", "texas and portland oregon"), ("Thanks, al is here.", "thanks , al is here"),
-			("Well, pa said.", "well , pa said")]);
+		says_all(&[("Austin, TX and Portland, OR.", "texas and portland oregon"),
+			("Thanks, al is here.", "thanks , al is here"), ("Well, pa said.", "well , pa said")]);
 	}
 
 	#[test]
@@ -626,52 +666,63 @@ mod tests {
 
 	#[test]
 	fn drawn_out_words_are_said_once() {
-		for (w, said) in [("shhhhh", "shh"), ("nooooo", "no"), ("whaaat", "what"), ("hmmm", "hmm"), ("book", "book"), ("aah", "aah"), ("www", "ww")] {
+		for (w, said) in [("shhhhh", "shh"), ("nooooo", "no"), ("whaaat", "what"), ("hmmm", "hmm"), ("book", "book"),
+			("aah", "aah"), ("www", "ww")] {
 			assert_eq!(drawn_out(w.as_bytes()), said.as_bytes(), "{}", w);
 		}
 	}
 
 	#[test]
 	fn times_and_ranges() {
-		says_all(&[("10:30 am", "ten thirty A m"), ("at 3pm", "three p m"), ("at 5 a.m. today", "five A m today"), ("pages 3-5", "three through five")]);
+		says_all(&[("10:30 am", "ten thirty A m"), ("at 3pm", "three p m"), ("at 5 a.m. today", "five A m today"),
+			("pages 3-5", "three through five")]);
 	}
 
 	#[test]
 	fn years_and_decades() {
 		says_all(&[("In 1999 we", "nineteen ninety nine"), ("In 1905 we", "nineteen oh five"),
-			("In 1900 we", "nineteen hundred"), ("In 2026 we", "twenty twenty six"), ("In 2005 we", "two thousand five"),
-			("the 1990s", "nineteen nineties"), ("the '90s", "the nineties"), ("the 2000s", "two thousands"),
-			("the 1900s", "nineteen hundreds"), ("it cost $1999", "one thousand nine hundred ninety nine dollars"),
+			("In 1900 we", "nineteen hundred"), ("In 2026 we", "twenty twenty six"),
+			("In 2005 we", "two thousand five"), ("the 1990s", "nineteen nineties"), ("the '90s", "the nineties"),
+			("the 2000s", "two thousands"), ("the 1900s", "nineteen hundreds"),
+			("it cost $1999", "one thousand nine hundred ninety nine dollars"),
 			("1,999 people", "one thousand nine hundred ninety nine people")]);
 	}
 
 	#[test]
 	fn dates_fractions_and_money() {
-		says_all(&[("on 10/23/2026.", "october twenty third , twenty twenty six"), ("on 1/5/99.", "january fifth , ninety nine"),
-			("add 1/2 cup", "one half cup"), ("add 3/4 cup", "three quarters cup"), ("a 5/8 inch", "five eighths inch"),
+		says_all(&[("on 10/23/2026.", "october twenty third , twenty twenty six"),
+			("on 1/5/99.", "january fifth , ninety nine"), ("add 1/2 cup", "one half cup"),
+			("add 3/4 cup", "three quarters cup"), ("a 5/8 inch", "five eighths inch"),
 			("add 1/3 cup", "one third cup"), ("It was $1.5 million.", "one point five million dollars"),
-			("and $20 billion.", "twenty billion dollars"), ("on Jan. 5 we", "january fifth we"), ("on March 3 we", "march third we")]);
+			("and $20 billion.", "twenty billion dollars"), ("on Jan. 5 we", "january fifth we"),
+			("on March 3 we", "march third we")]);
 	}
 
 	#[test]
 	fn abbreviations_keep_the_sentence_end() {
 		says_all(&[("He lives on Elm St.", "elm street ."), ("St. Louis is far.", "saint louis is far"),
-			("They met at the IEEE.", "i e e e ."), ("He got a Grade A.", "grade A ."), ("Visit www.example.com now.", "w w w dot example dot com")]);
+			("They met at the IEEE.", "i e e e ."), ("He got a Grade A.", "grade A ."),
+			("Visit www.example.com now.", "w w w dot example dot com")]);
 	}
 
 	#[test]
 	fn capitals_numerals_and_quotes() {
-		says_all(&[("NASA and the", "nasa and the"), ("HELLO WORLD", "hello world"), ("a PAT. PEND. sign", "patent pending"), ("Chapter IV begins", "chapter four begins"),
-			("World War II ended", "world war two ended"), ("Henry VIII was", "henry the eighth was"), ("'Twas the night", "'twas the night"),
-			("'Hello,' she said", "hello , she said"), ("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"), ("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")]);
+		says_all(&[("NASA and the", "nasa and the"), ("HELLO WORLD", "hello world"),
+			("a PAT. PEND. sign", "patent pending"), ("Chapter IV begins", "chapter four begins"),
+			("World War II ended", "world war two ended"), ("Henry VIII was", "henry the eighth was"),
+			("'Twas the night", "'twas the night"), ("'Hello,' she said", "hello , she said"),
+			("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"),
+			("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")]);
 	}
 
 	#[test]
 	fn times_web_addresses_and_versions() {
-		says_all(&[("at 10:05 today", "ten oh five today"), ("at 3:07 pm", "three oh seven p m"), ("Wow :0 there", "wow shocked face there"),
+		says_all(&[("at 10:05 today", "ten oh five today"), ("at 3:07 pm", "three oh seven p m"),
+			("Wow :0 there", "wow shocked face there"),
 			("Visit https://example.com/page now.", "visit h t t p s colon slash slash example dot com slash page now"),
 			("See http://a.org.", "see h t t p colon slash slash a dot org ."),
-			("on 2026-10-23.", "october twenty third , twenty twenty six"), ("Version 2.0.1 is out.", "version two point oh point one is out")]);
+			("on 2026-10-23.", "october twenty third , twenty twenty six"),
+			("Version 2.0.1 is out.", "version two point oh point one is out")]);
 	}
 
 	#[test]
@@ -684,39 +735,50 @@ mod tests {
 
 	#[test]
 	fn units_after_numbers() {
-		says_all(&[("5ft tall", "five feet tall"), ("1 ft", "one foot"), ("6ft2in", "six feet two inches"), ("2hrs later", "two hours later"),
-			("30mins", "thirty minutes"), ("50mg dose", "fifty milligrams dose"), ("5kgs", "five kilograms"), ("2.5kg", "two point five kilograms"),
-			("12oz can", "twelve ounces can"), ("1 mph", "one mile per hour"), ("1,000 ft", "one thousand feet"), ("10ms delay", "ten milliseconds delay"),
-			("100km/h", "one hundred kilometers per hour"), ("1 km/h", "one kilometer per hour"), ("100 km/hr", "one hundred kilometers per hour"),
-			("6 in a row", "six in a row"), ("5 minutes", "five minutes"), ("3 secrets", "three secrets")]);
+		says_all(&[("5ft tall", "five feet tall"), ("1 ft", "one foot"), ("6ft2in", "six feet two inches"),
+			("2hrs later", "two hours later"), ("30mins", "thirty minutes"), ("50mg dose", "fifty milligrams dose"),
+			("5kgs", "five kilograms"), ("2.5kg", "two point five kilograms"), ("12oz can", "twelve ounces can"),
+			("1 mph", "one mile per hour"), ("1,000 ft", "one thousand feet"), ("10ms delay", "ten milliseconds delay"),
+			("100km/h", "one hundred kilometers per hour"), ("1 km/h", "one kilometer per hour"),
+			("100 km/hr", "one hundred kilometers per hour"), ("6 in a row", "six in a row"),
+			("5 minutes", "five minutes"), ("3 secrets", "three secrets")]);
 	}
 
 	#[test]
 	fn pounds_euros_yen_and_heights() {
-		says_all(&[("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"), ("about \u{20ac}15 now", "fifteen euros now"),
-			("\u{20ac}1.50 each", "one euro and fifty cents each"), ("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"), ("only \u{20ac}0.99 each", "only ninety nine cents each"),
-			("a \u{a3}2 million deal", "two million pounds deal"), ("He's 6'2\" tall.", "six foot two tall"), ("She is 5'10\" tall.", "five foot ten tall"),
-			("It costs 12.50 dollars.", "twelve dollars and fifty cents ."), ("only 1.01 euros", "one euro and one cent"), ("0.25 dollars", "twenty five cents"),
+		says_all(&[("It costs \u{a3}20 now", "twenty pounds now"), ("just \u{a3}1 each", "one pound each"),
+			("about \u{20ac}15 now", "fifteen euros now"), ("\u{20ac}1.50 each", "one euro and fifty cents each"),
+			("\u{a3}3.50 each", "three pounds and fifty pence each"), ("\u{a5}500 now", "five hundred yen now"),
+			("only \u{20ac}0.99 each", "only ninety nine cents each"),
+			("a \u{a3}2 million deal", "two million pounds deal"), ("He's 6'2\" tall.", "six foot two tall"),
+			("She is 5'10\" tall.", "five foot ten tall"),
+			("It costs 12.50 dollars.", "twelve dollars and fifty cents ."),
+			("only 1.01 euros", "one euro and one cent"), ("0.25 dollars", "twenty five cents"),
 			("3.00 dollars", "three dollars"), ("It rose 1.50 percent.", "one point five oh percent")]);
 	}
 
 	#[test]
 	fn a_closing_quote_keeps_its_punctuation() {
-		says_all(&[("She said \"Hello.\" and left.", "she said hello , and left ."), ("He asked \"Why?\" and left.", "why ? and left ."),
-			("She left. \"Bye,\" he said.", "she left . bye ,")]);
+		says_all(&[("She said \"Hello.\" and left.", "she said hello , and left ."),
+			("He asked \"Why?\" and left.", "why ? and left ."), ("She left. \"Bye,\" he said.", "she left . bye ,")]);
 		assert_eq!(says("He said \"Bye.\""), "he said bye .");
 	}
 
 	#[test]
 	fn years_by_context() {
-		says_all(&[("There were 2015 votes.", "two thousand fifteen votes"), ("In 2015 votes were cast", "twenty fifteen votes"),
-			("He was born in 1066.", "ten sixty six"), ("the 2020 election", "twenty twenty election"), ("1066 people came", "one thousand sixty six people"),
-			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"), ("1999 was good", "nineteen ninety nine was")]);
-		// counts: a falling or counted "X to Y", after a count word, and the second number of a range read like the first
+		says_all(&[("There were 2015 votes.", "two thousand fifteen votes"),
+			("In 2015 votes were cast", "twenty fifteen votes"), ("He was born in 1066.", "ten sixty six"),
+			("the 2020 election", "twenty twenty election"), ("1066 people came", "one thousand sixty six people"),
+			("It ran 1500 miles", "one thousand five hundred miles"), ("In 1999 we", "nineteen ninety nine"),
+			("1999 was good", "nineteen ninety nine was")]);
+		// counts: a falling or counted "X to Y", after a count word, and the second number of a range read like
+		// the first
 		says_all(&[("The vote was 2015 to 1987.", "two thousand fifteen to one thousand nine hundred eighty seven"),
 			("We had 1300 to 1400 visitors.", "one thousand three hundred to one thousand four hundred visitors"),
-			("It cost exactly 1250.", "exactly one thousand two hundred fifty"), ("Over 1500 came", "one thousand five hundred came"),
-			("From 1987 to 1990 he", "nineteen eighty seven to nineteen ninety"), ("In 1987 and 1988 it", "nineteen eighty seven and nineteen eighty eight"),
+			("It cost exactly 1250.", "exactly one thousand two hundred fifty"),
+			("Over 1500 came", "one thousand five hundred came"),
+			("From 1987 to 1990 he", "nineteen eighty seven to nineteen ninety"),
+			("In 1987 and 1988 it", "nineteen eighty seven and nineteen eighty eight"),
 			("1914 through 1918 were", "nineteen fourteen through nineteen eighteen"),
 			// only right after the first number, not from an earlier sentence
 			("Over 1500 came. Tom and 1600 came.", "tom and sixteen hundred came")]);
@@ -725,62 +787,75 @@ mod tests {
 	#[test]
 	fn homographs_follow_their_context() {
 		// the capitalized spelling selects the dictionary's other reading
-		says_all(&[("I will record a record.", "i will RECORD a record ."), ("I object to that object.", "i object to that OBJECT"),
-			("We present a present.", "we present a PRESENT"), ("Please close it, it is close.", "please close it , it is CLOSE"),
-			("The subject is hard.", "the SUBJECT is hard"), ("Prices will increase after the increase.", "will increase after thee INCREASE"),
-			("They export grain.", "they EXPORT grain"), ("a separate room", "a SEPARATE room"), ("to separate them", "to separate them"),
-			("an estimate", "an ESTIMATE"), ("to estimate it", "to estimate it"), ("The project is late.", "the PROJECT is late"),
-			("They project growth.", "they project growth"), ("It affects us.", "it AFFECTS us"), ("He records it.", "he RECORDS it"),
-			("Objects fell.", "OBJECTS fell"), ("the objective", "thee objective")]);
+		says_all(&[("I will record a record.", "i will RECORD a record ."),
+			("I object to that object.", "i object to that OBJECT"), ("We present a present.", "we present a PRESENT"),
+			("Please close it, it is close.", "please close it , it is CLOSE"),
+			("The subject is hard.", "the SUBJECT is hard"),
+			("Prices will increase after the increase.", "will increase after thee INCREASE"),
+			("They export grain.", "they EXPORT grain"), ("a separate room", "a SEPARATE room"),
+			("to separate them", "to separate them"), ("an estimate", "an ESTIMATE"),
+			("to estimate it", "to estimate it"), ("The project is late.", "the PROJECT is late"),
+			("They project growth.", "they project growth"), ("It affects us.", "it AFFECTS us"),
+			("He records it.", "he RECORDS it"), ("Objects fell.", "OBJECTS fell"),
+			("the objective", "thee objective")]);
 	}
 
 	#[test]
 	fn sentence_ends_after_abbreviations_and_letters() {
-		says_all(&[("Meet at 11:00 p.m. In 1999 we left.", "eleven p m . in nineteen"), ("Boston, MA. Plan B. Vitamin C. The letter Q. NASA",
-			"boston massachusetts . plan b . vitamin c . the letter q . nasa"), ("A. The.", "A . the ."),
+		says_all(&[("Meet at 11:00 p.m. In 1999 we left.", "eleven p m . in nineteen"),
+			("Boston, MA. Plan B. Vitamin C. The letter Q. NASA",
+				"boston massachusetts . plan b . vitamin c . the letter q . nasa"), ("A. The.", "A . the ."),
 			// a spelled capital run is no initial
 			("They live in the UK. World news.", "the u k . world news"), ("I saw a TV. Then", "a t v . then"),
 			// a title or an initial keeps the name
-			("Dr. Smith came.", "doctor smith came"), ("Meet John F. Kennedy now.", "john f kennedy"), ("J. R. R. Tolkien", "j r r tolkien")]);
+			("Dr. Smith came.", "doctor smith came"), ("Meet John F. Kennedy now.", "john f kennedy"),
+			("J. R. R. Tolkien", "j r r tolkien")]);
 	}
 
 	#[test]
 	fn all_capitals_and_accents() {
 		says_all(&[("THIS IS ALL CAPITALS", "this is all capitals"), ("the UK and a TV", "the u k and a t v"),
-			("Caf\u{e9}, na\u{ef}ve, r\u{e9}sum\u{e9}, Z\u{fc}rich, Stra\u{df}e", "cafe , naive , resume , zurich , strasse")]);
+			("Caf\u{e9}, na\u{ef}ve, r\u{e9}sum\u{e9}, Z\u{fc}rich, Stra\u{df}e",
+				"cafe , naive , resume , zurich , strasse")]);
 	}
 
 	#[test]
 	fn numbers_money_and_marks() {
-		for (t, want) in [(".75", "point seven five"), ("$0.50", "fifty cents"), ("$1,250.00", "one thousand two hundred fifty dollars"),
-			("$1.00", "one dollar"), ("$0.01", "one cent"), ("$2.05", "two dollars and five cents"), ("50/50", "fifty fifty"),
-			("a 3-2 win", "a three to two win"), ("pages 10-20", "pages ten through twenty"), ("wait - no", "wait , no"),
-			("wait\u{2014}no", "wait , no"), ("5 - 3", "five minus three"), ("\"Quoted,\" she said.", "quoted , she said ."),
-			("\u{2018}single ones\u{2019}", "single ones"), ("100 m", "one hundred meters"), ("3m tall", "three meters tall"),
-			("1 m", "one meter"), ("I'm", "i'm"), ("5 * 3", "five times three"), ("a * b", "a asterisk b")] {
+		for (t, want) in [(".75", "point seven five"), ("$0.50", "fifty cents"),
+			("$1,250.00", "one thousand two hundred fifty dollars"), ("$1.00", "one dollar"), ("$0.01", "one cent"),
+			("$2.05", "two dollars and five cents"), ("50/50", "fifty fifty"), ("a 3-2 win", "a three to two win"),
+			("pages 10-20", "pages ten through twenty"), ("wait - no", "wait , no"), ("wait\u{2014}no", "wait , no"),
+			("5 - 3", "five minus three"), ("\"Quoted,\" she said.", "quoted , she said ."),
+			("\u{2018}single ones\u{2019}", "single ones"), ("100 m", "one hundred meters"),
+			("3m tall", "three meters tall"), ("1 m", "one meter"), ("I'm", "i'm"), ("5 * 3", "five times three"),
+			("a * b", "a asterisk b")] {
 			assert_eq!(says(t), want, "{}", t);
 		}
 	}
 
 	#[test]
 	fn homographs_from_the_next_word() {
-		let t = says("I will read the book you read yesterday. Lead the team to the lead mine. Record a new record. They live in a house \
-			with live music. A tear fell as I saw the tear in the paper. Wind the clock in the wind. Close the door; we are close. Bow to the \
-			crowd, then tie a bow. The desert is dry; do not desert me. Wait a minute for the minute details. I object to that object. \
-			Present the present. Content with the content.");
-		assert_eq!(t, "i will read the book you READ yesterday . lead the team to the LEAD mine . RECORD a new record . they live in a \
-			house with LIVE music . a TEAR fell as i saw the tear in the paper . WIND the clock in the wind . close the door . we are CLOSE . \
-			BOW to the crowd , then tie a bow . the desert is dry . do not DESERT me . wait a minute for the MINUTE details . i object to \
-			that OBJECT . present the PRESENT . CONTENT with the content .");
-		says_all(&[("I have read it.", "have READ it"), ("I want to read it last week", "to read it"), ("Tears ran down.", "TEARS ran"),
-			("Tear it up.", "tear it up"), ("Very minute.", "very MINUTE"), ("In contrast the results", "in contrast the")]);
+		let t = says("I will read the book you read yesterday. Lead the team to the lead mine. Record a new record. \
+			They live in a house with live music. A tear fell as I saw the tear in the paper. Wind the clock in the \
+			wind. Close the door; we are close. Bow to the crowd, then tie a bow. The desert is dry; do not desert me. \
+			Wait a minute for the minute details. I object to that object. Present the present. Content with the \
+			content.");
+		assert_eq!(t, "i will read the book you READ yesterday . lead the team to the LEAD mine . RECORD a new record \
+			. they live in a house with LIVE music . a TEAR fell as i saw the tear in the paper . WIND the clock in \
+			the wind . close the door . we are CLOSE . BOW to the crowd , then tie a bow . the desert is dry . do not \
+			DESERT me . wait a minute for the MINUTE details . i object to that OBJECT . present the PRESENT . CONTENT \
+			with the content .");
+		says_all(&[("I have read it.", "have READ it"), ("I want to read it last week", "to read it"),
+			("Tears ran down.", "TEARS ran"), ("Tear it up.", "tear it up"), ("Very minute.", "very MINUTE"),
+			("In contrast the results", "in contrast the")]);
 	}
 
 	#[test]
 	fn a_run_of_marks_is_one_mark() {
 		// a question if any of them asks, else an exclamation; one mark, so one sentence
-		for (t, want) in [("You did that?!", "you did that ?"), ("You did that!?", "you did that ?"), ("No way!!!", "no way !"),
-			("Really??", "really ?"), ("Seriously\u{203d}", "seriously ?"), ("What\u{2049}", "what ?")] {
+		for (t, want) in [("You did that?!", "you did that ?"), ("You did that!?", "you did that ?"),
+			("No way!!!", "no way !"), ("Really??", "really ?"), ("Seriously\u{203d}", "seriously ?"),
+			("What\u{2049}", "what ?")] {
 			assert_eq!(says(t), want, "{}", t);
 		}
 		// a mark after a space is still read out

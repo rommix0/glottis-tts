@@ -44,9 +44,17 @@ fn stem(s: &str, way: Way) -> Option<String> {
 		Way::IToY => s.strip_suffix('i').map(|t| format!("{}y", t)),
 		Way::Undouble => {
 			let n = b.len();
-			if n > 1 && b[n - 1] == b[n - 2] && !b"aeiouy".contains(&b[n - 1]) { Some(s[..n - 1].to_string()) } else { None }
+			if n > 1 && b[n - 1] == b[n - 2] && !b"aeiouy".contains(&b[n - 1]) {
+				Some(s[..n - 1].to_string())
+			} else {
+				None
+			}
 		},
-		Way::Sibilant => if ["s", "x", "z", "ch", "sh"].iter().any(|e| s.ends_with(e)) { Some(s.to_string()) } else { None },
+		Way::Sibilant => if ["s", "x", "z", "ch", "sh"].iter().any(|e| s.ends_with(e)) {
+			Some(s.to_string())
+		} else {
+			None
+		},
 	}
 }
 
