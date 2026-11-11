@@ -572,6 +572,11 @@ mod tests {
 	}
 
 	#[test]
+	fn junior_and_senior_run_on_from_the_name() {
+		says_all(&[("Prof. Lee, Jr. at 5.", "professor lee junior at five"), ("John Smith, Sr. came.", "john smith senior came")]);
+	}
+
+	#[test]
 	fn times_and_ranges() {
 		says_all(&[("10:30 am", "ten thirty A m"), ("at 3pm", "three p m"), ("at 5 a.m. today", "five A m today"), ("pages 3-5", "three through five")]);
 	}
