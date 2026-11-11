@@ -302,8 +302,7 @@ fn feats(x: u8) -> u32 {
 fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
 fn sibilant(f: u32) -> bool { f & (SIBILANT | AFFRICATE) == SIBILANT }
-// the phone f is left out: it had no feature bits when the amp ramps were tuned
-fn obstruent(f: u32) -> bool { f & !FRICATIVE != 0 && f & (VOWEL | NASAL | APPROXIMANT) == 0 }
+fn obstruent(f: u32) -> bool { f != 0 && f & (VOWEL | NASAL | APPROXIMANT) == 0 }
 fn sonorant(f: u32) -> bool { f & VOWEL != 0 || f & (NASAL | APPROXIMANT) != 0 }
 fn quiet(p: u8) -> bool { p == PAU || p == SIL || p == AXP || p == IXP }
 fn hiss(p: u8) -> bool { feats(p) & FRICATIVE != 0 || p == HH }
