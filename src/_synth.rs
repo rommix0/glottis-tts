@@ -130,6 +130,8 @@ const VOWEL_EXIT_MS: f32 = 50.0;
 
 // out of a vowel an r reaches its formants within this long
 const R_ONSET_MS: f32 = 50.0;
+// a vowel's own tail plays at most this much of the move into an r: the speaker's vowel holds until about the r
+const R_ENTRY_MS: f32 = 15.0;
 
 // while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
@@ -1505,6 +1507,11 @@ impl engine {
 			self.marker_B += self.marker_BA - samples(VOWEL_EXIT_MS);
 			self.marker_BA = samples(VOWEL_EXIT_MS);
 		}
+		if self.pft_c & VOWEL != 0 && self.pft_r1 & RHOTIC != 0 && self.marker_BA > samples(R_ENTRY_MS) {
+			// before an r the vowel holds too: the r's move starts late and ends inside the r
+			self.marker_B += self.marker_BA - samples(R_ENTRY_MS);
+			self.marker_BA = samples(R_ENTRY_MS);
+		}
 		if self.phn_c == PAU {
 			// no transition carried into the next phone, so the pause keeps its length
 			self.marker_BA = 0;
@@ -1540,6 +1547,10 @@ impl engine {
 			|| (self.F2_B_src - self.F2_A_src).abs() >= GLIDE_HZ;
 		if self.f1_len > 0 && glides {
 			self.ab_at = self.marker_A.min(fifty_ms);
+		}
+		if self.pft_c & RHOTIC != 0 && self.pft_l1 & VOWEL != 0 {
+			// out of a vowel the move into an r ends inside it (R_ENTRY_MS): its own move waits for that one to land
+			self.ab_at = self.ab_at.max(self.counter + (1.0 / self.slope) as i32);
 		}
 		// step() counts before it checks, so a move due on the phone's first sample starts on its second.
 		// if A and B are the same (a nasal after silence) skip it: a move would cut short the glide into A
@@ -3042,6 +3053,20 @@ mod tests {
 		let mut out = Vec::new();
 		drive(phones, |e, _| out.push((e.phn_c, e.F3_reg, db(e.AV_reg), e.F3_A_src)));
 		out
+	}
+
+	#[test]
+	fn a_vowel_holds_until_just_before_an_r() {
+		// "four", "car", "air": the move into an r starts well inside the vowel's usual exit and ends inside the r
+		for &v in &[AO, AA, EH, IY] {
+			let mut start = None;
+			let seq = [(PAU, 50, false), (SH, 90, false), (v, 200, true), (RX, 110, false),
+				(AXP, 80, false), (SIL, 50, false)];
+			drive(&seq, |e, _| if e.phn_c == RX && start.is_none() { start = Some(e.counter) });
+			let early = -start.unwrap();
+			assert!(early < samples(VOWEL_EXIT_MS) / 2,
+				"{}: the move into r starts {} ms early", v, early as f32 * 1000.0 / m_sr as f32);
+		}
 	}
 
 	#[test]
