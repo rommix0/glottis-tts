@@ -130,6 +130,27 @@ pub const VOICES: [Voice; 8] = [
 	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0, rd: 110.0, br: 2.0, db:  1.1, fl: 250.0, jit: 1.5, shim: 1.0 },	// 7 shaky
 ];
 
+// how loud white noise comes out of the cascade and the lips at a voice's scale, with its output level: aspiration's
+// loudness. A bigger scale lets more noise through, while the voice's level only matches its vowels
+fn asp_level(v: &Voice) -> f32 {
+	let top = F_MAX_SR * m_sr as f32;
+	let (s1, s2, s3, sh) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0, v.fhi / 100.0);
+	// F1-F3 as wide as in a release, the fixed upper formants as set_voice builds them
+	let low = [(400.0 * s1, 300.0 * s1), (1600.0 * s2, 120.0 * s2), (2600.0 * s3, 250.0 * s3)];
+	let mut rs = [resonator::new((low[0].0).min(top), low[0].1, false), resonator::new((low[1].0).min(top), low[1].1, false),
+		resonator::new((low[2].0).min(top), low[2].1, false), resonator::new((F4_INIT * sh).min(top), B4_INIT * sh, false),
+		resonator::new((F5_INIT * sh).min(top), B5_INIT * sh, false), resonator::new((F6_INIT * sh).min(top), B6_INIT * sh, false),
+		resonator::new((F7_INIT * sh).min(top), B7_INIT * sh, false), resonator::new((F8_INIT * sh).min(top), B8_INIT * sh, false)];
+	let (mut e, mut prev) = (0.0f32, 0.0f32);
+	for n in 0..4096 {
+		let mut y = if n == 0 { 1.0 } else { 0.0 };
+		for r in rs.iter_mut() { y = r.step(y, 0.0, 0.0); }
+		e += (y - prev) * (y - prev);
+		prev = y;
+	}
+	libm::sqrtf(e) * libm::powf(10.0, v.db / 20.0)
+}
+
 struct noise { nxt: u32 }
 impl noise {
 	fn new() -> noise { noise { nxt: 0x2545F491 } }
@@ -557,6 +578,7 @@ pub struct vtm {
 	xp1:      f32,
 	fric_y1:  f32,		// frication noise lowpass state
 	voice:    Voice,	// voice profile
+	asp_gain: f32,		// aspiration noise, so it is as loud as the table voice's
 	vgain:    f32,		// the voice profile's output level, linear
 	min_bw:   f32,		// the cascade's B1/B2 floor: wider for a higher-pitched voice, whose rings have less time to die
 	fric_a:   f32,		// frication lowpass coefficient
@@ -619,6 +641,7 @@ impl vtm {
 
 			fric_y1: 0.0,
 			voice: VOICES[0],
+			asp_gain: 1.0,
 			vgain: 1.0,
 			min_bw: CASC_MIN_BW,
 
@@ -634,6 +657,7 @@ impl vtm {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
 		self.voice = v;
 		self.vgain = libm::powf(10.0, v.db / 20.0);
+		self.asp_gain = asp_level(&VOICES[0]) / asp_level(&v);
 		self.min_bw = CASC_MIN_BW * libm::sqrtf((v.f0 / 100.0).max(1.0));
 		self.glottal.jitter = v.jit;
 		self.glottal.shimmer = v.shim;
@@ -777,7 +801,7 @@ impl vtm {
 
 		// cascade input: voicing with breath, and aspiration
 		voicing += white * Self::db2lin(self.BR) * br_mod;
-		let casc_in: f32 = voicing * self.AV.min(1.0) + (white * 0.54) * self.AH.min(1.0);
+		let casc_in: f32 = voicing * self.AV.min(1.0) + (white * 0.54 * self.asp_gain) * self.AH.min(1.0);
 
 		// parallel input: frication, broadband noise rolled off above FRIC_LP_HZ
 		self.fric_y1 = (1.0 - self.fric_a) * white + self.fric_a * self.fric_y1;
@@ -821,6 +845,27 @@ mod tests {
 			v.B1 = b1; v.B2 = b2; v.B3 = 150.0;
 			v.step()
 		}).collect()
+	}
+
+	#[test]
+	fn aspiration_is_as_loud_in_every_voice() {
+		// the breath after a final stop: white noise through wide formants, which a bigger voice scale let through louder
+		let level = |voice: Voice| {
+			let mut v = vtm::new();
+			v.set_voice(voice);
+			let x: Vec<f32> = (0..12000).map(|_| {
+				v.F0 = 120.0; v.AV = 0.0; v.AH = DB_GAIN[50]; v.RD = 0.6;
+				v.F1 = 400.0; v.F2 = 1600.0; v.F3 = 2600.0;
+				v.B1 = 300.0; v.B2 = 120.0; v.B3 = 250.0;
+				v.step()
+			}).collect();
+			10.0 * libm::log10f(x[2000..].iter().map(|s| s * s).sum::<f32>() / 10000.0)
+		};
+		// within a couple of dB (the matching works on fixed reference formants); voices 2 and 5 were 10 dB over
+		let table = level(VOICES[0]);
+		for (i, &voice) in VOICES.iter().enumerate() {
+			assert!((level(voice) - table).abs() < 2.5, "voice {}: {:.1} dB against {:.1}", i, level(voice), table);
+		}
 	}
 
 	#[test]
