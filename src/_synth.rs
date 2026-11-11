@@ -248,66 +248,65 @@ fn share_of(d: i32, pct: u8) -> i32 {
 }
 
 // phone features, one bit each
-const VOWEL:     u16 = 0x0001;		// clear for a consonant
-const VOICED:    u16 = 0x0002;
-const FRONT:     u16 = 0x0004;
-const BACK:      u16 = 0x0008;
-const NASAL:     u16 = 0x0010;
-const ALVEOLAR:  u16 = 0x0020;
-const STOP:      u16 = 0x0040;
-const BILABIAL:  u16 = 0x0080;
-const VELAR:     u16 = 0x0100;
-const SIBILANT:  u16 = 0x0200;
-const LATERAL:   u16 = 0x0400;
-const RHOTIC:    u16 = 0x0800;
-const GLIDE:     u16 = 0x1000;
-const DIPHTHONG: u16 = 0x2000;
-const DENTAL:    u16 = 0x4000;
-const AFFRICATE: u16 = 0x8000;
-const APPROXIMANT: u16 = LATERAL | RHOTIC | GLIDE;
+const VOWEL:     u32 = 0x0001;		// clear for a consonant
+const VOICED:    u32 = 0x0002;
+const FRONT:     u32 = 0x0004;
+const BACK:      u32 = 0x0008;
+const NASAL:     u32 = 0x0010;
+const ALVEOLAR:  u32 = 0x0020;
+const STOP:      u32 = 0x0040;
+const BILABIAL:  u32 = 0x0080;
+const VELAR:     u32 = 0x0100;
+const SIBILANT:  u32 = 0x0200;
+const LATERAL:   u32 = 0x0400;
+const RHOTIC:    u32 = 0x0800;
+const GLIDE:     u32 = 0x1000;
+const DIPHTHONG: u32 = 0x2000;
+const DENTAL:    u32 = 0x4000;
+const AFFRICATE: u32 = 0x8000;
+const FRICATIVE: u32 = 0x10000;
+const APPROXIMANT: u32 = LATERAL | RHOTIC | GLIDE;
 
-fn feats(x: u8) -> u16 {
+fn feats(x: u8) -> u32 {
 	match x {
-		DX                                    => VOICED | ALVEOLAR,
-		V                                     => VOICED,
-		AA | AE | AH | AO | AW | AX | AXR | ER | OW => VOWEL | VOICED,
-		EH | EY | IH | IX | IY                => VOWEL | VOICED | FRONT,
-		UH | UW                               => VOWEL | VOICED | BACK,
-		N                                     => VOICED | NASAL | ALVEOLAR,
-		T                                     => ALVEOLAR | STOP,
-		D                                     => VOICED | ALVEOLAR | STOP,
-		M                                     => VOICED | NASAL | BILABIAL,
-		P                                     => STOP | BILABIAL,
-		B                                     => VOICED | STOP | BILABIAL,
-		NG                                    => VOICED | NASAL | VELAR,
-		K                                     => STOP | VELAR,
-		G                                     => VOICED | STOP | VELAR,
-		S | SH                                => ALVEOLAR | SIBILANT,
-		Z | ZH                                => VOICED | ALVEOLAR | SIBILANT,
-		L | LX                                => VOICED | ALVEOLAR | LATERAL,
-		R | RX                                => VOICED | ALVEOLAR | RHOTIC,
-		Y                                     => VOICED | GLIDE,
-		W                                     => VOICED | BILABIAL | VELAR | GLIDE,
-		AY | OY                               => VOWEL | VOICED | DIPHTHONG,
-		TH                                    => DENTAL,
-		DH                                    => VOICED | DENTAL,
-		CH                                    => ALVEOLAR | STOP | SIBILANT | AFFRICATE,
-		JH                                    => VOICED | ALVEOLAR | STOP | SIBILANT | AFFRICATE,
-		_                                     => 0,
+		AA | AE | AH | AO | AX | AXR | ER => VOWEL | VOICED,
+		EH | EY | IH | IX | IY            => VOWEL | VOICED | FRONT,
+		UH | UW                           => VOWEL | VOICED | BACK,
+		AW | AY | OW | OY                 => VOWEL | VOICED | DIPHTHONG,
+		P                                 => STOP | BILABIAL,
+		B                                 => VOICED | STOP | BILABIAL,
+		T                                 => ALVEOLAR | STOP,
+		D                                 => VOICED | ALVEOLAR | STOP,
+		K                                 => STOP | VELAR,
+		G                                 => VOICED | STOP | VELAR,
+		DX                                => VOICED | ALVEOLAR,
+		M                                 => VOICED | NASAL | BILABIAL,
+		N                                 => VOICED | NASAL | ALVEOLAR,
+		NG                                => VOICED | NASAL | VELAR,
+		F                                 => FRICATIVE,
+		V                                 => VOICED | FRICATIVE,
+		TH                                => DENTAL | FRICATIVE,
+		DH                                => VOICED | DENTAL | FRICATIVE,
+		S | SH                            => ALVEOLAR | SIBILANT | FRICATIVE,
+		Z | ZH                            => VOICED | ALVEOLAR | SIBILANT | FRICATIVE,
+		CH                                => ALVEOLAR | STOP | SIBILANT | AFFRICATE,
+		JH                                => VOICED | ALVEOLAR | STOP | SIBILANT | AFFRICATE,
+		L | LX                            => VOICED | ALVEOLAR | LATERAL,
+		R | RX                            => VOICED | ALVEOLAR | RHOTIC,
+		Y                                 => VOICED | GLIDE,
+		W                                 => VOICED | BILABIAL | VELAR | GLIDE,
+		_                                 => 0,
 	}
 }
 
 fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
-fn fricative(p: u8) -> bool { matches!(p, F | TH | V | DH | S | Z | SH | ZH) }
-fn sibilant(f: u16) -> bool { f & (SIBILANT | AFFRICATE) == SIBILANT }
-fn obstruent(f: u16) -> bool { f != 0 && f & VOWEL == 0 && f & (NASAL | APPROXIMANT) == 0 }
-fn nasal(f: u16) -> bool { f & NASAL != 0 }
-fn sonorant(f: u16) -> bool { f & VOWEL != 0 || f & (NASAL | APPROXIMANT) != 0 }
+fn sibilant(f: u32) -> bool { f & (SIBILANT | AFFRICATE) == SIBILANT }
+// the phone f is left out: it had no feature bits when the amp ramps were tuned
+fn obstruent(f: u32) -> bool { f & !FRICATIVE != 0 && f & (VOWEL | NASAL | APPROXIMANT) == 0 }
+fn sonorant(f: u32) -> bool { f & VOWEL != 0 || f & (NASAL | APPROXIMANT) != 0 }
 fn quiet(p: u8) -> bool { p == PAU || p == SIL || p == AXP || p == IXP }
-fn hiss(p: u8) -> bool { fricative(p) || p == HH }
-// aw, ay, ow, oy (feats' DIPHTHONG marks only ay and oy)
-fn diphthong(p: u8) -> bool { matches!(p, AW | AY | OW | OY) }
+fn hiss(p: u8) -> bool { feats(p) & FRICATIVE != 0 || p == HH }
 // formant table row for a phone (the pause uses the silent row)
 fn table_row(p: u8) -> u8 { if p == PAU { SIL } else { p } }
 // vowels reduce() moves toward ax as they get shorter (all but ax and ix)
@@ -398,9 +397,9 @@ pub struct engine {
 	phn_l1: u8,
 	phn_c:  u8,
 	phn_r1: u8,
-	pft_l1: u16,
-	pft_c:  u16,
-	pft_r1: u16,
+	pft_l1: u32,
+	pft_c:  u32,
+	pft_r1: u32,
 	pdr_c:  i32,
 	pdr_r1: i32,
 	pst_l1: bool,
@@ -847,7 +846,7 @@ impl engine {
 			if self.pft_c & FRONT != 0 {
 				self.F2_A_src -= 150.0 * factor;
 				self.F2_B_src -= 150.0 * factor;
-			} else if self.pft_c & DIPHTHONG != 0 {
+			} else if matches!(self.phn_c, AY | OY) {
 				// diphthong next to lateral
 				self.F2_B_src -= 250.0 * factor;
 			}
@@ -865,7 +864,7 @@ impl engine {
 		// GLIDE TOWARD THE NEXT CONSONANT
 		// don't let a vowel's own F2 glide head away from the next consonant's F2 ("cat", "pick"),
 		// except in the diphthongs aw, ay, ow and oy
-		if !diphthong(self.phn_c) && self.pft_r1 & VOWEL == 0
+		if self.pft_c & DIPHTHONG == 0 && self.pft_r1 & VOWEL == 0
 			&& !matches!(self.phn_r1, SIL | HH | AXP | IXP | PAU) {
 			let next_f2 = match locus(self.phn_r1) {
 				Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
@@ -919,7 +918,7 @@ impl engine {
 	}
 	fn apply_frication_rules(&mut self) {
 		// a sibilant next to another fricative keeps its level, so the other doesn't drown it ("thieves fished")
-		let sib_cluster = sibilant(self.pft_c) && (fricative(self.phn_l1) || fricative(self.phn_r1));
+		let sib_cluster = sibilant(self.pft_c) && (self.pft_l1 | self.pft_r1) & FRICATIVE != 0;
 		// frication level: not for vowels, stops or affricates (which keep the table's)
 		if self.pft_c & (VOWEL | STOP) == 0 {
 			if self.pdr_c < eighty_ms && self.pft_l1 & STOP == 0 && !sib_cluster {
@@ -1130,7 +1129,7 @@ impl engine {
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
 		// partly nasalize a vowel next to a nasal (the velum lowers before one and is still rising after one),
 		// except the diphthongs aw, ay, ow and oy, which sound too nasal with it ("joined")
-		if self.pft_c & VOWEL != 0 && !diphthong(self.phn_c) {
+		if self.pft_c & VOWEL != 0 && self.pft_c & DIPHTHONG == 0 {
 			let near = |nasal: bool, d: i32, len: f32| if nasal {
 				NASAL_VOWEL_K * (1.0 - d as f32 / samples(len) as f32).clamp(0.0, 1.0)
 			} else {
@@ -1526,7 +1525,7 @@ impl engine {
 			// voicing builds up quickly after a release
 			self.amp_len = self.amp_len.min(samples(VOICE_ONSET_MS));
 		}
-		if nasal(self.pft_c) || nasal(self.pft_l1) {
+		if self.pft_c & NASAL != 0 || self.pft_l1 & NASAL != 0 {
 			// a nasal's closure and release are quick
 			self.amp_len = samples(NASAL_EDGE_MS);
 		}
@@ -1538,12 +1537,12 @@ impl engine {
 		// a dip in the sources between two fricatives, two nasals, or vowels across a word boundary
 		self.dip_half = 0;
 		// h is breath noise too: without the dip a fricative runs into it as one hiss
-		if hiss(self.phn_c) && fricative(self.phn_l1) && self.phn_c != self.phn_l1 {
+		if hiss(self.phn_c) && self.pft_l1 & FRICATIVE != 0 && self.phn_c != self.phn_l1 {
 			self.dip_mid = self.amp_len / 2;
 			self.dip_half = samples(FRIC_DIP_MS / 2.0).min(self.dip_mid - self.counter);
 			self.dip_db = FRIC_DIP_DB;
 		}
-		if nasal(self.pft_c) && nasal(self.pft_l1) && self.phn_c != self.phn_l1 {
+		if self.pft_c & NASAL != 0 && self.pft_l1 & NASAL != 0 && self.phn_c != self.phn_l1 {
 			// centred on the join, or starting at this phone's first sample when less of the last one carries over
 			let half = samples(NASAL_DIP_MS / 2.0);
 			self.dip_mid = (self.counter + half).max(0);
@@ -1559,21 +1558,22 @@ impl engine {
 	}
 	fn set_fricative_edges(&mut self) {
 		// a word-final voiced fricative before a voiceless obstruent devoices ("thieves fished")
-		self.devoice_len = if fricative(self.phn_c) && self.pft_c & VOICED != 0 && self.pwi_r1
-			&& self.pft_r1 & VOICED == 0 && (fricative(self.phn_r1) || self.pft_r1 & STOP != 0) {
+		self.devoice_len = if self.pft_c & FRICATIVE != 0 && self.pft_c & VOICED != 0 && self.pwi_r1
+			&& self.pft_r1 & VOICED == 0 && self.pft_r1 & (FRICATIVE | STOP) != 0 {
 			self.pdr_c
 		} else {
 			0
 		};
-		self.gap = if nasal(self.pft_l1) && fricative(self.phn_c) && self.pft_c & VOICED == 0 {
+		self.gap = if self.pft_l1 & NASAL != 0 && self.pft_c & FRICATIVE != 0 && self.pft_c & VOICED == 0 {
 			samples(NASAL_GAP_MS)
 		} else {
 			0
 		};
-		if (fricative(self.phn_c) && sonorant(self.pft_l1)) || (fricative(self.phn_l1) && sonorant(self.pft_c)) {
+		if (self.pft_c & FRICATIVE != 0 && sonorant(self.pft_l1))
+			|| (self.pft_l1 & FRICATIVE != 0 && sonorant(self.pft_c)) {
 			// a fricative fades in and out across its boundary, as far as the carried-over region allows
 			let sib = sibilant(self.pft_c) || sibilant(self.pft_l1);
-			let entry = fricative(self.phn_c);
+			let entry = self.pft_c & FRICATIVE != 0;
 			let len = match (sib, entry) {
 				(true, true) => SIB_ENTRY_MS,
 				(true, false) => SIB_RAMP_MS,
@@ -1586,7 +1586,8 @@ impl engine {
 			let hv = samples(VOICE_SWITCH_MS / 2.0);
 			self.voice_start = (-hv).max(self.counter);
 			self.voice_len = hv - self.voice_start;
-		} else if (fricative(self.phn_c) && quiet(self.phn_l1)) || (fricative(self.phn_l1) && quiet(self.phn_c)) {
+		} else if (self.pft_c & FRICATIVE != 0 && quiet(self.phn_l1))
+			|| (self.pft_l1 & FRICATIVE != 0 && quiet(self.phn_c)) {
 			// out of and into silence, fricative noise rises and falls slowly
 			self.amp_len = samples(FRIC_SILENCE_MS);
 		}
