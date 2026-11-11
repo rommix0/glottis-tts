@@ -1010,7 +1010,7 @@ impl engine {
 			return;
 		}
 		let phn = self.phn_c;
-		let (Some(own), Some(into), Some(out_of)) = (locus(phn), locus_in(phn), locus_out(phn)) else { return };
+		let (Some(into), Some(out_of)) = (locus_in(phn), locus_out(phn)) else { return };
 		let [next_f1, next_f2, next_f3] = self.next_vowel_formants();
 		if next_vowel {
 			let f1 = (self.F1_A_src + F1_FOLLOW * (next_f1 - F1_FOLLOW_REF)).max(F1_FOLLOW_MIN);
@@ -1026,9 +1026,9 @@ impl engine {
 			if matches!(phn, G | K) { (f2.max(v + VELAR_F2_ABOVE), VELAR_F3.1 + VELAR_F3.0 * v) } else { (f2, f3) }
 		};
 		// the way in from the vowel before and out to the vowel after;
-		// a side with no vowel takes the other side's vowel through the plain locus
-		let start = left.map(|(v, _)| (into, v)).or(right.map(|(v, _)| (own, v)));
-		let end = right.map(|(v, _)| (out_of, v)).or(left.map(|(v, _)| (own, v)));
+		// a side with no vowel holds the other side's ("breath." keeps th's way in to the end)
+		let start = left.map(|(v, _)| (into, v)).or(right.map(|(v, _)| (out_of, v)));
+		let end = right.map(|(v, _)| (out_of, v)).or(left.map(|(v, _)| (into, v)));
 		if let Some((at, v)) = start { (self.F2_A_src, self.F3_A_src) = edge(at, v, self.F3_A_src); }
 		if let Some((at, v)) = end { (self.F2_B_src, self.F3_B_src) = edge(at, v, self.F3_B_src); }
 		let back = |side: &(f32, f32)| side.0 < BACK_VOWEL_F2;
@@ -2576,6 +2576,15 @@ mod tests {
 		let ((_, _), (t_f2, _, _, _), _) = edges(IY, T);
 		assert!(iy_f2 - s_f2 > 200.0 && t_f2 - s_f2 > 100.0,
 			"s's F2 {} Hz after iy's {} Hz (t's {})", s_f2, iy_f2, t_f2);
+	}
+
+	#[test]
+	fn th_and_f_hold_their_f2_where_no_vowel_is() {
+		// "breath.": th keeps its way in to the end; "fee" after a pause: f starts where it leaves for the vowel
+		let e = loaded(&[(PAU, 50, false), (EH, 150, true), (TH, 100, false), (PAU, 100, false), (SIL, 50, false)], TH);
+		assert_eq!(e.F2_A_src, e.F2_B_src, "phrase-final th moves from {} to {} Hz", e.F2_A_src, e.F2_B_src);
+		let e = loaded(&[(PAU, 50, false), (F, 100, false), (IY, 150, true), (PAU, 100, false)], F);
+		assert_eq!(e.F2_A_src, e.F2_B_src, "f after a pause moves from {} to {} Hz", e.F2_A_src, e.F2_B_src);
 	}
 
 	#[test]

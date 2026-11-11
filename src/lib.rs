@@ -181,21 +181,12 @@ impl Speaker {
 
 	// play out what is still in the synthesizer
 	pub async fn finish<O: SpeechSink>(&mut self, out: &mut O) -> Result<(), O::Error> {
+		// every sentence ends with its release and pause: let the pause run out, then silence
 		let mut first = true;
 		while self.synth.is_not_last() {
 			let seg = self.take_seg();
-			if first {
-				first = false;
-				if self.last_phone == PAU {
-					// the sentence already ended with its release and pause
-					self.play(out, PAU, 50.0, false, seg, true).await?;
-				} else {
-					// no punctuation at the end of input, so play the release here
-					self.play(out, AXP, 100.0, false, seg, true).await?;
-				}
-			} else {
-				self.play(out, SIL, 50.0, false, seg, true).await?;
-			}
+			self.play(out, if first { PAU } else { SIL }, 50.0, false, seg, true).await?;
+			first = false;
 		}
 		Ok(())
 	}
@@ -236,11 +227,9 @@ impl Speaker {
 				}
 				self.play(out, s.phone, s.dur_ms, s.stress != 0, stream[i], utt.words[s.word].segs.start == i).await?;
 			}
-			if ph.end != Boundary::Unmarked {
-				// phrase-end release, then the pause
-				let (r, p) = ends.next().unwrap();
-				self.play_phrase_end(utt.segs[segs.end - 1].phone, ph.end, (r, p), out).await?;
-			}
+			// phrase-end release, then the pause
+			let (r, p) = ends.next().unwrap();
+			self.play_phrase_end(utt.segs[segs.end - 1].phone, ph.end, (r, p), out).await?;
 		}
 		Ok(())
 	}
@@ -260,11 +249,9 @@ impl Speaker {
 		for ph in &utt.phrases {
 			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			for i in segs { stream[i] = self.take_seg(); }
-			if ph.end != Boundary::Unmarked {
-				let r = self.take_seg();
-				let p = self.take_seg();
-				ends.push((r, p));
-			}
+			let r = self.take_seg();
+			let p = self.take_seg();
+			ends.push((r, p));
 		}
 		(stream, ends)
 	}
@@ -513,7 +500,8 @@ mod tests {
 		};
 		// numbers past u64, and past the largest scale word
 		say("$99999999999999999999.99 and 1,000,000,000,000,000,000,000 km, 18446744073709551617th.", 1.0);
-		assert!(say("$1000000000000000000", 1.0) > say("$1", 1.0) * 3, "a huge amount is read, not just its currency");
+		let (huge, one) = (say("$1000000000000000000", 1.0), say("$1", 1.0));
+		assert!(huge > one + m_sr as usize, "a huge amount is read, not just its currency");
 		// a rate out of range is held to 0.5..2
 		assert_eq!(say("It is a test.", 0.0), say("It is a test.", 0.5));
 		assert_eq!(say("It is a test.", -1.0), say("It is a test.", 0.5));
@@ -585,9 +573,7 @@ mod tests {
 		for ph in &utt.phrases {
 			let range = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			durs.extend(range.map(|i| (utt.segs[i].dur_ms, false)));
-			if ph.end != Boundary::Unmarked {
-				durs.extend([(_dur::RELEASE_MS, false), (_dur::pause_after(ph.end, 1.0), true)]);
-			}
+			durs.extend([(_dur::RELEASE_MS, false), (_dur::pause_after(ph.end, 1.0), true)]);
 		}
 		let samples = |ms: f32| (ms.round() * m_sr as f32 / 1000.0) as i64;
 		let ms = |n: i64| n as f32 * 1000.0 / m_sr as f32;

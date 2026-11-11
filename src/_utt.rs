@@ -47,7 +47,7 @@ fn is_legal_onset(cluster: &[u8]) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Boundary { Comma, Period, Question, Exclaim, Minor, Unmarked }
+pub enum Boundary { Comma, Period, Question, Exclaim, Minor }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind { Statement, Exclamation, YesNo, Wh }
@@ -147,9 +147,9 @@ impl Utterance {
 		}
 		u.close_word();
 		if u.words.len() > phrase_start {
-			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::Unmarked });
+			u.phrases.push(Phrase { words: phrase_start..u.words.len(), end: Boundary::Period });
 		}
-		// a comma at the end of the input ends the sentence like a period
+		// the end of the input ends the sentence like a period, after a comma too
 		if let Some(last) = u.phrases.last_mut() && last.end == Boundary::Comma {
 			last.end = Boundary::Period;
 		}
@@ -446,7 +446,7 @@ mod tests {
 	fn no_terminal_punctuation() {
 		let u = Utterance::build(&[CW, 51, 15], &["ha"]);
 		assert_eq!(u.phrases.len(), 1);
-		assert_eq!(u.phrases[0].end, Boundary::Unmarked);
+		assert_eq!(u.phrases[0].end, Boundary::Period);
 		assert_eq!(u.kind, Kind::Statement);
 	}
 
