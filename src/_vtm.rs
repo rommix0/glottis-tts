@@ -62,6 +62,15 @@ pub const DB_GAIN: [f32; 88] = [
 const MIN_D: f32 = 350.0;
 const MUL_B: f32 = 2.5;
 fn bw_widen(gap: f32) -> f32 { if gap < MIN_D { MUL_B * ((MIN_D - gap) / MIN_D) + 1.0 } else { 1.0 } }
+// B1-B3's widening for F1-F3 and F4: each formant by its nearer neighbour (F1 only has F2)
+fn bw_widen3(f1: f32, f2: f32, f3: f32, f4: f32) -> [f32; 3] {
+	let b2 = bw_widen((f2 - f3).abs());
+	[bw_widen((f1 - f2).abs()), b2, bw_widen((f3 - f4).abs()).max(b2)]
+}
+// a fixed upper formant (F4 and up) at the voice's scale
+fn upper_formant(v: &Voice, hz: f32, bw: f32) -> resonator {
+	resonator::new((hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32), bw * (v.fhi / 100.0), false)
+}
 
 // how much voicing modulates breath noise and frication (1 is half-level noise in every other half period, 2 is none)
 const BREATH_MOD: f32 = 0.3;
@@ -134,17 +143,13 @@ pub const VOICES: [Voice; 8] = [
 // loudness. A bigger scale lets more noise through, while the voice's level only matches its vowels
 fn asp_level(v: &Voice) -> f32 {
 	let top = F_MAX_SR * m_sr as f32;
-	let (s1, s2, s3, sh) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0, v.fhi / 100.0);
-	// F1-F3 as wide as in a release, the fixed upper formants as set_voice builds them
+	let (s1, s2, s3) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0);
+	// F1-F3 as wide as in a release and widened as fix_bw does, the fixed upper formants as set_voice builds them
 	let (f1, f2, f3) = (400.0 * s1, 1600.0 * s2, 2600.0 * s3);
-	// widened for close neighbours as fix_bw does
-	let (a1, a2) = (bw_widen((f1 - f2).abs()), bw_widen((f2 - f3).abs()));
-	let a3 = bw_widen((f3 - F4_INIT * sh).abs()).max(a2);
-	let low = [(f1, 300.0 * s1 * a1), (f2, 120.0 * s2 * a2), (f3, 250.0 * s3 * a3)];
-	let mut rs = [resonator::new((low[0].0).min(top), low[0].1, false), resonator::new((low[1].0).min(top), low[1].1, false),
-		resonator::new((low[2].0).min(top), low[2].1, false), resonator::new((F4_INIT * sh).min(top), B4_INIT * sh, false),
-		resonator::new((F5_INIT * sh).min(top), B5_INIT * sh, false), resonator::new((F6_INIT * sh).min(top), B6_INIT * sh, false),
-		resonator::new((F7_INIT * sh).min(top), B7_INIT * sh, false), resonator::new((F8_INIT * sh).min(top), B8_INIT * sh, false)];
+	let [a1, a2, a3] = bw_widen3(f1, f2, f3, F4_INIT * (v.fhi / 100.0));
+	let mut rs = [resonator::new(f1.min(top), 300.0 * s1 * a1, false), resonator::new(f2.min(top), 120.0 * s2 * a2, false),
+		resonator::new(f3.min(top), 250.0 * s3 * a3, false), upper_formant(v, F4_INIT, B4_INIT), upper_formant(v, F5_INIT, B5_INIT),
+		upper_formant(v, F6_INIT, B6_INIT), upper_formant(v, F7_INIT, B7_INIT), upper_formant(v, F8_INIT, B8_INIT)];
 	let (mut e, mut prev) = (0.0f32, 0.0f32);
 	for n in 0..4096 {
 		let mut y = if n == 0 { 1.0 } else { 0.0 };
@@ -665,20 +670,18 @@ impl vtm {
 		self.min_bw = CASC_MIN_BW * libm::sqrtf((v.f0 / 100.0).max(1.0));
 		self.glottal.jitter = v.jit;
 		self.glottal.shimmer = v.shim;
-		let f = |hz: f32| (hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32);
-		let b = |hz: f32| hz * (v.fhi / 100.0);
-		self.VR4  = resonator::new(f(F4_INIT),  b(B4_INIT),  false);
-		self.VR5  = resonator::new(f(F5_INIT),  b(B5_INIT),  false);
-		self.VR6  = resonator::new(f(F6_INIT),  b(B6_INIT),  false);
-		self.VR7  = resonator::new(f(F7_INIT),  b(B7_INIT),  false);
-		self.VR8  = resonator::new(f(F8_INIT),  b(B8_INIT),  false);
-		self.FR4  = resonator::new(f(F4_INIT),  b(B4_INIT),  false);
-		self.FR5  = resonator::new(f(F5_INIT),  b(B5_INIT),  false);
-		self.FR6  = resonator::new(f(F6_INIT),  b(B6_INIT),  false);
-		self.FR7  = resonator::new(f(F7_INIT),  b(B7_INIT),  false);
-		self.FR8  = resonator::new(f(F8_INIT),  b(B8_INIT),  false);
-		self.FR9  = resonator::new(f(F9_INIT),  b(B9_INIT),  false);
-		self.FR10 = resonator::new(f(F10_INIT), b(B10_INIT), false);
+		self.VR4  = upper_formant(&v, F4_INIT,  B4_INIT);
+		self.VR5  = upper_formant(&v, F5_INIT,  B5_INIT);
+		self.VR6  = upper_formant(&v, F6_INIT,  B6_INIT);
+		self.VR7  = upper_formant(&v, F7_INIT,  B7_INIT);
+		self.VR8  = upper_formant(&v, F8_INIT,  B8_INIT);
+		self.FR4  = upper_formant(&v, F4_INIT,  B4_INIT);
+		self.FR5  = upper_formant(&v, F5_INIT,  B5_INIT);
+		self.FR6  = upper_formant(&v, F6_INIT,  B6_INIT);
+		self.FR7  = upper_formant(&v, F7_INIT,  B7_INIT);
+		self.FR8  = upper_formant(&v, F8_INIT,  B8_INIT);
+		self.FR9  = upper_formant(&v, F9_INIT,  B9_INIT);
+		self.FR10 = upper_formant(&v, F10_INIT, B10_INIT);
 	}
 	fn apply_voice(&mut self) {
 		// scale this sample's pitch, formants and source by the voice profile
@@ -717,11 +720,9 @@ impl vtm {
 		self.B1 += DB1;
 		self.B2 += DB2;
 
-		// formants close together
-		self.B1_ADJ = bw_widen((self.F1 - self.F2).abs());
-		self.B2_ADJ = bw_widen((self.F2 - self.F3).abs());
-		// F3 widens for a close F2 as well as F4, or the F2-F3 pair rings as one narrow peak (front vowels in voice 6)
-		self.B3_ADJ = bw_widen((self.F3 - self.VR4.bf).abs()).max(self.B2_ADJ);
+		// formants close together; F3 widens for a close F2 as well as F4, or the F2-F3 pair rings as one narrow peak
+		// (front vowels in voice 6)
+		[self.B1_ADJ, self.B2_ADJ, self.B3_ADJ] = bw_widen3(self.F1, self.F2, self.F3, self.VR4.bf);
 	}
 	fn nasal_zero(&self, scale: f32, k: f32) -> f32 {
 		// nasal zero for a nasal coupling k (0 oral, 1 nasal consonant) and the current F1: on the nasal pole for an oral
