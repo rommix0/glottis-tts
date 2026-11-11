@@ -303,6 +303,8 @@ fn samples(ms: f32) -> i32 { (ms * m_sr as f32 / 1000.0) as i32 }
 
 fn fricative(p: u8) -> bool { matches!(p, 16 | 37 | 40 | 12 | 34 | 43 | 35 | 44) }
 fn sibilant(f: u16) -> bool { f & 0x8200 == 0x200 }
+// aw, ay, ow, oy (feats' 0x2000 marks only ay and oy)
+fn diphthong(p: u8) -> bool { matches!(p, 5 | 8 | 29 | 30) }
 
 // a word-internal t before an unstressed schwa ("button"): softened by SCHWA_T_ASP and SCHWA_T_ASP_DB
 fn schwa_t(phone: u8, word_start: bool, next: u8, next_stressed: bool) -> bool {
@@ -835,7 +837,7 @@ impl engine {
 			// GLIDE TOWARD THE NEXT CONSONANT
 			// a vowel's own F2 glide does not head away from where the next consonant takes F2 ("cat", "pick");
 			// the diphthongs aw, ay, ow and oy keep theirs
-			if !matches!(self.phn_c, 5 | 8 | 29 | 30) &&self.pft_r1 & 0x1 == 0 && !matches!(self.phn_r1, 0 | 18 | 48 | 49 | PAU) {
+			if !diphthong(self.phn_c) && self.pft_r1 & 0x1 == 0 && !matches!(self.phn_r1, 0 | 18 | 48 | 49 | PAU) {
 				let next_f2 = match locus(self.phn_r1) {
 					Some((k, o, floor)) => o + k * self.F2_B_src.max(floor),
 					None => self.tbl[self.phn_r1 as usize * 31 + 6] as f32,
@@ -1071,7 +1073,7 @@ impl engine {
 		self.NZP_reg = self.NZP_reg_src * (1.0 - y) + self.NZP_reg_trg * y;
 		// the velum lowers during a vowel before a nasal and is still rising after one, so the vowel is partly nasal;
 		// not the diphthongs aw, ay, ow and oy, which sound too nasal with it ("joined")
-		if self.pft_c & 0x1 != 0 && !matches!(self.phn_c, 5 | 8 | 29 | 30) {
+		if self.pft_c & 0x1 != 0 && !diphthong(self.phn_c) {
 			let near = |nasal: bool, d: i32, len: f32| if nasal { NASAL_VOWEL_K * (1.0 - d as f32 / samples(len) as f32).clamp(0.0, 1.0) } else { 0.0 };
 			let k = near(self.pft_r1 & 0x10 != 0, self.marker_B - now, NASAL_ANTIC_MS).max(near(self.pft_l1 & 0x10 != 0, now, NASAL_CARRY_MS));
 			self.NZP_reg = self.NZP_reg.max(k);
