@@ -10,6 +10,7 @@ so only the stretchable part above the minimum is scaled.
 
 */
 use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent};
+use crate::_phone::*;
 use alloc::vec::Vec;
 
 pub struct PhoneDur { pub inherent: f32, pub min: f32 }
@@ -42,52 +43,52 @@ const BEFORE_DENTAL:          f32 = 0.5;		// an s, z, f or v runs into a th or d
 pub fn phone_dur(p: u8) -> PhoneDur {
 	match p {
 		// phone => inherent, min (ms); tuned by ear
-		1  => PhoneDur { inherent: 129.0, min:  58.0 },	// aa
-		2  => PhoneDur { inherent: 110.0, min:  50.0 },	// ae
-		3  => PhoneDur { inherent: 114.0, min:  51.0 },	// ah
-		4  => PhoneDur { inherent: 120.0, min:  54.0 },	// ao
-		5  => PhoneDur { inherent: 149.0, min:  67.0 },	// aw
-		6  => PhoneDur { inherent:  90.0, min:  40.0 },	// ax
-		7  => PhoneDur { inherent: 123.0, min:  55.0 },	// axr
-		8  => PhoneDur { inherent: 117.0, min:  52.0 },	// ay
-		9  => PhoneDur { inherent:  78.0, min:  45.0 },	// b
-		10 => PhoneDur { inherent:  95.0, min:  43.0 },	// ch
-		11 => PhoneDur { inherent:  75.0, min:  34.0 },	// d
-		12 => PhoneDur { inherent:  66.0, min:  30.0 },	// dh
-		13 => PhoneDur { inherent: 108.0, min:  49.0 },	// eh
-		14 => PhoneDur { inherent: 121.0, min:  54.0 },	// er
-		15 => PhoneDur { inherent: 119.0, min:  54.0 },	// ey
-		16 => PhoneDur { inherent:  97.0, min:  44.0 },	// f
-		17 => PhoneDur { inherent:  78.0, min:  35.0 },	// g
-		18 => PhoneDur { inherent:  81.0, min:  36.0 },	// hh
-		19 => PhoneDur { inherent: 105.0, min:  47.0 },	// ih
-		20 => PhoneDur { inherent:  89.0, min:  40.0 },	// ix
-		21 => PhoneDur { inherent: 112.0, min:  50.0 },	// iy
-		22 => PhoneDur { inherent:  85.0, min:  38.0 },	// jh
-		23 => PhoneDur { inherent: 103.0, min:  46.0 },	// k
-		24 => PhoneDur { inherent:  94.0, min:  42.0 },	// l
-		25 => PhoneDur { inherent: 104.0, min:  47.0 },	// lx
-		26 => PhoneDur { inherent:  77.0, min:  35.0 },	// m
-		27 => PhoneDur { inherent:  83.0, min:  37.0 },	// n
-		28 => PhoneDur { inherent:  89.0, min:  40.0 },	// ng
-		29 => PhoneDur { inherent: 119.0, min:  54.0 },	// ow
-		30 => PhoneDur { inherent: 156.0, min:  70.0 },	// oy
-		31 => PhoneDur { inherent:  88.0, min:  40.0 },	// p
-		32 => PhoneDur { inherent:  86.0, min:  39.0 },	// r
-		33 => PhoneDur { inherent:  99.0, min:  45.0 },	// rx
-		34 => PhoneDur { inherent:  94.0, min:  42.0 },	// s
-		35 => PhoneDur { inherent:  91.0, min:  41.0 },	// sh
-		36 => PhoneDur { inherent: 101.0, min:  45.0 },	// t
-		37 => PhoneDur { inherent:  90.0, min:  40.0 },	// th
-		38 => PhoneDur { inherent: 110.0, min:  50.0 },	// uh
-		39 => PhoneDur { inherent: 118.0, min:  53.0 },	// uw
-		40 => PhoneDur { inherent:  81.0, min:  36.0 },	// v
-		41 => PhoneDur { inherent:  87.0, min:  39.0 },	// w
-		42 => PhoneDur { inherent:  85.0, min:  38.0 },	// y
-		43 => PhoneDur { inherent:  88.0, min:  40.0 },	// z
-		44 => PhoneDur { inherent:  94.0, min:  42.0 },	// zh
-		47 => PhoneDur { inherent:  45.0, min:  30.0 },	// dx: a single tap, long enough for its dip to be heard
-		_  => PhoneDur { inherent:  80.0, min:  40.0 },
+		AA  => PhoneDur { inherent: 129.0, min:  58.0 },
+		AE  => PhoneDur { inherent: 110.0, min:  50.0 },
+		AH  => PhoneDur { inherent: 114.0, min:  51.0 },
+		AO  => PhoneDur { inherent: 120.0, min:  54.0 },
+		AW  => PhoneDur { inherent: 149.0, min:  67.0 },
+		AX  => PhoneDur { inherent:  90.0, min:  40.0 },
+		AXR => PhoneDur { inherent: 123.0, min:  55.0 },
+		AY  => PhoneDur { inherent: 117.0, min:  52.0 },
+		B   => PhoneDur { inherent:  78.0, min:  45.0 },
+		CH  => PhoneDur { inherent:  95.0, min:  43.0 },
+		D   => PhoneDur { inherent:  75.0, min:  34.0 },
+		DH  => PhoneDur { inherent:  66.0, min:  30.0 },
+		EH  => PhoneDur { inherent: 108.0, min:  49.0 },
+		ER  => PhoneDur { inherent: 121.0, min:  54.0 },
+		EY  => PhoneDur { inherent: 119.0, min:  54.0 },
+		F   => PhoneDur { inherent:  97.0, min:  44.0 },
+		G   => PhoneDur { inherent:  78.0, min:  35.0 },
+		HH  => PhoneDur { inherent:  81.0, min:  36.0 },
+		IH  => PhoneDur { inherent: 105.0, min:  47.0 },
+		IX  => PhoneDur { inherent:  89.0, min:  40.0 },
+		IY  => PhoneDur { inherent: 112.0, min:  50.0 },
+		JH  => PhoneDur { inherent:  85.0, min:  38.0 },
+		K   => PhoneDur { inherent: 103.0, min:  46.0 },
+		L   => PhoneDur { inherent:  94.0, min:  42.0 },
+		LX  => PhoneDur { inherent: 104.0, min:  47.0 },
+		M   => PhoneDur { inherent:  77.0, min:  35.0 },
+		N   => PhoneDur { inherent:  83.0, min:  37.0 },
+		NG  => PhoneDur { inherent:  89.0, min:  40.0 },
+		OW  => PhoneDur { inherent: 119.0, min:  54.0 },
+		OY  => PhoneDur { inherent: 156.0, min:  70.0 },
+		P   => PhoneDur { inherent:  88.0, min:  40.0 },
+		R   => PhoneDur { inherent:  86.0, min:  39.0 },
+		RX  => PhoneDur { inherent:  99.0, min:  45.0 },
+		S   => PhoneDur { inherent:  94.0, min:  42.0 },
+		SH  => PhoneDur { inherent:  91.0, min:  41.0 },
+		T   => PhoneDur { inherent: 101.0, min:  45.0 },
+		TH  => PhoneDur { inherent:  90.0, min:  40.0 },
+		UH  => PhoneDur { inherent: 110.0, min:  50.0 },
+		UW  => PhoneDur { inherent: 118.0, min:  53.0 },
+		V   => PhoneDur { inherent:  81.0, min:  36.0 },
+		W   => PhoneDur { inherent:  87.0, min:  39.0 },
+		Y   => PhoneDur { inherent:  85.0, min:  38.0 },
+		Z   => PhoneDur { inherent:  88.0, min:  40.0 },
+		ZH  => PhoneDur { inherent:  94.0, min:  42.0 },
+		DX  => PhoneDur { inherent:  45.0, min:  30.0 },	// a single tap, long enough for its dip to be heard
+		_   => PhoneDur { inherent:  80.0, min:  40.0 },
 	}
 }
 
@@ -132,10 +133,10 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 				2 => apply("secondary", SECONDARY_VOWEL),
 				_ => {},
 			}
-			if matches!(p, 1 | 2 | 4 | 5 | 8 | 14 | 15 | 21 | 29 | 30 | 39) { apply("tense", TENSE_VOWEL); }
+			if matches!(p, AA | AE | AO | AW | AY | ER | EY | IY | OW | OY | UW) { apply("tense", TENSE_VOWEL); }
 			let n = word.syls.len();
 			if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
-			if same_word(i + 1) && utt.segs[i + 1].phone == 25 && matches!(p, 6 | 20) { apply("syllabic-l", SYLLABIC_L_SCHWA); }
+			if same_word(i + 1) && utt.segs[i + 1].phone == LX && matches!(p, AX | IX) { apply("syllabic-l", SYLLABIC_L_SCHWA); }
 			if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
 				if is_voiced(utt.segs[i + 1].phone) { apply("before-voiced", BEFORE_VOICED_OBS); } else { apply("before-voiceless", BEFORE_VOICELESS_OBS); }
 			}
@@ -143,7 +144,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
 			if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
 			if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
-			if matches!(p, 34 | 43 | 16 | 40) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, 37 | 12) { apply("before-dental", BEFORE_DENTAL); }
+			if matches!(p, S | Z | F | V) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, TH | DH) { apply("before-dental", BEFORE_DENTAL); }
 			if utt.segs[i].glide { apply("glide-through", GLIDE_THROUGH); }
 		}
 
@@ -159,12 +160,11 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 mod tests {
 	use super::*;
 
-	const CW: u8 = 90;
-	const COMMA: u8 = 91;
-	const PERIOD: u8 = 92;
+	// boundary tokens, as the front end writes them
+	use crate::_phone::{TOKEN_CW as CW, TOKEN_FW as FW, TOKEN_COMMA as COMMA, TOKEN_PERIOD as PERIOD};
 
 	fn build(tokens: &[u8]) -> Utterance {
-		let n = tokens.iter().filter(|&&t| t == 90 || t == 95).count();
+		let n = tokens.iter().filter(|&&t| t == CW || t == FW).count();
 		Utterance::build(tokens, &vec!["w"; n])
 	}
 	fn stretch(u: &Utterance, i: usize) -> f32 {

@@ -30,7 +30,8 @@ the contour is evaluated per sample from the synthesizer's position; between two
 pitch moves evenly in time.
 
 */
-use crate::_utt::{Utterance, Kind, Boundary, PAU, is_vowel, is_voiced, is_obstruent, is_sonorant};
+use crate::_utt::{Utterance, Kind, Boundary, is_vowel, is_voiced, is_obstruent, is_sonorant};
+use crate::_phone::*;
 use core::f32::consts::PI;
 use alloc::vec::Vec;
 
@@ -262,8 +263,6 @@ impl Contour {
 		self.clock += acc;
 
 		// short offsets: microprosody and glottal dips
-		const T: u8 = 36;
-		const FLAP: u8 = 47;
 		let n = utt.segs.len();
 		let phone = |i: usize| utt.segs[i].phone;
 		let word_start = |i: usize| utt.words[utt.segs[i].word].segs.start == i;
@@ -279,7 +278,7 @@ impl Contour {
 
 			// a sonorant or vowel after an obstruent (not a flap), until the next obstruent or the phrase end: after a
 			// voiceless one raised and decaying; a voiced one lowers F0 through itself, back up in the next sound
-			if !after_pause && is_sonorant(p) && is_obstruent(prev) && prev != FLAP {
+			if !after_pause && is_sonorant(p) && is_obstruent(prev) && prev != DX {
 				let voiced = is_voiced(prev);
 				let span = if voiced { VOICED_DIP_UP_MS } else { BUMP_SPAN_MS };
 				let end = (i..n).find(|&j| is_obstruent(phone(j)) || !same_phrase(i, j) || t0[j] - t0[i] >= span).unwrap_or(n);
@@ -310,7 +309,7 @@ impl Contour {
 			}
 
 			// ih iy uh uw: intrinsically a little higher
-			if matches!(p, 19 | 21 | 38 | 39) {
+			if matches!(p, IH | IY | UH | UW) {
 				draw(i..i + 1, t0[i], Shape::Hump { st: HIGH_VOWEL_ST, ms: s.dur_ms });
 			}
 		}
@@ -354,12 +353,9 @@ impl Contour {
 mod tests {
 	use super::*;
 
-	const CW: u8 = 90;
-	const FW: u8 = 95;
-	const COMMA: u8 = 91;
-	const PERIOD: u8 = 92;
-	const QMARK: u8 = 93;
-	const BANG: u8 = 94;
+	// boundary tokens, as the front end writes them
+	use crate::_phone::{TOKEN_CW as CW, TOKEN_FW as FW, TOKEN_COMMA as COMMA};
+	use crate::_phone::{TOKEN_PERIOD as PERIOD, TOKEN_QMARK as QMARK, TOKEN_BANG as BANG};
 
 	// words are (function?, consonant token, stressed vowel token); tokens from PHNIDToPhoneme
 	fn utt(words: &[(bool, u8, u8)], ends: &[(usize, u8)], first_text: &str) -> (Utterance, Contour) {

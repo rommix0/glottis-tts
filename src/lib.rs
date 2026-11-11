@@ -4,6 +4,7 @@
 extern crate alloc;
 
 pub mod _utils;
+pub mod _phone;
 pub mod _text;
 pub mod _text_rules;
 pub mod _lts;
@@ -23,7 +24,8 @@ use alloc::{format, string::String, vec, vec::Vec};
 use core::{fmt::Write, future::Future};
 use _utils::cbuf;
 use _dread::dictreader;
-use _utt::{Utterance, Boundary, PAU};
+use _utt::{Utterance, Boundary};
+use _phone::*;
 
 // master samples rate
 pub const SAMPLE_RATE: u32 = _vtm::m_sr;
@@ -73,7 +75,7 @@ impl<W: WriteSample> SpeechSink for Pcm<W> {
 
 // the token for one phone alone, with the most stress a vowel can carry
 pub fn phone_token(p: u8) -> Option<u8> {
-	if p == 0 { return None; }
+	if p == SIL { return None; }
 	(0..=255u8).filter(|&t| matches!(_utils::PHNIDToPhoneme(t), (a, 0, _, _) if a == p))
 		.max_by_key(|&t| _utils::PHNIDToPhoneme(t).2)
 }
@@ -149,7 +151,7 @@ impl Speaker {
 			contour:  _f0::Contour::new(),
 			next_seg: 0,
 			started:  false,
-			last_phone: 0,
+			last_phone: SIL,
 		}
 	}
 
@@ -244,8 +246,8 @@ impl Speaker {
 				// phrase-end release, then the pause
 				let (r, p) = ends.next().unwrap();
 				let release = match utt.segs[segs.end - 1].phone {
-					11|36 => 49,			// is alveolar. use IXP release
-					_     => 48,			// otherwise, use AXP release
+					D | T => IXP,
+					_     => AXP,
 				};
 				let pause = _dur::pause_after(ph.end, self.rate);
 				if self.trace {
@@ -298,10 +300,10 @@ impl Speaker {
 					if dict_reader.search() {
 						if dict_reader.isFunctionWord() {
 							// function word boundary
-							tokens.push(95);
+							tokens.push(TOKEN_FW);
 						} else {
 							// content word boundary
-							tokens.push(90);
+							tokens.push(TOKEN_CW);
 						}
 						texts.push(word_text);
 
@@ -313,7 +315,7 @@ impl Speaker {
 						}
 					} else if let Some(classes) = morph_word(&word_text, &mut dict_reader) {
 						// a known stem with suffixes
-						tokens.push(90);
+						tokens.push(TOKEN_CW);
 						texts.push(word_text);
 						tokens.extend(classes);
 					} else {
@@ -329,7 +331,7 @@ impl Speaker {
 								let classes = _lts::word(&run);
 								if !classes.is_empty() && !wb_written {
 									// content word boundary once, before the word's first phoneme
-									tokens.push(90);
+									tokens.push(TOKEN_CW);
 									texts.push(word_text.clone());
 									wb_written = true;
 								}
@@ -337,17 +339,17 @@ impl Speaker {
 								run.clear();
 							}
 							match b {
-								b'!' => tokens.push(94),
-								b',' => tokens.push(91),
-								b'.' => tokens.push(92),
-								b'?' => tokens.push(93),
+								b'!' => tokens.push(TOKEN_BANG),
+								b',' => tokens.push(TOKEN_COMMA),
+								b'.' => tokens.push(TOKEN_PERIOD),
+								b'?' => tokens.push(TOKEN_QMARK),
 								_ => {}
 							}
 						}
 					}
 
 					// synthesize when the sentence is complete
-					if matches!(tokens.last(), Some(92..=94)) {
+					if matches!(tokens.last(), Some(&(TOKEN_PERIOD | TOKEN_QMARK | TOKEN_BANG))) {
 						self.sentence(&tokens, &texts, out).await?;
 						tokens.clear();
 						texts.clear();

@@ -9,32 +9,31 @@ segments with their syllable, word, phrase and sentence context
 use core::ops::Range;
 
 use crate::_utils::PHNIDToPhoneme;
+use crate::_phone::*;
 use alloc::{string::String, vec, vec::Vec};
 
-// silent pause phone
-pub const PAU: u8 = 56;
-
 // phone classes
-pub fn is_vowel(p: u8)     -> bool { matches!(p, 1..=8 | 13..=15 | 19..=21 | 29 | 30 | 38 | 39 | 48 | 49) }
-pub fn is_stop(p: u8)      -> bool { matches!(p, 9 | 11 | 17 | 23 | 31 | 36 | 47) }
-pub fn is_fricative(p: u8) -> bool { matches!(p, 10 | 12 | 16 | 18 | 22 | 34 | 35 | 37 | 40 | 43 | 44) }
-pub fn is_voiced(p: u8)    -> bool { is_vowel(p) || matches!(p, 9 | 11 | 12 | 17 | 22 | 24..=28 | 32 | 33 | 40..=44 | 47) }
+pub fn is_vowel(p: u8) -> bool {
+	matches!(p, AA | AE | AH | AO | AW | AX | AXR | AY | EH | ER | EY | IH | IX | IY | OW | OY | UH | UW | AXP | IXP)
+}
+pub fn is_stop(p: u8)      -> bool { matches!(p, B | D | G | K | P | T | DX) }
+pub fn is_fricative(p: u8) -> bool { matches!(p, CH | DH | F | HH | JH | S | SH | TH | V | Z | ZH) }
+pub fn is_voiced(p: u8) -> bool {
+	is_vowel(p) || matches!(p, B | D | DH | G | JH | L | LX | M | N | NG | R | RX | V | W | Y | Z | ZH | DX)
+}
 pub fn is_obstruent(p: u8) -> bool { is_stop(p) || is_fricative(p) }
-pub fn is_sonorant(p: u8)  -> bool { is_vowel(p) || matches!(p, 24..=28 | 32 | 33 | 41 | 42) }
+pub fn is_sonorant(p: u8)  -> bool { is_vowel(p) || matches!(p, L | LX | M | N | NG | R | RX | W | Y) }
 
 // the glide a vowel ends on: w after ow uw aw, y after iy ey ay oy
 pub fn offglide(p: u8) -> Option<u8> {
-	match p { 29 | 39 | 5 => Some(41), 21 | 15 | 8 | 30 => Some(42), _ => None }
+	match p { OW | UW | AW => Some(W), IY | EY | AY | OY => Some(Y), _ => None }
 }
 
 // legal word onsets, used to split consonants between syllables
 fn is_legal_onset(cluster: &[u8]) -> bool {
-	const P: u8 = 31; const B: u8 = 9;  const T: u8 = 36;  const D: u8 = 11; const K: u8 = 23;  const G: u8 = 17;
-	const F: u8 = 16; const V: u8 = 40; const TH: u8 = 37; const S: u8 = 34; const SH: u8 = 35; const HH: u8 = 18;
-	const M: u8 = 26; const N: u8 = 27; const L: u8 = 24;  const R: u8 = 32; const W: u8 = 41;  const Y: u8 = 42;
 	match cluster {
 		[] => true,
-		[x] => !is_vowel(*x) && !matches!(*x, 25 | 28 | 33),		// not lx, ng, rx
+		[x] => !is_vowel(*x) && !matches!(*x, LX | NG | RX),		// not lx, ng, rx
 		[S, P | T | K | M | N | L | W | F] => true,
 		[P | B | K | G | F, L | R] => true,
 		[T | D | TH | SH, R] => true,
@@ -112,27 +111,27 @@ const WH_WORDS: [&str; 9] = [
 
 impl Utterance {
 	pub fn build(tokens: &[u8], texts: &[impl AsRef<str>]) -> Utterance {
-		// texts[i] is the text of the i-th word (one per 90/95 token)
+		// texts[i] is the text of the i-th word (one per word boundary token)
 		let mut u = Utterance { segs: Vec::new(), syls: Vec::new(), words: Vec::new(), phrases: Vec::new(), kind: Kind::Statement };
 		let mut phrase_start: usize = 0;
 		let mut text_i: usize = 0;
 		for &tk in tokens {
 			let (pa, pb, sa, sb) = PHNIDToPhoneme(tk);
 			match pa {
-				50 | 55 => {
+				CW | FW => {
 					u.close_word();
 					let text = String::from(texts.get(text_i).map_or("", AsRef::as_ref));
 					text_i += 1;
 					let n  = u.segs.len();
 					let ns = u.syls.len();
-					u.words.push(Word { segs: n..n, syls: ns..ns, function: pa == 55, text, phrase: u.phrases.len() });
+					u.words.push(Word { segs: n..n, syls: ns..ns, function: pa == FW, text, phrase: u.phrases.len() });
 				},
-				51..=54 => {
+				COMMA | PERIOD | QMARK | BANG => {
 					u.close_word();
 					let end = match pa {
-						51 => Boundary::Comma,
-						52 => Boundary::Period,
-						53 => Boundary::Question,
+						COMMA  => Boundary::Comma,
+						PERIOD => Boundary::Period,
+						QMARK  => Boundary::Question,
 						_  => Boundary::Exclaim
 					};
 					if u.words.len() > phrase_start {
@@ -143,7 +142,7 @@ impl Utterance {
 						last.end = end;
 					}
 				},
-				0 => {},
+				SIL => {},
 				_ => {
 					if u.words.last().is_none_or(|w| w.phrase != u.phrases.len()) {
 						// phones before any word boundary, or after punctuation: start a content word
@@ -153,7 +152,7 @@ impl Utterance {
 					}
 					let w = u.words.len() - 1;
 					for (p, s) in [(pa, sa), (pb, sb)] {
-						if p == 0 { continue; }
+						if p == SIL { continue; }
 						// a vowel ending on a w or y glides through it into the next vowel of its word ("follower", "being"),
 						// and into an unstressed vowel starting the next word of its phrase ("go away"); a stressed one
 						// starts with a glottal catch instead
@@ -226,14 +225,13 @@ impl Utterance {
 		// a t or d after a vowel or r is said as a flap before an unstressed vowel in its word ("city", "rider"),
 		// or ending its word before a vowel in the same phrase ("got it"); a word's first stop, a stop before a
 		// stressed vowel and a t before a word-final syllabic n ("button") keep their closure
-		const T: u8 = 36; const D: u8 = 11; const DX: u8 = 47; const N: u8 = 27; const RX: u8 = 33;
-		fn vowel(p: u8) -> bool { is_vowel(p) && !matches!(p, 48 | 49) }
+		fn vowel(p: u8) -> bool { is_vowel(p) && !matches!(p, AXP | IXP) }
 		for i in 1..self.segs.len().saturating_sub(1) {
 			let (prev, cur, next) = (&self.segs[i - 1], &self.segs[i], &self.segs[i + 1]);
 			if !matches!(cur.phone, T | D) || prev.word != cur.word || !(vowel(prev.phone) || prev.phone == RX) { continue; }
 			let w = &self.words[cur.word];
 			let flaps = if next.word == cur.word {
-				let syllabic_n = matches!(next.phone, 6 | 20) && i + 3 == w.segs.end && self.segs[i + 2].phone == N;
+				let syllabic_n = matches!(next.phone, AX | IX) && i + 3 == w.segs.end && self.segs[i + 2].phone == N;
 				vowel(next.phone) && next.stress == 0 && !syllabic_n
 			} else {
 				vowel(next.phone) && self.words[next.word].phrase == w.phrase && self.words[next.word].segs.start == i + 1
@@ -244,10 +242,9 @@ impl Utterance {
 	fn dark_l(&mut self) {
 		// a syllabic l (ax l / ix l with no vowel after it in its word: "example", "bottles") is a dark l, like
 		// the l ending "feel"; the clear l made the schwa ring as a vowel of its own
-		const L: u8 = 24; const LX: u8 = 25;
 		for i in 1..self.segs.len() {
 			let w = self.segs[i].word;
-			if self.segs[i].phone != L || !matches!(self.segs[i - 1].phone, 6 | 20) || self.segs[i - 1].word != w { continue; }
+			if self.segs[i].phone != L || !matches!(self.segs[i - 1].phone, AX | IX) || self.segs[i - 1].word != w { continue; }
 			let vowel_after = self.segs[i + 1..].iter().take_while(|s| s.word == w).any(|s| is_vowel(s.phone));
 			if !vowel_after { self.segs[i].phone = LX; }
 		}
@@ -297,13 +294,9 @@ impl Utterance {
 mod tests {
 	use super::*;
 
-	// token ids from PHNIDToPhoneme
-	const CW: u8 = 90;		// content word boundary
-	const FW: u8 = 95;		// function word boundary
-	const COMMA: u8 = 91;
-	const PERIOD: u8 = 92;
-	const QMARK: u8 = 93;
-	const BANG: u8 = 94;
+	// boundary tokens, as the front end writes them
+	use crate::_phone::{TOKEN_CW as CW, TOKEN_FW as FW, TOKEN_COMMA as COMMA};
+	use crate::_phone::{TOKEN_PERIOD as PERIOD, TOKEN_QMARK as QMARK, TOKEN_BANG as BANG};
 
 	fn syl_phones(u: &Utterance, i: usize) -> Vec<u8> {
 		u.segs[u.syls[i].segs.clone()].iter().map(|s| s.phone).collect()
