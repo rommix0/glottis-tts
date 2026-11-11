@@ -63,9 +63,27 @@ impl engine {
 		self.scratch_pad.write_text(w);
 		self.scratch_pad.write_text(" ");
 	}
+	// a pause or sentence mark, which ends any number's plural and "after a digit"
+	fn pause(&mut self, mark: &str) {
+		self.digit_prev = false;
+		self.is_plural = false;
+		self.say(mark);
+	}
 
 	// NUMBER TO WORD PART
 	fn reset_ntw(&mut self) { self.number = 0; }
+	fn digits_aloud(&mut self, buf: &mut cbuf, from: usize, to: usize) {
+		// each digit on its own ("007" oh oh seven), thousands commas skipped
+		buf.setcurs(from);
+		while buf.getcurs() != to {
+			if buf.read().is_ascii_digit() {
+				self.reset_ntw();
+				self.consume_digit(buf.read());
+				self.ntw(true, false);
+			}
+			buf.advance();
+		}
+	}
 	fn consume_digit(&mut self, x: u8) {
 		// saturates past u64 (20+ digits), which then reads the wrong digits; keep the digit text if that matters
 		if x.is_ascii_digit() { self.number = self.number.saturating_mul(10).saturating_add((x - b'0') as u64); }
@@ -142,10 +160,10 @@ impl engine {
 		c
 	}
 	fn prev_word(buf: &mut cbuf) -> String {
-		// the word before the cursor (skipping spaces), as written
+		// the word before the cursor (skipping spaces, tabs and newlines), as written
 		let start = buf.getcurs();
 		buf.recede();
-		while buf.read() == b' ' { buf.recede(); }
+		while is_space(buf.read()) { buf.recede(); }
 		let mut w = Vec::new();
 		while buf.read().is_ascii_alphabetic() && w.len() < 32 {
 			w.push(buf.read());
@@ -368,9 +386,7 @@ impl engine {
 				let mut k = 1 + q;
 				while is_space(at(k)) { k += 1; }
 				let mark = if at(0) == b'.' && at(k).is_ascii_lowercase() { "," } else { match at(0) { b'?' => "?", b'!' => "!", _ => "." } };
-				self.say(mark);
-				self.digit_prev = false;
-				self.is_plural = false;
+				self.pause(mark);
 				consume(buf, 1 + q);
 				return true;
 			}
@@ -390,17 +406,16 @@ impl engine {
 				marks += 1;
 			}
 			if marks >= 2 || (double_mark && asks) {
-				self.scratch_pad.write_text(if asks { " ? " } else { " ! " });
-				self.digit_prev = false;
-				self.is_plural = false;
+				self.pause(if asks { "?" } else { "!" });
 				consume(buf, k);
 				return true;
 			}
 		}
 
-		// a decimal without its leading zero: .75 point seven five
-		if is_space(at(0)) && at(1) == b'.' && at(2).is_ascii_digit() {
-			let (frac, k) = Self::fraction(&a, 1);
+		// a decimal without its leading zero: .75 point seven five, also after a bracket or a quote ("(.5)")
+		let d = is_space(at(0)) as usize;
+		if at(d) == b'.' && at(d + 1).is_ascii_digit() && (d == 1 || (!prev.is_ascii_alphanumeric() && !matches!(prev, b'.' | b'$'))) {
+			let (frac, k) = Self::fraction(&a, d);
 			let p = self.point(&frac);
 			self.say(&p);
 			consume(buf, k);
@@ -1433,9 +1448,7 @@ let mut t5;
                     }
                 }
                 6 => {
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" ! ");
+				self.pause("!");
 				break;
 			},
                 7 => {
@@ -1450,9 +1463,7 @@ let mut t5;
 				if before == b',' || next == b',' {
 					self.scratch_pad.write_text(" ");
 				} else {
-					self.digit_prev = false;
-					self.is_plural  = false;
-					self.scratch_pad.write_text(" , ");
+					self.pause(",");
 				}
 				break;
 			}
@@ -1644,9 +1655,7 @@ let mut t5;
                     }
                 }
                 20 => {
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" , ");
+				self.pause(",");
 				break;
 			},
                 21 => {
@@ -1780,37 +1789,33 @@ let mut t5;
 				let zero = buf.read() == b'0';
 				let mut digits = 0;
 				while buf.getcurs() != t4 { digits += buf.read().is_ascii_digit() as usize; buf.advance(); }
-				if t1 == t3 && t4 == t5 && ((zero && digits > 1) || digits >= 19) {
+				// (past quadrillions, a sign, "$" or "#" is still read with it)
+				let long = digits >= 19;
+				if t1 == t3 && t4 == t5 && ((zero && digits > 1) || long) {
 					self.digit_prev = true;
-					buf.setcurs(t3);
-					while buf.getcurs() != end {
-						self.reset_ntw();
-						self.consume_digit(buf.read());
-						self.ntw(true, false);
-						buf.advance();
-					}
+					self.digits_aloud(buf, t3, end);
 					break;
 				}
 				if t1 != t2 {
 					buf.setcurs(t1);
-					// the word before, when the text already names the sign ("Negative -42", "plus +5")
-					let said = {
-						let b = Self::behind(buf, 24);
-						let mut e = b.len();
-						while e > 0 && is_space(b[e - 1]) { e -= 1; }
-						let mut s = e;
-						while s > 0 && b[s - 1].is_ascii_alphabetic() { s -= 1; }
-						b[s..e].to_ascii_lowercase()
+					// the word before, when the text already names the sign ("Negative -42", "plus +5"); a "minus" or "plus"
+					// after a number is the operator ("5 minus -3")
+					let said = Self::prev_word(buf).to_ascii_lowercase();
+					let operator = {
+						let b = Self::behind(buf, 48);
+						let b = b.trim_ascii_end();
+						b[..b.len().saturating_sub(said.len())].trim_ascii_end().last().is_some_and(u8::is_ascii_digit)
 					};
+					let named = |sign: &str, op: &str| said == sign || (said == op && !operator);
 					if buf.read() == b'+' {
-						if !matches!(&said[..], b"positive" | b"plus") { self.scratch_pad.write_text(" positive "); }
-					} else if self.digit_prev {
+						if !named("positive", "plus") { self.scratch_pad.write_text(" positive "); }
+					} else if self.digit_prev && Self::prev_byte(buf).is_ascii_digit() {
 						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5); not
 						// after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read digit by digit
 						let b = Self::behind(buf, 24);
 						let mut i = b.len();
 						while i > 0 && (b[i - 1].is_ascii_digit() || b[i - 1] == b',') { i -= 1; }
-						let whole = i < b.len() && (b'1'..=b'9').contains(&b[i]) && b.len() - i < 19 && (i == 0 || !matches!(b[i - 1], b':' | b'.' | b'-'));
+						let whole = i < b.len() && b[i].is_ascii_digit() && (b[i] != b'0' || b.len() - i == 1) && b.len() - i < 19 && (i == 0 || !matches!(b[i - 1], b':' | b'.' | b'-'));
 						let value = |d: &[u8]| d.iter().filter(|c| c.is_ascii_digit()).fold(0u64, |v, c| v.saturating_mul(10).saturating_add((c - b'0') as u64));
 						let was = value(&b[i..]);
 						buf.setcurs(t3);
@@ -1819,7 +1824,7 @@ let mut t5;
 						buf.setcurs(t1);
 						let score = whole && value(&now) <= was;
 						self.scratch_pad.write_text(if score { " to " } else { " through " });
-					} else if !matches!(&said[..], b"negative" | b"minus") {
+					} else if !named("negative", "minus") {
 						self.scratch_pad.write_text(" negative ");
 					}
 				}
@@ -1844,8 +1849,13 @@ let mut t5;
 					self.consume_digit(buf.read());
 					buf.advance();
 				}
-				let cents_only = dollar && cents > 0 && self.number == 0;
-				if !cents_only { self.ntw(false, false); }
+				let cents_only = dollar && cents > 0 && self.number == 0 && !long;
+				if long {
+					self.digits_aloud(buf, t3, t4);
+					self.is_plural = true;
+				} else if !cents_only {
+					self.ntw(false, false);
+				}
 				if t2 != t3 {
 					if dollar {
 						if !cents_only {
@@ -1919,9 +1929,7 @@ let mut t5;
                     }
                 }
                 29 => {
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" ? ");
+				self.pause("?");
 				break;
 			},
                 30 => {
@@ -2467,9 +2475,7 @@ let mut t5;
 				break;
 			},
                 71 => {
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" . ");
+				self.pause(".");
 				// leave the space, so an abbreviation starting the next sentence still has its word boundary
 				buf.recede();
 				break;
@@ -2806,9 +2812,7 @@ let mut t5;
 				if before.is_ascii_digit() && next.is_ascii_digit() {
 					self.scratch_pad.write_text(" minus ");
 				} else {
-					self.digit_prev = false;
-					self.is_plural  = false;
-					self.scratch_pad.write_text(" , ");
+					self.pause(",");
 				}
 				break;
 			},
@@ -3107,9 +3111,7 @@ let mut t5;
                 }
                 113 => {
 				// an em dash is a pause
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" , ");
+				self.pause(",");
 				break;
 			},
                 114 => {
@@ -3429,38 +3431,36 @@ let mut t5;
                     t1 = yyt1;
                     t2 = yyt2;
                     {
-				// a state after a comma: "Austin, TX" reads texas. true: capitals only, since "or", "in", "me" and the like are
-				// words. Any other two letters are just the comma
-				const STATES: [(&[u8; 2], bool, &str); 51] = [
-					(b"AK", false, "alaska"), (b"AL", false, "alabama"), (b"AR", false, "arkansas"), (b"AZ", false, "arizona"),
-					(b"CA", false, "california"), (b"CO", true, "colorado"), (b"CT", false, "connecticut"), (b"DC", false, "district of columbia"),
-					(b"DE", false, "delaware"), (b"FL", false, "florida"), (b"GA", false, "georgia"), (b"HI", true, "hawaii"),
-					(b"IA", false, "iowa"), (b"ID", true, "idaho"), (b"IL", false, "illinois"), (b"IN", true, "indiana"),
-					(b"KS", false, "kansas"), (b"KY", false, "kentucky"), (b"LA", true, "louisiana"), (b"MA", true, "massachusetts"),
-					(b"MD", false, "maryland"), (b"ME", true, "maine"), (b"MI", false, "michigan"), (b"MN", false, "minnesota"),
-					(b"MO", false, "missouri"), (b"MS", false, "mississippi"), (b"MT", false, "montana"), (b"NC", false, "north carolina"),
-					(b"ND", false, "north dakota"), (b"NE", false, "nebraska"), (b"NH", false, "new hampshire"), (b"NJ", false, "new jersey"),
-					(b"NM", false, "new mexico"), (b"NV", false, "nevada"), (b"NY", false, "new york"), (b"OH", true, "ohio"),
-					(b"OK", true, "oklahoma"), (b"OR", true, "oregon"), (b"PA", false, "pennsylvania"), (b"RI", false, "rhode island"),
-					(b"SC", false, "south carolina"), (b"SD", false, "south dakota"), (b"TN", false, "tennessee"), (b"TX", false, "texas"),
-					(b"UT", false, "utah"), (b"VA", false, "virginia"), (b"VT", false, "vermont"), (b"WA", false, "washington"),
-					(b"WI", false, "wisconsin"), (b"WV", false, "west virginia"), (b"WY", false, "wyoming"),
+				// a state after a comma, in capitals: "Austin, TX" reads texas, while "or", "pa" and "al" are words. Any other two
+				// letters are just the comma
+				const STATES: [(&[u8; 2], &str); 51] = [
+					(b"AK", "alaska"), (b"AL", "alabama"), (b"AR", "arkansas"), (b"AZ", "arizona"),
+					(b"CA", "california"), (b"CO", "colorado"), (b"CT", "connecticut"), (b"DC", "district of columbia"),
+					(b"DE", "delaware"), (b"FL", "florida"), (b"GA", "georgia"), (b"HI", "hawaii"),
+					(b"IA", "iowa"), (b"ID", "idaho"), (b"IL", "illinois"), (b"IN", "indiana"),
+					(b"KS", "kansas"), (b"KY", "kentucky"), (b"LA", "louisiana"), (b"MA", "massachusetts"),
+					(b"MD", "maryland"), (b"ME", "maine"), (b"MI", "michigan"), (b"MN", "minnesota"),
+					(b"MO", "missouri"), (b"MS", "mississippi"), (b"MT", "montana"), (b"NC", "north carolina"),
+					(b"ND", "north dakota"), (b"NE", "nebraska"), (b"NH", "new hampshire"), (b"NJ", "new jersey"),
+					(b"NM", "new mexico"), (b"NV", "nevada"), (b"NY", "new york"), (b"OH", "ohio"),
+					(b"OK", "oklahoma"), (b"OR", "oregon"), (b"PA", "pennsylvania"), (b"RI", "rhode island"),
+					(b"SC", "south carolina"), (b"SD", "south dakota"), (b"TN", "tennessee"), (b"TX", "texas"),
+					(b"UT", "utah"), (b"VA", "virginia"), (b"VT", "vermont"), (b"WA", "washington"),
+					(b"WI", "wisconsin"), (b"WV", "west virginia"), (b"WY", "wyoming"),
 				];
 				let end = buf.getcurs();
 				buf.setcurs(t2);
 				let pair = [buf.read(), { buf.advance(); buf.read() }];
 				let dot = { buf.advance(); buf.read() == b'.' };
-				if let Some(st) = STATES.iter().find(|st| if st.1 { *st.0 == pair } else { st.0.eq_ignore_ascii_case(&pair) }) {
+				if let Some(st) = STATES.iter().find(|st| *st.0 == pair) {
 					buf.setcurs(end);
-					self.say(st.2);
+					self.say(st.1);
 					if dot { self.end_after_period(buf, true); }
 				} else {
 					// as the comma rule
 					buf.setcurs(t1);
 					buf.advance();
-					self.digit_prev = false;
-					self.is_plural  = false;
-					self.scratch_pad.write_text(" , ");
+					self.pause(",");
 				}
 				break;
 			}

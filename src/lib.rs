@@ -598,7 +598,28 @@ mod tests {
 	#[test]
 	fn a_named_sign_is_said_once() {
 		says_all(&[("Negative -42 and positive +5.", "negative forty two and positive five"),
-			("It was minus -3 today.", "minus three today"), ("It fell to -3 today.", "to negative three today")]);
+			("It was minus -3 today.", "minus three today"), ("It fell to -3 today.", "to negative three today"),
+			// after a number, "minus" is the operator, and a sign set off by a space or "+" is no range
+			("5 minus -3 is 8.", "five minus negative three is eight"), ("2 + -3 is 5.", "two plus negative three"),
+			("Between 5 -3 and 4.", "five negative three"), ("They tied 0-0 today.", "zero to zero"), ("A 0-5 run.", "zero through five")]);
+	}
+
+	#[test]
+	fn long_numbers_keep_their_digits_and_signs() {
+		says_all(&[("-1,234,567,890,123,456,789,012 now", "negative one two three four five six seven eight nine oh one two three four five six seven eight nine oh one two now"),
+			("$12345678901234567890123.45 now", "one two three four five six seven eight nine oh one two three four five six seven eight nine oh one two three dollars and forty five cents"),
+			("1,234,567,890,123,456,789,012 now", "seven eight nine oh one two now")]);
+	}
+
+	#[test]
+	fn states_are_capitals_after_a_comma() {
+		says_all(&[("Austin, TX and Portland, OR.", "texas and portland oregon"), ("Thanks, al is here.", "thanks , al is here"),
+			("Well, pa said.", "well , pa said")]);
+	}
+
+	#[test]
+	fn a_bracketed_decimal_is_a_decimal() {
+		says_all(&[("x (.5) y", "x , point five , y"), ("It is .75 now.", "it is point seven five now")]);
 	}
 
 	#[test]
