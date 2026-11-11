@@ -600,13 +600,14 @@ mod tests {
 	fn capitals_numerals_and_quotes() {
 		says_all(&[("NASA and the", "nasa and the"), ("HELLO WORLD", "hello world"), ("a PAT. PEND. sign", "patent pending"), ("Chapter IV begins", "chapter four begins"),
 			("World War II ended", "world war two ended"), ("Henry VIII was", "henry the eighth was"), ("'Twas the night", "'twas the night"),
-			("'Hello,' she said", "hello , ' she said"), ("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"), ("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")]);
+			("'Hello,' she said", "hello , she said"), ("A cat sat.", "a cat sat"), ("She left. \"Bye,\" he said.", "she left . bye ,"), ("He said \"hi\" to me.", "he said hi"), ("A B C.", "A b c"), ("Hi :) there", "hi happy face there")]);
 	}
 
 	#[test]
 	fn times_web_addresses_and_versions() {
 		says_all(&[("at 10:05 today", "ten oh five today"), ("at 3:07 pm", "three oh seven p m"), ("Wow :0 there", "wow shocked face there"),
-			("Visit https://example.com/page now.", "visit example dot com slash page now"), ("See http://a.org.", "see a dot org ."),
+			("Visit https://example.com/page now.", "visit h t t p s colon slash slash example dot com slash page now"),
+			("See http://a.org.", "see h t t p colon slash slash a dot org ."),
 			("on 2026-10-23.", "october twenty third , twenty twenty six"), ("Version 2.0.1 is out.", "version two point oh point one is out")]);
 	}
 
@@ -682,6 +683,18 @@ mod tests {
 	fn all_capitals_and_accents() {
 		says_all(&[("THIS IS ALL CAPITALS", "this is all capitals"), ("the UK and a TV", "the u k and a t v"),
 			("Caf\u{e9}, na\u{ef}ve, r\u{e9}sum\u{e9}, Z\u{fc}rich, Stra\u{df}e", "cafe , naive , resume , zurich , strasse")]);
+	}
+
+	#[test]
+	fn numbers_money_and_marks() {
+		for (t, want) in [(".75", "point seven five"), ("$0.50", "fifty cents"), ("$1,250.00", "one thousand two hundred fifty dollars"),
+			("$1.00", "one dollar"), ("$0.01", "one cent"), ("$2.05", "two dollars and five cents"), ("50/50", "fifty fifty"),
+			("a 3-2 win", "a three to two win"), ("pages 10-20", "pages ten through twenty"), ("wait - no", "wait , no"),
+			("wait\u{2014}no", "wait , no"), ("5 - 3", "five minus three"), ("\"Quoted,\" she said.", "quoted , she said ."),
+			("\u{2018}single ones\u{2019}", "single ones"), ("100 m", "one hundred meters"), ("3m tall", "three meters tall"),
+			("1 m", "one meter"), ("I'm", "i'm"), ("5 * 3", "five times three"), ("a * b", "a asterisk b")] {
+			assert_eq!(says(t), want, "{}", t);
+		}
 	}
 
 	#[test]

@@ -34,6 +34,7 @@ pub struct engine {
 	number:      u64,
 	last_year:   Option<bool>,	// whether the last four-digit number was read as a year, for the next in "X to Y"
 	folded:      bool,			// accented letters are folded once, before the first lex()
+	open_quote:  bool,			// an opening single quote was dropped: the next quote after a word closes it
 }
 impl engine {
 	pub fn new() -> engine {
@@ -44,6 +45,7 @@ impl engine {
 			number:      0,
 			last_year:   None,
 			folded:      false,
+			open_quote:  false,
 		}
 	}
 	pub fn is_not_empty(&mut self) -> bool {
@@ -337,6 +339,7 @@ impl engine {
 					} else {
 						self.scratch_pad.write_text(" ");
 						consume(buf, r);
+						self.open_quote = true;
 					}
 					return true;
 				}
@@ -380,6 +383,16 @@ impl engine {
 			}
 		}
 
+		// a decimal without its leading zero: .75 point seven five
+		if is_space(at(0)) && at(1) == b'.' && at(2).is_ascii_digit() {
+			let (frac, k) = Self::fraction(&a, 1);
+			let p = self.point(&frac);
+			self.say(&p);
+			consume(buf, k);
+			self.digit_prev = true;
+			return true;
+		}
+
 		// the minutes of a time under ten: 10:05 ten oh five
 		if at(0) == b':' && prev.is_ascii_digit() && at(1) == b'0' && (b'1'..=b'9').contains(&at(2)) && !at(3).is_ascii_digit() {
 			let m = self.words((at(2) - b'0') as u64, false, false);
@@ -389,12 +402,12 @@ impl engine {
 			return true;
 		}
 
-		// a web address is read without its scheme
+		// a web address's scheme is spelled
 		if !prev.is_ascii_alphabetic() {
 			let low = a.to_ascii_lowercase();
-			for scheme in [&b"https://"[..], b"http://"] {
+			for (scheme, say) in [(&b"https://"[..], " h t t p s colon slash slash "), (b"http://", " h t t p colon slash slash ")] {
 				if low.starts_with(scheme) && at(scheme.len()).is_ascii_alphabetic() {
-					self.scratch_pad.write_text(" ");
+					self.scratch_pad.write_text(say);
 					consume(buf, scheme.len());
 					return true;
 				}
@@ -466,7 +479,7 @@ impl engine {
 				}
 			}
 			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined to it)
-			const UNITS: [(&str, &str, &str, bool); 25] = [
+			const UNITS: [(&str, &str, &str, bool); 26] = [
 				("ft", "foot", "feet", false), ("in", "inch", "inches", true), ("yd", "yard", "yards", false),
 				("yds", "yard", "yards", false), ("mi", "mile", "miles", false), ("hr", "hour", "hours", false),
 				("hrs", "hour", "hours", false), ("min", "minute", "minutes", false), ("mins", "minute", "minutes", false),
@@ -476,15 +489,17 @@ impl engine {
 				("ml", "milliliter", "milliliters", false), ("km", "kilometer", "kilometers", false),
 				("cm", "centimeter", "centimeters", false), ("mm", "millimeter", "millimeters", false),
 				("mph", "mile per hour", "miles per hour", false), ("km/h", "kilometer per hour", "kilometers per hour", false),
-				("km/hr", "kilometer per hour", "kilometers per hour", false)];
+				("km/hr", "kilometer per hour", "kilometers per hour", false), ("m", "meter", "meters", false)];
 			{
 				let (v, frac, k) = Self::amount(&a, 0);
 				let joined = !is_space(at(k));
 				let mut j = k;
 				while is_space(at(j)) { j += 1; }
 				let low = a[j..].to_ascii_lowercase();
+				// "m" only in lower case and not before more of a unit: "3 M", "m/s" and "m\u{b2}" are not meters
+				let meter = at(j) == b'm' && !matches!(at(j + 1), b'0'..=b'9' | b'/' | 0x80..=0xFF);
 				let unit = UNITS.iter()
-					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !at(j + u.0.len()).is_ascii_alphabetic())
+					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !at(j + u.0.len()).is_ascii_alphabetic() && (u.0 != "m" || meter))
 					.max_by_key(|u| u.0.len());
 				if let Some(&(ab, one, many, _)) = unit {
 					let num = self.words(v, false, false);
@@ -554,6 +569,13 @@ impl engine {
 						(_, plural) => { let d = self.words(v2, true, false); if plural { format!("{}s", d) } else { d } },
 					};
 					self.scratch_pad.write_text(&format!(" {} {} ", num, den));
+					consume(buf, p2);
+					return true;
+				}
+				// an even split or a score: 50/50 fifty fifty, 60/40, 20/20
+				if n1 == 2 && n2 == 2 && after(p2) && (v1 == v2 || v1 + v2 == 100) {
+					let w = format!(" {} {} ", self.words(v1, false, false), self.words(v2, false, false));
+					self.scratch_pad.write_text(&w);
 					consume(buf, p2);
 					return true;
 				}
@@ -1003,6 +1025,7 @@ let mut t5;
                             continue 'yyl;
                         }
                         0x22 => {
+                            yyt1 = buf.getcurs();
                             buf.advance();
                             yystate = 7;
                             continue 'yyl;
@@ -1011,14 +1034,14 @@ let mut t5;
                             yyt1 = buf.getcurs();
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 9;
+                            yystate = 8;
                             continue 'yyl;
                         }
                         0x24 => {
                             yyt1 = buf.getcurs();
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 11;
+                            yystate = 10;
                             continue 'yyl;
                         }
                         0x27 => {
@@ -1026,29 +1049,29 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 13;
+                            yystate = 12;
                             continue 'yyl;
                         }
                         0x28 => {
                             yyt1 = buf.getcurs();
                             buf.advance();
-                            yystate = 15;
+                            yystate = 14;
                             continue 'yyl;
                         }
                         0x29 => {
                             buf.advance();
-                            yystate = 16;
+                            yystate = 15;
                             continue 'yyl;
                         }
                         0x2A => {
                             buf.advance();
-                            yystate = 17;
+                            yystate = 16;
                             continue 'yyl;
                         }
                         0x2B => {
                             yyt1 = buf.getcurs();
                             buf.advance();
-                            yystate = 18;
+                            yystate = 17;
                             continue 'yyl;
                         }
                         0x2C => {
@@ -1056,7 +1079,7 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 20;
+                            yystate = 19;
                             continue 'yyl;
                         }
                         0x2D => {
@@ -1159,6 +1182,7 @@ let mut t5;
                             continue 'yyl;
                         }
                         0xE2 => {
+                            yyt1 = buf.getcurs();
                             buf.advance();
                             yystate = 44;
                             continue 'yyl;
@@ -1206,57 +1230,57 @@ let mut t5;
                         }
                         0x28 => {
                             buf.advance();
-                            yystate = 7;
+                            yystate = 48;
                             continue 'yyl;
                         }
                         0x29 => {
                             buf.advance();
-                            yystate = 48;
+                            yystate = 49;
                             continue 'yyl;
                         }
                         0x2C => {
                             buf.advance();
-                            yystate = 49;
+                            yystate = 50;
                             continue 'yyl;
                         }
                         0x2D => {
                             buf.advance();
-                            yystate = 50;
+                            yystate = 51;
                             continue 'yyl;
                         }
                         0x2E => {
                             buf.advance();
-                            yystate = 52;
+                            yystate = 53;
                             continue 'yyl;
                         }
                         0x3A => {
                             buf.advance();
-                            yystate = 53;
+                            yystate = 54;
                             continue 'yyl;
                         }
                         0x3B => {
                             buf.advance();
-                            yystate = 54;
+                            yystate = 55;
                             continue 'yyl;
                         }
                         0x3F => {
                             buf.advance();
-                            yystate = 55;
+                            yystate = 56;
                             continue 'yyl;
                         }
                         0x5D => {
                             buf.advance();
-                            yystate = 56;
+                            yystate = 57;
                             continue 'yyl;
                         }
                         0x7D => {
                             buf.advance();
-                            yystate = 57;
+                            yystate = 58;
                             continue 'yyl;
                         }
                         0xE2 => {
                             buf.advance();
-                            yystate = 58;
+                            yystate = 59;
                             continue 'yyl;
                         }
                         _ => {
@@ -1287,67 +1311,67 @@ let mut t5;
                         }
                         0x28 => {
                             buf.advance();
-                            yystate = 7;
+                            yystate = 48;
                             continue 'yyl;
                         }
                         0x29 => {
                             buf.advance();
-                            yystate = 48;
+                            yystate = 49;
                             continue 'yyl;
                         }
                         0x2C => {
                             buf.advance();
-                            yystate = 49;
+                            yystate = 50;
                             continue 'yyl;
                         }
                         0x2D => {
                             buf.advance();
-                            yystate = 50;
+                            yystate = 51;
                             continue 'yyl;
                         }
                         0x2E => {
                             buf.advance();
-                            yystate = 52;
+                            yystate = 53;
                             continue 'yyl;
                         }
                         0x3A => {
                             buf.advance();
-                            yystate = 53;
+                            yystate = 54;
                             continue 'yyl;
                         }
                         0x3B => {
                             buf.advance();
-                            yystate = 54;
+                            yystate = 55;
                             continue 'yyl;
                         }
                         0x3F => {
                             buf.advance();
-                            yystate = 55;
+                            yystate = 56;
                             continue 'yyl;
                         }
                         0x5D => {
                             buf.advance();
-                            yystate = 56;
+                            yystate = 57;
                             continue 'yyl;
                         }
                         0x66 => {
                             buf.advance();
-                            yystate = 59;
+                            yystate = 60;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 60;
+                            yystate = 61;
                             continue 'yyl;
                         }
                         0x7D => {
                             buf.advance();
-                            yystate = 57;
+                            yystate = 58;
                             continue 'yyl;
                         }
                         0xE2 => {
                             buf.advance();
-                            yystate = 58;
+                            yystate = 59;
                             continue 'yyl;
                         }
                         _ => {
@@ -1363,16 +1387,25 @@ let mut t5;
 				break;
 			},
                 7 => {
-                    yystate = 8;
-                    continue 'yyl;
+                    t1 = yyt1;
+                    {
+				// a quote next to a comma adds no pause of its own: "Quoted," she said
+				let end = buf.getcurs();
+				let next = buf.read();
+				buf.setcurs(t1);
+				let before = Self::prev_byte(buf);
+				buf.setcurs(end);
+				if before == b',' || next == b',' {
+					self.scratch_pad.write_text(" ");
+				} else {
+					self.digit_prev = false;
+					self.is_plural  = false;
+					self.scratch_pad.write_text(" , ");
+				}
+				break;
+			}
                 }
                 8 => {
-				self.digit_prev = false;
-				self.is_plural  = false;
-				self.scratch_pad.write_text(" , ");
-				break;
-			},
-                9 => {
                     yyaccept = 1;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -1382,26 +1415,26 @@ let mut t5;
                         0x5F => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 61;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 62;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 10;
+                            yystate = 9;
                             continue 'yyl;
                         }
                     }
                 }
-                10 => {
+                9 => {
 				self.scratch_pad.write_text(" hash tag ");
 				break;
 			},
-                11 => {
+                10 => {
                     yyaccept = 2;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -1411,44 +1444,50 @@ let mut t5;
                         0x5F => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 61;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 62;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 12;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                12 => {
-				self.scratch_pad.write_text(" dollar sign ");
-				break;
-			},
-                13 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
                             yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 14;
+                            yystate = 11;
                             continue 'yyl;
                         }
                     }
                 }
-                14 => {
-				self.scratch_pad.write_text("\x27");
+                11 => {
+				self.scratch_pad.write_text(" dollar sign ");
 				break;
 			},
-                15 => {
+                12 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 64;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 13;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                13 => {
+				// an apostrophe, or the closing quote of a dropped opening one ('single ones')
+				if self.open_quote && !buf.read().is_ascii_alphabetic() {
+					self.open_quote = false;
+					self.scratch_pad.write_text(" ");
+				} else {
+					self.scratch_pad.write_text("\x27");
+				}
+				break;
+			},
+                14 => {
                     yyaccept = 0;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -1456,12 +1495,27 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 65;
+                            yystate = 66;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 66;
+                            yystate = 67;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 3;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                15 => {
+                    yych = buf.read();
+                    match yych {
+                        0x09 ..= 0x0A |
+                        0x20 => {
+                            buf.advance();
+                            yystate = 48;
                             continue 'yyl;
                         }
                         _ => {
@@ -1471,25 +1525,15 @@ let mut t5;
                     }
                 }
                 16 => {
-                    yych = buf.read();
-                    match yych {
-                        0x09 ..= 0x0A |
-                        0x20 => {
-                            buf.advance();
-                            yystate = 7;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 3;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                17 => {
-				self.scratch_pad.write_text(" asterisk ");
+				// between two numbers it is times: 5 * 3
+				let next = Self::ahead(buf, 8).into_iter().find(|c| !is_space(*c)).unwrap_or(0);
+				buf.recede();
+				let before = Self::behind(buf, 8).into_iter().rev().find(|c| !is_space(*c)).unwrap_or(0);
+				buf.advance();
+				self.scratch_pad.write_text(if before.is_ascii_digit() && next.is_ascii_digit() { " times " } else { " asterisk " });
 				break;
 			},
-                18 => {
+                17 => {
                     yyaccept = 3;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -1497,7 +1541,7 @@ let mut t5;
                         0x23 ..= 0x24 => {
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 67;
+                            yystate = 68;
                             continue 'yyl;
                         }
                         0x27 |
@@ -1506,47 +1550,53 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 61;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 62;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 19;
+                            yystate = 18;
                             continue 'yyl;
                         }
                     }
                 }
-                19 => {
+                18 => {
 				self.scratch_pad.write_text(" plus ");
 				break;
 			},
-                20 => {
+                19 => {
                     yyaccept = 4;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 68;
+                            yystate = 69;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 63;
+                            yystate = 64;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 8;
+                            yystate = 20;
                             continue 'yyl;
                         }
                     }
                 }
+                20 => {
+				self.digit_prev = false;
+				self.is_plural  = false;
+				self.scratch_pad.write_text(" , ");
+				break;
+			},
                 21 => {
                     yyaccept = 5;
                     yymarker = buf.getcurs();
@@ -1555,7 +1605,7 @@ let mut t5;
                         0x23 ..= 0x24 => {
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 67;
+                            yystate = 68;
                             continue 'yyl;
                         }
                         0x27 |
@@ -1564,20 +1614,20 @@ let mut t5;
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 61;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             yyt2 = buf.getcurs();
                             yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 62;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         0x41 ..= 0x5A |
                         0x61 ..= 0x7A => {
                             buf.advance();
-                            yystate = 69;
+                            yystate = 70;
                             continue 'yyl;
                         }
                         _ => {
@@ -1600,13 +1650,13 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 70;
+                            yystate = 71;
                             continue 'yyl;
                         }
                         0x41 ..= 0x5A |
                         0x61 ..= 0x7A => {
                             buf.advance();
-                            yystate = 71;
+                            yystate = 72;
                             continue 'yyl;
                         }
                         _ => {
@@ -1628,34 +1678,34 @@ let mut t5;
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 72;
+                            yystate = 73;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 73;
+                            yystate = 74;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 74;
+                            yystate = 75;
                             continue 'yyl;
                         }
                         0x6E |
                         0x72 => {
                             buf.advance();
-                            yystate = 75;
+                            yystate = 76;
                             continue 'yyl;
                         }
                         0x73 => {
                             buf.advance();
-                            yystate = 76;
+                            yystate = 77;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 77;
+                            yystate = 78;
                             continue 'yyl;
                         }
                         _ => {
@@ -1694,7 +1744,20 @@ let mut t5;
 					if buf.read() == b'+' {
 						self.scratch_pad.write_text(" positive ");
 					} else if self.digit_prev {
-						self.scratch_pad.write_text(" through ");
+						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5); not
+						// after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read digit by digit
+						let b = Self::behind(buf, 24);
+						let mut i = b.len();
+						while i > 0 && (b[i - 1].is_ascii_digit() || b[i - 1] == b',') { i -= 1; }
+						let whole = i < b.len() && (b'1'..=b'9').contains(&b[i]) && b.len() - i < 19 && (i == 0 || !matches!(b[i - 1], b':' | b'.' | b'-'));
+						let value = |d: &[u8]| d.iter().filter(|c| c.is_ascii_digit()).fold(0u64, |v, c| v.saturating_mul(10).saturating_add((c - b'0') as u64));
+						let was = value(&b[i..]);
+						buf.setcurs(t3);
+						let mut now = Vec::new();
+						while buf.getcurs() < t4 { now.push(buf.read()); buf.advance(); }
+						buf.setcurs(t1);
+						let score = whole && value(&now) <= was;
+						self.scratch_pad.write_text(if score { " to " } else { " through " });
 					} else {
 						self.scratch_pad.write_text(" negative ");
 					}
@@ -1705,29 +1768,35 @@ let mut t5;
 						self.scratch_pad.write_text(" number ");
 					}
 				}
+				// dollars: the cents first, since under a dollar only the cents are read and .00 reads no cents
+				let dollar = t2 != t3 && { buf.setcurs(t2); buf.read() == b'$' };
+				self.reset_ntw();
+				buf.setcurs(t4);
+				while buf.getcurs() < t5 {
+					self.consume_digit(buf.read());
+					buf.advance();
+				}
+				let cents = self.number;
 				buf.setcurs(t3);
 				self.reset_ntw();
 				while buf.getcurs() < t4 {
 					self.consume_digit(buf.read());
 					buf.advance();
 				}
-				self.ntw(false, false);
+				let cents_only = dollar && cents > 0 && self.number == 0;
+				if !cents_only { self.ntw(false, false); }
 				if t2 != t3 {
-					buf.setcurs(t2);
-					if buf.read() == b'$' {
-						self.scratch_pad.write_text(" dollar");
-						if self.is_plural {
-							self.scratch_pad.write_text("s");
-						}
-						self.scratch_pad.write_text(" ");
-						if t4 != t5 {
-							self.scratch_pad.write_text(" and ");
-							buf.setcurs(t4);
-							self.reset_ntw();
-							while buf.getcurs() < t5 {
-								self.consume_digit(buf.read());
-								buf.advance();
+					if dollar {
+						if !cents_only {
+							self.scratch_pad.write_text(" dollar");
+							if self.is_plural {
+								self.scratch_pad.write_text("s");
 							}
+							self.scratch_pad.write_text(" ");
+						}
+						if cents > 0 {
+							if !cents_only { self.scratch_pad.write_text(" and "); }
+							self.number = cents;
 							self.ntw(false, false);
 							self.scratch_pad.write_text(" cent");
 							if self.is_plural {
@@ -1759,12 +1828,12 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 70;
+                            yystate = 71;
                             continue 'yyl;
                         }
                         0x30 => {
                             buf.advance();
-                            yystate = 78;
+                            yystate = 79;
                             continue 'yyl;
                         }
                         _ => {
@@ -1779,7 +1848,7 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 70;
+                            yystate = 71;
                             continue 'yyl;
                         }
                         _ => {
@@ -1799,13 +1868,13 @@ let mut t5;
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 79;
+                            yystate = 80;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 80;
+                            yystate = 81;
                             continue 'yyl;
                         }
                         _ => {
@@ -1830,7 +1899,7 @@ let mut t5;
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 81;
+                            yystate = 82;
                             continue 'yyl;
                         }
                         _ => {
@@ -1844,13 +1913,13 @@ let mut t5;
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 82;
+                            yystate = 83;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 83;
+                            yystate = 84;
                             continue 'yyl;
                         }
                         _ => {
@@ -1865,7 +1934,7 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 84;
+                            yystate = 85;
                             continue 'yyl;
                         }
                         _ => {
@@ -1885,12 +1954,12 @@ let mut t5;
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 63;
+                            yystate = 64;
                             continue 'yyl;
                         }
                         0x5F => {
                             buf.advance();
-                            yystate = 85;
+                            yystate = 86;
                             continue 'yyl;
                         }
                         _ => {
@@ -1906,13 +1975,13 @@ let mut t5;
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 86;
+                            yystate = 87;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 80;
+                            yystate = 81;
                             continue 'yyl;
                         }
                         _ => {
@@ -1938,13 +2007,13 @@ let mut t5;
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 87;
+                            yystate = 88;
                             continue 'yyl;
                         }
                         0x4D |
                         0x6D => {
                             buf.advance();
-                            yystate = 83;
+                            yystate = 84;
                             continue 'yyl;
                         }
                         _ => {
@@ -1959,7 +2028,7 @@ let mut t5;
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 88;
+                            yystate = 89;
                             continue 'yyl;
                         }
                         _ => {
@@ -1977,7 +2046,7 @@ let mut t5;
                     match yych {
                         0xA7 => {
                             buf.advance();
-                            yystate = 89;
+                            yystate = 90;
                             continue 'yyl;
                         }
                         _ => {
@@ -1993,12 +2062,12 @@ let mut t5;
                     match yych {
                         0x80 => {
                             buf.advance();
-                            yystate = 91;
+                            yystate = 92;
                             continue 'yyl;
                         }
                         0x81 => {
                             buf.advance();
-                            yystate = 92;
+                            yystate = 93;
                             continue 'yyl;
                         }
                         _ => {
@@ -2020,29 +2089,33 @@ let mut t5;
 				break;
 			},
                 48 => {
+                    yystate = 20;
+                    continue 'yyl;
+                }
+                49 => {
 				self.scratch_pad.write_text(" right parenthesis ");
 				break;
 			},
-                49 => {
+                50 => {
 				self.scratch_pad.write_text(" comma ");
 				break;
 			},
-                50 => {
+                51 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 93;
+                            yystate = 94;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                51 => {
+                52 => {
                     buf.setcurs(yymarker);
                     match yyaccept {
                         0 => {
@@ -2050,19 +2123,19 @@ let mut t5;
                             continue 'yyl;
                         }
                         1 => {
-                            yystate = 10;
+                            yystate = 9;
                             continue 'yyl;
                         }
                         2 => {
-                            yystate = 12;
+                            yystate = 11;
                             continue 'yyl;
                         }
                         3 => {
-                            yystate = 19;
+                            yystate = 18;
                             continue 'yyl;
                         }
                         4 => {
-                            yystate = 8;
+                            yystate = 20;
                             continue 'yyl;
                         }
                         5 => {
@@ -2083,15 +2156,15 @@ let mut t5;
                             continue 'yyl;
                         }
                         9 => {
-                            yystate = 90;
+                            yystate = 91;
                             continue 'yyl;
                         }
                         10 => {
-                            yystate = 104;
+                            yystate = 105;
                             continue 'yyl;
                         }
                         11 => {
-                            yystate = 128;
+                            yystate = 131;
                             continue 'yyl;
                         }
                         _ => {
@@ -2100,59 +2173,45 @@ let mut t5;
                         }
                     }
                 }
-                52 => {
+                53 => {
 				self.scratch_pad.write_text(" period ");
 				break;
 			},
-                53 => {
+                54 => {
 				self.scratch_pad.write_text(" colon ");
 				break;
 			},
-                54 => {
+                55 => {
 				self.scratch_pad.write_text(" semicolon ");
 				break;
 			},
-                55 => {
+                56 => {
 				self.scratch_pad.write_text(" question mark ");
 				break;
 			},
-                56 => {
+                57 => {
 				self.scratch_pad.write_text(" right square bracket ");
 				break;
 			},
-                57 => {
+                58 => {
 				self.scratch_pad.write_text(" right curly bracket ");
 				break;
 			},
-                58 => {
+                59 => {
                     yych = buf.read();
                     match yych {
                         0x80 => {
                             buf.advance();
-                            yystate = 94;
-                            continue 'yyl;
-                        }
-                        0x81 => {
-                            buf.advance();
                             yystate = 95;
                             continue 'yyl;
                         }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                59 => {
-                    yych = buf.read();
-                    match yych {
-                        0x6F => {
+                        0x81 => {
                             buf.advance();
                             yystate = 96;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2160,13 +2219,13 @@ let mut t5;
                 60 => {
                     yych = buf.read();
                     match yych {
-                        0x68 => {
+                        0x6F => {
                             buf.advance();
                             yystate = 97;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2174,43 +2233,27 @@ let mut t5;
                 61 => {
                     yych = buf.read();
                     match yych {
-                        0x30 ..= 0x39 => {
+                        0x68 => {
                             buf.advance();
-                            yystate = 62;
+                            yystate = 98;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 62 => {
-                    yyaccept = 6;
-                    yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
-                        0x27 |
-                        0x2C |
-                        0x5F => {
-                            buf.advance();
-                            yystate = 61;
-                            continue 'yyl;
-                        }
-                        0x2E => {
-                            yyt4 = buf.getcurs();
-                            buf.advance();
-                            yystate = 73;
-                            continue 'yyl;
-                        }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 62;
+                            yystate = 63;
                             continue 'yyl;
                         }
                         _ => {
-                            yyt4 = buf.getcurs();
-                            yystate = 26;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2219,43 +2262,23 @@ let mut t5;
                     yyaccept = 6;
                     yymarker = buf.getcurs();
                     yych = buf.read();
-                    yystate = 64;
-                    continue 'yyl;
-                }
-                64 => {
                     match yych {
                         0x27 |
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 72;
+                            yystate = 62;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 73;
+                            yystate = 74;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
                             yystate = 63;
-                            continue 'yyl;
-                        }
-                        0x6E |
-                        0x72 => {
-                            buf.advance();
-                            yystate = 75;
-                            continue 'yyl;
-                        }
-                        0x73 => {
-                            buf.advance();
-                            yystate = 76;
-                            continue 'yyl;
-                        }
-                        0x74 => {
-                            buf.advance();
-                            yystate = 77;
                             continue 'yyl;
                         }
                         _ => {
@@ -2265,43 +2288,70 @@ let mut t5;
                         }
                     }
                 }
-                65 => {
-				self.scratch_pad.write_text(" left parenthesis ");
-				break;
-			},
-                66 => {
+                64 => {
+                    yyaccept = 6;
+                    yymarker = buf.getcurs();
                     yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 98;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
+                    yystate = 65;
+                    continue 'yyl;
                 }
-                67 => {
-                    yych = buf.read();
+                65 => {
                     match yych {
                         0x27 |
                         0x2C |
                         0x5F => {
-                            yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 61;
+                            yystate = 73;
+                            continue 'yyl;
+                        }
+                        0x2E => {
+                            yyt4 = buf.getcurs();
+                            buf.advance();
+                            yystate = 74;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
-                            yyt3 = buf.getcurs();
                             buf.advance();
-                            yystate = 62;
+                            yystate = 64;
+                            continue 'yyl;
+                        }
+                        0x6E |
+                        0x72 => {
+                            buf.advance();
+                            yystate = 76;
+                            continue 'yyl;
+                        }
+                        0x73 => {
+                            buf.advance();
+                            yystate = 77;
+                            continue 'yyl;
+                        }
+                        0x74 => {
+                            buf.advance();
+                            yystate = 78;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yyt4 = buf.getcurs();
+                            yystate = 26;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                66 => {
+				self.scratch_pad.write_text(" left parenthesis ");
+				break;
+			},
+                67 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 99;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2309,30 +2359,53 @@ let mut t5;
                 68 => {
                     yych = buf.read();
                     match yych {
+                        0x27 |
+                        0x2C |
+                        0x5F => {
+                            yyt3 = buf.getcurs();
+                            buf.advance();
+                            yystate = 62;
+                            continue 'yyl;
+                        }
+                        0x30 ..= 0x39 => {
+                            yyt3 = buf.getcurs();
+                            buf.advance();
+                            yystate = 63;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                69 => {
+                    yych = buf.read();
+                    match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 68;
+                            yystate = 69;
                             continue 'yyl;
                         }
                         0x41 ..= 0x5A |
                         0x61 ..= 0x7A => {
                             yyt2 = buf.getcurs();
                             buf.advance();
-                            yystate = 99;
+                            yystate = 100;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                69 => {
+                70 => {
 				buf.recede();
 				self.scratch_pad.write_text(" ");
 				break;
 			},
-                70 => {
+                71 => {
 				self.digit_prev = false;
 				self.is_plural  = false;
 				self.scratch_pad.write_text(" . ");
@@ -2340,41 +2413,41 @@ let mut t5;
 				buf.recede();
 				break;
 			},
-                71 => {
+                72 => {
 				// a dot inside a name: "example.com"
 				buf.recede();
 				self.scratch_pad.write_text(" dot ");
 				break;
 			},
-                72 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 63;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
                 73 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 100;
+                            yystate = 64;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 74 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 101;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                75 => {
                     yyaccept = 6;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -2383,34 +2456,34 @@ let mut t5;
                         0x2C |
                         0x5F => {
                             buf.advance();
-                            yystate = 72;
+                            yystate = 73;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 73;
+                            yystate = 74;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 101;
+                            yystate = 102;
                             continue 'yyl;
                         }
                         0x6E |
                         0x72 => {
                             buf.advance();
-                            yystate = 75;
+                            yystate = 76;
                             continue 'yyl;
                         }
                         0x73 => {
                             buf.advance();
-                            yystate = 76;
+                            yystate = 77;
                             continue 'yyl;
                         }
                         0x74 => {
                             buf.advance();
-                            yystate = 77;
+                            yystate = 78;
                             continue 'yyl;
                         }
                         _ => {
@@ -2420,30 +2493,16 @@ let mut t5;
                         }
                     }
                 }
-                75 => {
+                76 => {
                     yych = buf.read();
                     match yych {
                         0x64 => {
                             buf.advance();
-                            yystate = 102;
+                            yystate = 103;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                76 => {
-                    yych = buf.read();
-                    match yych {
-                        0x74 => {
-                            buf.advance();
-                            yystate = 102;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2451,13 +2510,13 @@ let mut t5;
                 77 => {
                     yych = buf.read();
                     match yych {
-                        0x68 => {
+                        0x74 => {
                             buf.advance();
-                            yystate = 102;
+                            yystate = 103;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2465,48 +2524,32 @@ let mut t5;
                 78 => {
                     yych = buf.read();
                     match yych {
-                        0x30 => {
+                        0x68 => {
                             buf.advance();
                             yystate = 103;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 79 => {
-                    yyaccept = 8;
-                    yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
-                        0x4D |
-                        0x6D => {
+                        0x30 => {
                             buf.advance();
-                            yystate = 105;
+                            yystate = 104;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 31;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 80 => {
-				if self.digit_prev {
-					self.digit_prev = false;
-					self.scratch_pad.write_text(" A m ");
-				} else {
-					self.scratch_pad.write_text("am");
-				}
-				break;
-			},
-                81 => {
-                    yystate = 31;
-                    continue 'yyl;
-                }
-                82 => {
                     yyaccept = 8;
                     yymarker = buf.getcurs();
                     yych = buf.read();
@@ -2523,7 +2566,37 @@ let mut t5;
                         }
                     }
                 }
+                81 => {
+				if self.digit_prev {
+					self.digit_prev = false;
+					self.scratch_pad.write_text(" A m ");
+				} else {
+					self.scratch_pad.write_text("am");
+				}
+				break;
+			},
+                82 => {
+                    yystate = 31;
+                    continue 'yyl;
+                }
                 83 => {
+                    yyaccept = 8;
+                    yymarker = buf.getcurs();
+                    yych = buf.read();
+                    match yych {
+                        0x4D |
+                        0x6D => {
+                            buf.advance();
+                            yystate = 107;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 31;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                84 => {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" p m ");
@@ -2532,45 +2605,30 @@ let mut t5;
 				}
 				break;
 			},
-                84 => {
+                85 => {
 				self.scratch_pad.write_text(" left square bracket ");
 				break;
 			},
-                85 => {
+                86 => {
                     yych = buf.read();
                     match yych {
                         0x61 => {
                             buf.advance();
-                            yystate = 107;
+                            yystate = 108;
                             continue 'yyl;
                         }
                         0x62 => {
                             buf.advance();
-                            yystate = 108;
+                            yystate = 109;
                             continue 'yyl;
                         }
                         0x76 => {
                             buf.advance();
-                            yystate = 109;
+                            yystate = 110;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                86 => {
-                    yych = buf.read();
-                    match yych {
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 105;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2585,41 +2643,61 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 88 => {
+                    yych = buf.read();
+                    match yych {
+                        0x4D |
+                        0x6D => {
+                            buf.advance();
+                            yystate = 107;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                89 => {
 				self.scratch_pad.write_text(" left curly bracket ");
 				break;
 			},
-                89 => {
+                90 => {
                     yyaccept = 9;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0xC2 => {
                             buf.advance();
-                            yystate = 110;
+                            yystate = 111;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 90;
+                            yystate = 91;
                             continue 'yyl;
                         }
                     }
                 }
-                90 => {
+                91 => {
 				self.scratch_pad.write_text(" section ");
 				break;
 			},
-                91 => {
+                92 => {
                     yych = buf.read();
                     match yych {
+                        0x94 => {
+                            buf.advance();
+                            yystate = 112;
+                            continue 'yyl;
+                        }
                         0x98 ..= 0x9B => {
                             buf.advance();
-                            yystate = 111;
+                            yystate = 114;
                             continue 'yyl;
                         }
                         0x9C ..= 0x9F => {
@@ -2633,12 +2711,12 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                92 => {
+                93 => {
                     yych = buf.read();
                     match yych {
                         0x87 ..= 0x88 => {
@@ -2652,18 +2730,35 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                93 => {
-				self.scratch_pad.write_text(" minus ");
+                94 => {
+				// a spaced dash is a pause, but minus between numbers: 5 - 3
+				let end = buf.getcurs();
+				let next = buf.read();
+				for _ in 0..4 { buf.recede(); }
+				let before = buf.read();
+				buf.setcurs(end);
+				if before.is_ascii_digit() && next.is_ascii_digit() {
+					self.scratch_pad.write_text(" minus ");
+				} else {
+					self.digit_prev = false;
+					self.is_plural  = false;
+					self.scratch_pad.write_text(" , ");
+				}
 				break;
 			},
-                94 => {
+                95 => {
                     yych = buf.read();
                     match yych {
+                        0x94 => {
+                            buf.advance();
+                            yystate = 112;
+                            continue 'yyl;
+                        }
                         0x98 ..= 0x9B => {
                             buf.advance();
                             yystate = 47;
@@ -2680,17 +2775,17 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                95 => {
+                96 => {
                     yych = buf.read();
                     match yych {
                         0x87 ..= 0x88 => {
                             buf.advance();
-                            yystate = 55;
+                            yystate = 56;
                             continue 'yyl;
                         }
                         0x89 => {
@@ -2699,21 +2794,7 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                96 => {
-                    yych = buf.read();
-                    match yych {
-                        0x72 => {
-                            buf.advance();
-                            yystate = 112;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2721,13 +2802,13 @@ let mut t5;
                 97 => {
                     yych = buf.read();
                     match yych {
-                        0x65 => {
+                        0x72 => {
                             buf.advance();
-                            yystate = 113;
+                            yystate = 115;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2735,13 +2816,13 @@ let mut t5;
                 98 => {
                     yych = buf.read();
                     match yych {
-                        0x30 ..= 0x39 => {
+                        0x65 => {
                             buf.advance();
-                            yystate = 114;
+                            yystate = 116;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2749,14 +2830,13 @@ let mut t5;
                 99 => {
                     yych = buf.read();
                     match yych {
-                        0x41 ..= 0x5A |
-                        0x61 ..= 0x7A => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 115;
+                            yystate = 117;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2764,9 +2844,24 @@ let mut t5;
                 100 => {
                     yych = buf.read();
                     match yych {
+                        0x41 ..= 0x5A |
+                        0x61 ..= 0x7A => {
+                            buf.advance();
+                            yystate = 118;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                101 => {
+                    yych = buf.read();
+                    match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 100;
+                            yystate = 101;
                             continue 'yyl;
                         }
                         _ => {
@@ -2775,34 +2870,34 @@ let mut t5;
                         }
                     }
                 }
-                101 => {
+                102 => {
                     yyaccept = 6;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x29 => {
                             buf.advance();
-                            yystate = 116;
+                            yystate = 119;
                             continue 'yyl;
                         }
                         0x2D => {
                             buf.advance();
-                            yystate = 117;
+                            yystate = 120;
                             continue 'yyl;
                         }
                         0x2E => {
                             yyt4 = buf.getcurs();
                             buf.advance();
-                            yystate = 118;
+                            yystate = 121;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 64;
+                            yystate = 65;
                             continue 'yyl;
                         }
                     }
                 }
-                102 => {
+                103 => {
                     t1 = yyt1;
                     {
 				// the suffix is not checked: "21th" reads twenty first
@@ -2818,62 +2913,48 @@ let mut t5;
 				break;
 			}
                 }
-                103 => {
+                104 => {
                     yyaccept = 10;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 119;
+                            yystate = 122;
                             continue 'yyl;
                         }
                         0x41 |
                         0x61 => {
                             buf.advance();
-                            yystate = 120;
+                            yystate = 123;
                             continue 'yyl;
                         }
                         0x50 |
                         0x70 => {
                             buf.advance();
-                            yystate = 121;
+                            yystate = 124;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 104;
+                            yystate = 105;
                             continue 'yyl;
                         }
                     }
                 }
-                104 => {
+                105 => {
 				self.scratch_pad.write_text(" oh clock ");
 				break;
 			},
-                105 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 122;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
                 106 => {
                     yych = buf.read();
                     match yych {
                         0x2E => {
                             buf.advance();
-                            yystate = 123;
+                            yystate = 125;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2881,13 +2962,13 @@ let mut t5;
                 107 => {
                     yych = buf.read();
                     match yych {
-                        0x75 => {
+                        0x2E => {
                             buf.advance();
-                            yystate = 124;
+                            yystate = 126;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2897,11 +2978,11 @@ let mut t5;
                     match yych {
                         0x75 => {
                             buf.advance();
-                            yystate = 125;
+                            yystate = 127;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2909,13 +2990,13 @@ let mut t5;
                 109 => {
                     yych = buf.read();
                     match yych {
-                        0x65 => {
+                        0x75 => {
                             buf.advance();
-                            yystate = 126;
+                            yystate = 128;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -2923,69 +3004,32 @@ let mut t5;
                 110 => {
                     yych = buf.read();
                     match yych {
-                        0xA7 => {
-                            buf.advance();
-                            yystate = 127;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                111 => {
-                    yystate = 14;
-                    continue 'yyl;
-                }
-                112 => {
-                    yych = buf.read();
-                    match yych {
-                        0x20 => {
+                        0x65 => {
                             buf.advance();
                             yystate = 129;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                113 => {
+                111 => {
                     yych = buf.read();
                     match yych {
-                        0x20 => {
+                        0xA7 => {
                             buf.advance();
                             yystate = 130;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                114 => {
-                    yych = buf.read();
-                    match yych {
-                        0x29 => {
-                            buf.advance();
-                            yystate = 116;
-                            continue 'yyl;
-                        }
-                        0x2D ..= 0x2E => {
-                            buf.advance();
-                            yystate = 131;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                115 => {
+                112 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
@@ -2994,13 +3038,33 @@ let mut t5;
                             yystate = 132;
                             continue 'yyl;
                         }
-                        0x2E => {
+                        _ => {
+                            yystate = 113;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                113 => {
+				// an em dash is a pause
+				self.digit_prev = false;
+				self.is_plural  = false;
+				self.scratch_pad.write_text(" , ");
+				break;
+			},
+                114 => {
+                    yystate = 13;
+                    continue 'yyl;
+                }
+                115 => {
+                    yych = buf.read();
+                    match yych {
+                        0x20 => {
                             buf.advance();
                             yystate = 133;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3010,11 +3074,11 @@ let mut t5;
                     match yych {
                         0x20 => {
                             buf.advance();
-                            yystate = 131;
+                            yystate = 134;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3022,13 +3086,18 @@ let mut t5;
                 117 => {
                     yych = buf.read();
                     match yych {
-                        0x30 ..= 0x39 => {
+                        0x29 => {
                             buf.advance();
-                            yystate = 134;
+                            yystate = 119;
+                            continue 'yyl;
+                        }
+                        0x2D ..= 0x2E => {
+                            buf.advance();
+                            yystate = 135;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3036,13 +3105,19 @@ let mut t5;
                 118 => {
                     yych = buf.read();
                     match yych {
-                        0x30 ..= 0x39 => {
+                        0x09 ..= 0x0A |
+                        0x20 => {
                             buf.advance();
-                            yystate = 135;
+                            yystate = 136;
+                            continue 'yyl;
+                        }
+                        0x2E => {
+                            buf.advance();
+                            yystate = 137;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3050,20 +3125,13 @@ let mut t5;
                 119 => {
                     yych = buf.read();
                     match yych {
-                        0x41 |
-                        0x61 => {
+                        0x20 => {
                             buf.advance();
-                            yystate = 120;
-                            continue 'yyl;
-                        }
-                        0x50 |
-                        0x70 => {
-                            buf.advance();
-                            yystate = 121;
+                            yystate = 135;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3071,19 +3139,13 @@ let mut t5;
                 120 => {
                     yych = buf.read();
                     match yych {
-                        0x2E => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 136;
-                            continue 'yyl;
-                        }
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 137;
+                            yystate = 138;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3091,159 +3153,218 @@ let mut t5;
                 121 => {
                     yych = buf.read();
                     match yych {
-                        0x2E => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
                             yystate = 139;
                             continue 'yyl;
                         }
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 140;
-                            continue 'yyl;
-                        }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 122 => {
+                    yych = buf.read();
+                    match yych {
+                        0x41 |
+                        0x61 => {
+                            buf.advance();
+                            yystate = 123;
+                            continue 'yyl;
+                        }
+                        0x50 |
+                        0x70 => {
+                            buf.advance();
+                            yystate = 124;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                123 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2E => {
+                            buf.advance();
+                            yystate = 140;
+                            continue 'yyl;
+                        }
+                        0x4D |
+                        0x6D => {
+                            buf.advance();
+                            yystate = 141;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                124 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2E => {
+                            buf.advance();
+                            yystate = 143;
+                            continue 'yyl;
+                        }
+                        0x4D |
+                        0x6D => {
+                            buf.advance();
+                            yystate = 144;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                125 => {
 				// a time of day; its period may also end the sentence
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" A m ");
 				self.end_after_period(buf, true);
 				break;
 			},
-                123 => {
+                126 => {
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" p m ");
 				self.end_after_period(buf, true);
 				break;
 			},
-                124 => {
+                127 => {
                     yych = buf.read();
                     match yych {
                         0x74 => {
                             buf.advance();
-                            yystate = 142;
+                            yystate = 146;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                125 => {
+                128 => {
                     yych = buf.read();
                     match yych {
                         0x69 => {
                             buf.advance();
-                            yystate = 143;
+                            yystate = 147;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                126 => {
+                129 => {
                     yych = buf.read();
                     match yych {
                         0x72 => {
                             buf.advance();
-                            yystate = 144;
+                            yystate = 148;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                127 => {
+                130 => {
                     yyaccept = 11;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0xC2 => {
                             buf.advance();
-                            yystate = 110;
+                            yystate = 111;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 128;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                128 => {
-				self.scratch_pad.write_text(" sections ");
-				break;
-			},
-                129 => {
-                    yych = buf.read();
-                    match yych {
-                        0x20 => {
-                            buf.advance();
-                            yystate = 129;
-                            continue 'yyl;
-                        }
-                        0x61 |
-                        0x65 |
-                        0x69 |
-                        0x6F |
-                        0x75 => {
-                            buf.advance();
-                            yystate = 145;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                130 => {
-                    yych = buf.read();
-                    match yych {
-                        0x20 => {
-                            buf.advance();
-                            yystate = 130;
-                            continue 'yyl;
-                        }
-                        0x61 |
-                        0x65 |
-                        0x69 |
-                        0x6F |
-                        0x75 => {
-                            buf.advance();
-                            yystate = 146;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
+                            yystate = 131;
                             continue 'yyl;
                         }
                     }
                 }
                 131 => {
+				self.scratch_pad.write_text(" sections ");
+				break;
+			},
+                132 => {
+                    yystate = 113;
+                    continue 'yyl;
+                }
+                133 => {
                     yych = buf.read();
                     match yych {
-                        0x30 ..= 0x39 => {
+                        0x20 => {
                             buf.advance();
-                            yystate = 147;
+                            yystate = 133;
+                            continue 'yyl;
+                        }
+                        0x61 |
+                        0x65 |
+                        0x69 |
+                        0x6F |
+                        0x75 => {
+                            buf.advance();
+                            yystate = 149;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                132 => {
+                134 => {
+                    yych = buf.read();
+                    match yych {
+                        0x20 => {
+                            buf.advance();
+                            yystate = 134;
+                            continue 'yyl;
+                        }
+                        0x61 |
+                        0x65 |
+                        0x69 |
+                        0x6F |
+                        0x75 => {
+                            buf.advance();
+                            yystate = 150;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                135 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 151;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                136 => {
                     t1 = yyt1;
                     t2 = yyt2;
                     {
@@ -3283,94 +3404,45 @@ let mut t5;
 				break;
 			}
                 }
-                133 => {
+                137 => {
                     yych = buf.read();
                     match yych {
                         0x09 ..= 0x0A |
                         0x20 => {
                             buf.advance();
-                            yystate = 132;
+                            yystate = 136;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                134 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 148;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                135 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 149;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                136 => {
-                    yych = buf.read();
-                    match yych {
-                        0x4D |
-                        0x6D => {
-                            buf.advance();
-                            yystate = 137;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                137 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2E => {
-                            buf.advance();
-                            yystate = 150;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 138;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 138 => {
-				self.scratch_pad.write_text(" A m ");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
-				break;
-			},
-                139 => {
                     yych = buf.read();
                     match yych {
-                        0x4D |
-                        0x6D => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 140;
+                            yystate = 152;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                139 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 153;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 26;
                             continue 'yyl;
                         }
                     }
@@ -3378,46 +3450,48 @@ let mut t5;
                 140 => {
                     yych = buf.read();
                     match yych {
-                        0x2E => {
+                        0x4D |
+                        0x6D => {
                             buf.advance();
-                            yystate = 151;
+                            yystate = 141;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 141;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 141 => {
-				self.scratch_pad.write_text(" p m ");
-				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
-				break;
-			},
-                142 => {
                     yych = buf.read();
                     match yych {
-                        0x68 => {
+                        0x2E => {
                             buf.advance();
-                            yystate = 152;
+                            yystate = 154;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 142;
                             continue 'yyl;
                         }
                     }
                 }
+                142 => {
+				self.scratch_pad.write_text(" A m ");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
+				break;
+			},
                 143 => {
                     yych = buf.read();
                     match yych {
-                        0x6C => {
+                        0x4D |
+                        0x6D => {
                             buf.advance();
-                            yystate = 153;
+                            yystate = 144;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3425,39 +3499,46 @@ let mut t5;
                 144 => {
                     yych = buf.read();
                     match yych {
-                        0x73 => {
-                            buf.advance();
-                            yystate = 154;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                145 => {
-				// "fer" becomes "for" before word-initial vowels
-				buf.recede();
-				self.scratch_pad.write_text(" FOR ");
-				break;
-			},
-                146 => {
-				// "thee" before a vowel ("thee apple")
-				buf.recede();
-				self.scratch_pad.write_text(" thee ");
-				break;
-			},
-                147 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
+                        0x2E => {
                             buf.advance();
                             yystate = 155;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 145;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                145 => {
+				self.scratch_pad.write_text(" p m ");
+				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
+				break;
+			},
+                146 => {
+                    yych = buf.read();
+                    match yych {
+                        0x68 => {
+                            buf.advance();
+                            yystate = 156;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                147 => {
+                    yych = buf.read();
+                    match yych {
+                        0x6C => {
+                            buf.advance();
+                            yystate = 157;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3465,82 +3546,58 @@ let mut t5;
                 148 => {
                     yych = buf.read();
                     match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 156;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                149 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 157;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 26;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                150 => {
-                    yystate = 138;
-                    continue 'yyl;
-                }
-                151 => {
-                    yystate = 141;
-                    continue 'yyl;
-                }
-                152 => {
-                    yych = buf.read();
-                    match yych {
-                        0x6F => {
+                        0x73 => {
                             buf.advance();
                             yystate = 158;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                153 => {
+                149 => {
+				// "fer" becomes "for" before word-initial vowels
+				buf.recede();
+				self.scratch_pad.write_text(" FOR ");
+				break;
+			},
+                150 => {
+				// "thee" before a vowel ("thee apple")
+				buf.recede();
+				self.scratch_pad.write_text(" thee ");
+				break;
+			},
+                151 => {
                     yych = buf.read();
                     match yych {
-                        0x64 => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
                             yystate = 159;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                154 => {
+                152 => {
                     yych = buf.read();
                     match yych {
-                        0x69 => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
                             yystate = 160;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                155 => {
+                153 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
@@ -3549,43 +3606,107 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 26;
                             continue 'yyl;
                         }
                     }
                 }
+                154 => {
+                    yystate = 142;
+                    continue 'yyl;
+                }
+                155 => {
+                    yystate = 145;
+                    continue 'yyl;
+                }
                 156 => {
                     yych = buf.read();
                     match yych {
-                        0x2D ..= 0x2E => {
+                        0x6F => {
                             buf.advance();
                             yystate = 162;
                             continue 'yyl;
                         }
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 163;
-                            continue 'yyl;
-                        }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 157 => {
+                    yych = buf.read();
+                    match yych {
+                        0x64 => {
+                            buf.advance();
+                            yystate = 163;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                158 => {
+                    yych = buf.read();
+                    match yych {
+                        0x69 => {
+                            buf.advance();
+                            yystate = 164;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                159 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 165;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                160 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2D ..= 0x2E => {
+                            buf.advance();
+                            yystate = 166;
+                            continue 'yyl;
+                        }
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 167;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                161 => {
                     yyaccept = 12;
                     yymarker = buf.getcurs();
                     yych = buf.read();
                     match yych {
                         0x2D ..= 0x2E => {
                             buf.advance();
-                            yystate = 162;
+                            yystate = 166;
                             continue 'yyl;
                         }
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 165;
+                            yystate = 169;
                             continue 'yyl;
                         }
                         _ => {
@@ -3594,81 +3715,81 @@ let mut t5;
                         }
                     }
                 }
-                158 => {
+                162 => {
                     yych = buf.read();
                     match yych {
                         0x72 => {
                             buf.advance();
-                            yystate = 166;
+                            yystate = 170;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                159 => {
-                    yych = buf.read();
-                    match yych {
-                        0x5F => {
-                            buf.advance();
-                            yystate = 167;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                160 => {
-                    yych = buf.read();
-                    match yych {
-                        0x6F => {
-                            buf.advance();
-                            yystate = 168;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                161 => {
-                    yych = buf.read();
-                    match yych {
-                        0x2D ..= 0x2E => {
-                            buf.advance();
-                            yystate = 162;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                162 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 169;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 163 => {
-                    yystate = 164;
-                    continue 'yyl;
+                    yych = buf.read();
+                    match yych {
+                        0x5F => {
+                            buf.advance();
+                            yystate = 171;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
                 }
                 164 => {
+                    yych = buf.read();
+                    match yych {
+                        0x6F => {
+                            buf.advance();
+                            yystate = 172;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                165 => {
+                    yych = buf.read();
+                    match yych {
+                        0x2D ..= 0x2E => {
+                            buf.advance();
+                            yystate = 166;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                166 => {
+                    yych = buf.read();
+                    match yych {
+                        0x30 ..= 0x39 => {
+                            buf.advance();
+                            yystate = 173;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                167 => {
+                    yystate = 168;
+                    continue 'yyl;
+                }
+                168 => {
                     t1 = yyt1;
                     {
 				self.digit_prev = true;
@@ -3687,72 +3808,16 @@ let mut t5;
 				break;
 			}
                 }
-                165 => {
-                    yych = buf.read();
-                    match yych {
-                        0x30 ..= 0x39 => {
-                            buf.advance();
-                            yystate = 100;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 164;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                166 => {
-                    yych = buf.read();
-                    match yych {
-                        0x5F => {
-                            buf.advance();
-                            yystate = 170;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                167 => {
-                    yych = buf.read();
-                    match yych {
-                        0x64 => {
-                            buf.advance();
-                            yystate = 171;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
-                168 => {
-                    yych = buf.read();
-                    match yych {
-                        0x6E => {
-                            buf.advance();
-                            yystate = 172;
-                            continue 'yyl;
-                        }
-                        _ => {
-                            yystate = 51;
-                            continue 'yyl;
-                        }
-                    }
-                }
                 169 => {
                     yych = buf.read();
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 173;
+                            yystate = 101;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 168;
                             continue 'yyl;
                         }
                     }
@@ -3766,7 +3831,7 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3774,13 +3839,13 @@ let mut t5;
                 171 => {
                     yych = buf.read();
                     match yych {
-                        0x61 => {
+                        0x64 => {
                             buf.advance();
                             yystate = 175;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3788,13 +3853,13 @@ let mut t5;
                 172 => {
                     yych = buf.read();
                     match yych {
-                        0x5F => {
+                        0x6E => {
                             buf.advance();
                             yystate = 176;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3808,25 +3873,35 @@ let mut t5;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 174 => {
-				self.scratch_pad.write_text(" anthony c bartman ");
-				break;
-			},
-                175 => {
                     yych = buf.read();
                     match yych {
-                        0x74 => {
+                        0x5F => {
                             buf.advance();
                             yystate = 178;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                175 => {
+                    yych = buf.read();
+                    match yych {
+                        0x61 => {
+                            buf.advance();
+                            yystate = 179;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3836,11 +3911,11 @@ let mut t5;
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 179;
+                            yystate = 180;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3850,43 +3925,43 @@ let mut t5;
                     match yych {
                         0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 163;
+                            yystate = 181;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 178 => {
+				self.scratch_pad.write_text(" anthony c bartman ");
+				break;
+			},
+                179 => {
                     yych = buf.read();
                     match yych {
-                        0x65 => {
+                        0x74 => {
                             buf.advance();
-                            yystate = 180;
+                            yystate = 182;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
-                179 => {
-				self.scratch_pad.write_text(" version one point five ");
-				break;
-			},
                 180 => {
                     yych = buf.read();
                     match yych {
                         0x5F => {
                             buf.advance();
-                            yystate = 181;
+                            yystate = 183;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
@@ -3894,18 +3969,64 @@ let mut t5;
                 181 => {
                     yych = buf.read();
                     match yych {
-                        0x5F => {
+                        0x30 ..= 0x39 => {
                             buf.advance();
-                            yystate = 182;
+                            yystate = 167;
                             continue 'yyl;
                         }
                         _ => {
-                            yystate = 51;
+                            yystate = 52;
                             continue 'yyl;
                         }
                     }
                 }
                 182 => {
+                    yych = buf.read();
+                    match yych {
+                        0x65 => {
+                            buf.advance();
+                            yystate = 184;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                183 => {
+				self.scratch_pad.write_text(" version one point five ");
+				break;
+			},
+                184 => {
+                    yych = buf.read();
+                    match yych {
+                        0x5F => {
+                            buf.advance();
+                            yystate = 185;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                185 => {
+                    yych = buf.read();
+                    match yych {
+                        0x5F => {
+                            buf.advance();
+                            yystate = 186;
+                            continue 'yyl;
+                        }
+                        _ => {
+                            yystate = 52;
+                            continue 'yyl;
+                        }
+                    }
+                }
+                186 => {
 				self.scratch_pad.write_text(" november tenth , twenty twenty six ");
 				break;
 			},

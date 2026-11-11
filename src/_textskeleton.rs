@@ -33,6 +33,7 @@ pub struct engine {
 	number:      u64,
 	last_year:   Option<bool>,	// whether the last four-digit number was read as a year, for the next in "X to Y"
 	folded:      bool,			// accented letters are folded once, before the first lex()
+	open_quote:  bool,			// an opening single quote was dropped: the next quote after a word closes it
 }
 impl engine {
 	pub fn new() -> engine {
@@ -43,6 +44,7 @@ impl engine {
 			number:      0,
 			last_year:   None,
 			folded:      false,
+			open_quote:  false,
 		}
 	}
 	pub fn is_not_empty(&mut self) -> bool {
@@ -336,6 +338,7 @@ impl engine {
 					} else {
 						self.scratch_pad.write_text(" ");
 						consume(buf, r);
+						self.open_quote = true;
 					}
 					return true;
 				}
@@ -379,6 +382,16 @@ impl engine {
 			}
 		}
 
+		// a decimal without its leading zero: .75 point seven five
+		if is_space(at(0)) && at(1) == b'.' && at(2).is_ascii_digit() {
+			let (frac, k) = Self::fraction(&a, 1);
+			let p = self.point(&frac);
+			self.say(&p);
+			consume(buf, k);
+			self.digit_prev = true;
+			return true;
+		}
+
 		// the minutes of a time under ten: 10:05 ten oh five
 		if at(0) == b':' && prev.is_ascii_digit() && at(1) == b'0' && (b'1'..=b'9').contains(&at(2)) && !at(3).is_ascii_digit() {
 			let m = self.words((at(2) - b'0') as u64, false, false);
@@ -388,12 +401,12 @@ impl engine {
 			return true;
 		}
 
-		// a web address is read without its scheme
+		// a web address's scheme is spelled
 		if !prev.is_ascii_alphabetic() {
 			let low = a.to_ascii_lowercase();
-			for scheme in [&b"https://"[..], b"http://"] {
+			for (scheme, say) in [(&b"https://"[..], " h t t p s colon slash slash "), (b"http://", " h t t p colon slash slash ")] {
 				if low.starts_with(scheme) && at(scheme.len()).is_ascii_alphabetic() {
-					self.scratch_pad.write_text(" ");
+					self.scratch_pad.write_text(say);
 					consume(buf, scheme.len());
 					return true;
 				}
@@ -465,7 +478,7 @@ impl engine {
 				}
 			}
 			// a unit right after a number, with or without a space: 5ft, 2 hrs, 2.5kg (the last field: only joined to it)
-			const UNITS: [(&str, &str, &str, bool); 25] = [
+			const UNITS: [(&str, &str, &str, bool); 26] = [
 				("ft", "foot", "feet", false), ("in", "inch", "inches", true), ("yd", "yard", "yards", false),
 				("yds", "yard", "yards", false), ("mi", "mile", "miles", false), ("hr", "hour", "hours", false),
 				("hrs", "hour", "hours", false), ("min", "minute", "minutes", false), ("mins", "minute", "minutes", false),
@@ -475,15 +488,17 @@ impl engine {
 				("ml", "milliliter", "milliliters", false), ("km", "kilometer", "kilometers", false),
 				("cm", "centimeter", "centimeters", false), ("mm", "millimeter", "millimeters", false),
 				("mph", "mile per hour", "miles per hour", false), ("km/h", "kilometer per hour", "kilometers per hour", false),
-				("km/hr", "kilometer per hour", "kilometers per hour", false)];
+				("km/hr", "kilometer per hour", "kilometers per hour", false), ("m", "meter", "meters", false)];
 			{
 				let (v, frac, k) = Self::amount(&a, 0);
 				let joined = !is_space(at(k));
 				let mut j = k;
 				while is_space(at(j)) { j += 1; }
 				let low = a[j..].to_ascii_lowercase();
+				// "m" only in lower case and not before more of a unit: "3 M", "m/s" and "m\u{b2}" are not meters
+				let meter = at(j) == b'm' && !matches!(at(j + 1), b'0'..=b'9' | b'/' | 0x80..=0xFF);
 				let unit = UNITS.iter()
-					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !at(j + u.0.len()).is_ascii_alphabetic())
+					.filter(|u| (joined || !u.3) && low.starts_with(u.0.as_bytes()) && !at(j + u.0.len()).is_ascii_alphabetic() && (u.0 != "m" || meter))
 					.max_by_key(|u| u.0.len());
 				if let Some(&(ab, one, many, _)) = unit {
 					let num = self.words(v, false, false);
@@ -553,6 +568,13 @@ impl engine {
 						(_, plural) => { let d = self.words(v2, true, false); if plural { format!("{}s", d) } else { d } },
 					};
 					self.scratch_pad.write_text(&format!(" {} {} ", num, den));
+					consume(buf, p2);
+					return true;
+				}
+				// an even split or a score: 50/50 fifty fifty, 60/40, 20/20
+				if n1 == 2 && n2 == 2 && after(p2) && (v1 == v2 || v1 + v2 == 100) {
+					let w = format!(" {} {} ", self.words(v1, false, false), self.words(v2, false, false));
+					self.scratch_pad.write_text(&w);
 					consume(buf, p2);
 					return true;
 				}
@@ -1091,7 +1113,12 @@ impl engine {
 				break;
 			}
 			"*" {
-				self.scratch_pad.write_text(" asterisk ");
+				// between two numbers it is times: 5 * 3
+				let next = Self::ahead(buf, 8).into_iter().find(|c| !is_space(*c)).unwrap_or(0);
+				buf.recede();
+				let before = Self::behind(buf, 8).into_iter().rev().find(|c| !is_space(*c)).unwrap_or(0);
+				buf.advance();
+				self.scratch_pad.write_text(if before.is_ascii_digit() && next.is_ascii_digit() { " times " } else { " asterisk " });
 				break;
 			}
 			space comma {
@@ -1135,7 +1162,13 @@ impl engine {
 				break;
 			}
 			squote {
-				self.scratch_pad.write_text("\x27");
+				// an apostrophe, or the closing quote of a dropped opening one ('single ones')
+				if self.open_quote && !buf.read().is_ascii_alphabetic() {
+					self.open_quote = false;
+					self.scratch_pad.write_text(" ");
+				} else {
+					self.scratch_pad.write_text("\x27");
+				}
 				break;
 			}
 			space "]" {
@@ -1217,11 +1250,46 @@ impl engine {
 			}
 
 			space "-" space {
-				self.scratch_pad.write_text(" minus ");
+				// a spaced dash is a pause, but minus between numbers: 5 - 3
+				let end = buf.getcurs();
+				let next = buf.read();
+				for _ in 0..4 { buf.recede(); }
+				let before = buf.read();
+				buf.setcurs(end);
+				if before.is_ascii_digit() && next.is_ascii_digit() {
+					self.scratch_pad.write_text(" minus ");
+				} else {
+					self.digit_prev = false;
+					self.is_plural  = false;
+					self.scratch_pad.write_text(" , ");
+				}
+				break;
+			}
+			space? "\u2014" space? {
+				// an em dash is a pause
+				self.digit_prev = false;
+				self.is_plural  = false;
+				self.scratch_pad.write_text(" , ");
 				break;
 			}
 
-			dquote | comma | space "(" | ")" space {
+			@t1 dquote {
+				// a quote next to a comma adds no pause of its own: "Quoted," she said
+				let end = buf.getcurs();
+				let next = buf.read();
+				buf.setcurs(t1);
+				let before = Self::prev_byte(buf);
+				buf.setcurs(end);
+				if before == b',' || next == b',' {
+					self.scratch_pad.write_text(" ");
+				} else {
+					self.digit_prev = false;
+					self.is_plural  = false;
+					self.scratch_pad.write_text(" , ");
+				}
+				break;
+			}
+			comma | space "(" | ")" space {
 				self.digit_prev = false;
 				self.is_plural  = false;
 				self.scratch_pad.write_text(" , ");
@@ -1327,7 +1395,20 @@ impl engine {
 					if buf.read() == b'+' {
 						self.scratch_pad.write_text(" positive ");
 					} else if self.digit_prev {
-						self.scratch_pad.write_text(" through ");
+						// a falling or even pair is a score (won 3-2, three to two), a rising one a range (pages 3-5); not
+						// after a time, a decimal, a run of numbers (10:30-11:30, 555-1234-7) or one read digit by digit
+						let b = Self::behind(buf, 24);
+						let mut i = b.len();
+						while i > 0 && (b[i - 1].is_ascii_digit() || b[i - 1] == b',') { i -= 1; }
+						let whole = i < b.len() && (b'1'..=b'9').contains(&b[i]) && b.len() - i < 19 && (i == 0 || !matches!(b[i - 1], b':' | b'.' | b'-'));
+						let value = |d: &[u8]| d.iter().filter(|c| c.is_ascii_digit()).fold(0u64, |v, c| v.saturating_mul(10).saturating_add((c - b'0') as u64));
+						let was = value(&b[i..]);
+						buf.setcurs(t3);
+						let mut now = Vec::new();
+						while buf.getcurs() < t4 { now.push(buf.read()); buf.advance(); }
+						buf.setcurs(t1);
+						let score = whole && value(&now) <= was;
+						self.scratch_pad.write_text(if score { " to " } else { " through " });
 					} else {
 						self.scratch_pad.write_text(" negative ");
 					}
@@ -1338,29 +1419,35 @@ impl engine {
 						self.scratch_pad.write_text(" number ");
 					}
 				}
+				// dollars: the cents first, since under a dollar only the cents are read and .00 reads no cents
+				let dollar = t2 != t3 && { buf.setcurs(t2); buf.read() == b'$' };
+				self.reset_ntw();
+				buf.setcurs(t4);
+				while buf.getcurs() < t5 {
+					self.consume_digit(buf.read());
+					buf.advance();
+				}
+				let cents = self.number;
 				buf.setcurs(t3);
 				self.reset_ntw();
 				while buf.getcurs() < t4 {
 					self.consume_digit(buf.read());
 					buf.advance();
 				}
-				self.ntw(false, false);
+				let cents_only = dollar && cents > 0 && self.number == 0;
+				if !cents_only { self.ntw(false, false); }
 				if t2 != t3 {
-					buf.setcurs(t2);
-					if buf.read() == b'$' {
-						self.scratch_pad.write_text(" dollar");
-						if self.is_plural {
-							self.scratch_pad.write_text("s");
-						}
-						self.scratch_pad.write_text(" ");
-						if t4 != t5 {
-							self.scratch_pad.write_text(" and ");
-							buf.setcurs(t4);
-							self.reset_ntw();
-							while buf.getcurs() < t5 {
-								self.consume_digit(buf.read());
-								buf.advance();
+					if dollar {
+						if !cents_only {
+							self.scratch_pad.write_text(" dollar");
+							if self.is_plural {
+								self.scratch_pad.write_text("s");
 							}
+							self.scratch_pad.write_text(" ");
+						}
+						if cents > 0 {
+							if !cents_only { self.scratch_pad.write_text(" and "); }
+							self.number = cents;
 							self.ntw(false, false);
 							self.scratch_pad.write_text(" cent");
 							if self.is_plural {
