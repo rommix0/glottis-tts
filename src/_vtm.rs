@@ -11,6 +11,8 @@
 
 use core::f32::consts::PI;
 use crate::_f0::REF_HZ;
+use crate::_phone::IXP;
+use crate::_vtbl::{formant_tbl, ROW_LEN};
 
 // master sample rate
 pub const m_sr: u32 = 22050;
@@ -177,13 +179,15 @@ pub const VOICES: [Voice; 8] = [
 fn asp_level(v: &Voice) -> f32 {
 	let top = F_MAX_SR * m_sr as f32;
 	let (s1, s2, s3) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0);
-	// F1-F3 as wide as in a release, widened like fix_bw; upper formants as set_voice builds them
-	let (f1, f2, f3) = (400.0 * s1, 1600.0 * s2, 2600.0 * s3);
+	// F1-F3 and their widths as in a release (the table's row), widened like fix_bw;
+	// upper formants as set_voice builds them
+	let row = |k: usize| formant_tbl[IXP as usize * ROW_LEN + k] as f32;
+	let (f1, f2, f3) = (row(5) * s1, row(6) * s2, row(7) * s3);
 	let [a1, a2, a3] = bw_widen3(f1, f2, f3, F4_INIT * (v.fhi / 100.0));
 	let mut rs = [
-		resonator::new(f1.min(top), 300.0 * s1 * a1, false),
-		resonator::new(f2.min(top), 120.0 * s2 * a2, false),
-		resonator::new(f3.min(top), 250.0 * s3 * a3, false),
+		resonator::new(f1.min(top), row(8) * s1 * a1, false),
+		resonator::new(f2.min(top), row(9) * s2 * a2, false),
+		resonator::new(f3.min(top), row(10) * s3 * a3, false),
 		upper_formant(v, F4_INIT, B4_INIT), upper_formant(v, F5_INIT, B5_INIT),
 		upper_formant(v, F6_INIT, B6_INIT), upper_formant(v, F7_INIT, B7_INIT), upper_formant(v, F8_INIT, B8_INIT),
 	];
@@ -900,10 +904,14 @@ mod tests {
 		let level = |voice: Voice| {
 			let mut v = vtm::new();
 			v.set_voice(voice);
+			let row = |k: usize| formant_tbl[IXP as usize * ROW_LEN + k] as f32;
 			let x: Vec<f32> = (0..12000).map(|_| {
-				v.F0 = 120.0; v.AV = 0.0; v.AH = DB_GAIN[50]; v.RD = 0.6;
-				v.F1 = 400.0; v.F2 = 1600.0; v.F3 = 2600.0;
-				v.B1 = 300.0; v.B2 = 120.0; v.B3 = 250.0;
+				v.F0 = 120.0;
+				v.AV = 0.0;
+				v.AH = DB_GAIN[50];
+				v.RD = 0.6;
+				(v.F1, v.F2, v.F3) = (row(5), row(6), row(7));
+				(v.B1, v.B2, v.B3) = (row(8), row(9), row(10));
 				v.step()
 			}).collect();
 			10.0 * libm::log10f(x[2000..].iter().map(|s| s * s).sum::<f32>() / 10000.0)

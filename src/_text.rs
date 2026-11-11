@@ -934,7 +934,7 @@ impl engine {
 		// an emoticon after a space is the emoticon, not "colon"
 		if is_space(at(0)) && matches!(at(1), b':' | b';' | b'=') {
 			buf.advance();
-			let face = Self::table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= Self::lexer_len(buf));
+			let face = Self::table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= self.lexer_len(buf));
 			buf.recede();
 			if face {
 				self.scratch_pad.write_text(" ");
@@ -946,12 +946,9 @@ impl engine {
 	}
 
 	// FIXED-TEXT RULE PART
-	fn match_len(buf: &mut cbuf, pat: &[u8]) -> Option<usize> {
-		// the length of an exact pattern if it matches at the cursor (None if not), without moving the cursor
-		Self::match_by(buf, pat, |c, p| c == p)
-	}
 	fn match_rule(buf: &mut cbuf, pat: &str, any_case: bool) -> Option<usize> {
-		// the same for a fixed-text rule: a space matches any space, an any-case rule ignores case
+		// the length of a fixed-text rule if it matches at the cursor (None if not), without moving the cursor.
+		// a space matches any space, an any-case rule ignores case
 		Self::match_by(buf, pat.as_bytes(), |c, p| {
 			if p == b' ' {
 				is_space(c)
@@ -974,72 +971,6 @@ impl engine {
 		}
 		buf.setcurs(start);
 		if hit { Some(pat.len()) } else { None }
-	}
-	fn lexer_len(buf: &mut cbuf) -> usize {
-		// the longest match at the cursor of the lexer rules a fixed-text rule can lose to:
-		// " for" or " the" before a vowel, a ":00" time, a "__tag__"
-		let start = buf.getcurs();
-		let mut best = 0;
-		for w in [&b" for"[..], &b" the"[..]] {
-			if let Some(n) = Self::match_len(buf, w) {
-				consume(buf, n);
-				let mut k = n;
-				while buf.read() == b' ' { buf.advance(); k += 1; }
-				if k > n && matches!(buf.read(), b'a' | b'e' | b'i' | b'o' | b'u') { best = best.max(k + 1); }
-				buf.setcurs(start);
-			}
-		}
-		if let Some(n) = Self::match_len(buf, b":00") {
-			let mut k = n;
-			consume(buf, n);
-			if buf.read() == b' ' { buf.advance(); k += 1; }
-			let ap = buf.read().to_ascii_lowercase();
-			if ap == b'a' || ap == b'p' {
-				buf.advance();
-				let mut j = k + 1;
-				if buf.read() == b'.' { buf.advance(); j += 1; }
-				if buf.read().to_ascii_lowercase() == b'm' {
-					buf.advance();
-					j += 1;
-					if buf.read() == b'.' { j += 1; }
-					k = j;
-				} else {
-					k = n;
-				}
-			} else {
-				k = n;
-			}
-			best = best.max(k);
-			buf.setcurs(start);
-		}
-		for tag in [&b"__version__"[..], b"__author__", b"__build_date__"] {
-			if let Some(n) = Self::match_len(buf, tag) { best = best.max(n); }
-		}
-		best.max(Self::number_len(buf))
-	}
-	fn number_len(buf: &mut cbuf) -> usize {
-		// a number may start with a digit separator ("_00"), so it can outlast a fixed-text rule for "_"
-		let start = buf.getcurs();
-		let mut n = 0;
-		loop {
-			let save = (buf.getcurs(), n);
-			if matches!(buf.read(), b',' | b'\'' | b'_') { buf.advance(); n += 1; }
-			if !buf.read().is_ascii_digit() { buf.setcurs(save.0); n = save.1; break; }
-			while buf.read().is_ascii_digit() { buf.advance(); n += 1; }
-		}
-		if n > 0 {
-			let c = buf.read();
-			buf.advance();
-			let d = buf.read();
-			if c == b'.' && d.is_ascii_digit() {
-				n += 1;
-				while buf.read().is_ascii_digit() { buf.advance(); n += 1; }
-			} else if matches!((c, d), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h')) {
-				n += 2;
-			}
-		}
-		buf.setcurs(start);
-		n
 	}
 	fn end_after_period(&mut self, buf: &mut cbuf, before_capital: bool) {
 		// let an abbreviation's period also end the sentence when only spaces follow,
@@ -1117,9 +1048,9 @@ impl engine {
 		}
 		best
 	}
-	fn table_rule(&mut self, buf: &mut cbuf) -> bool {
-		// write the replacement of the longest fixed-text rule at the cursor, unless a lexer rule matches longer.
-		// the lexer's " for"/" the" rules come first, so they also win a tie
+	fn table_rule(&mut self, buf: &mut cbuf, lexer_len: usize) -> bool {
+		// write the replacement of the longest fixed-text rule at the cursor, unless the lexer's own match there
+		// (lexer_len long) is longer. a lexer rule starting with a space (" for" before a vowel) also wins a tie
 		let first = buf.read();
 		let Some((n, r)) = Self::table_best(buf) else { return false };
 		// a rule that starts (ends) with a letter starts (ends) a word: no "kg" inside "background" or "kgb"
@@ -1133,8 +1064,7 @@ impl engine {
 			for _ in 0..n { buf.recede(); }
 			if next.is_ascii_alphabetic() { return false; }
 		}
-		let lex = Self::lexer_len(buf);
-		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
+		if lexer_len > n || (lexer_len == n && first == b' ') { return false; }
 		consume(buf, n);
 		// "bit{s} per second": the part in braces is added only after a plural number
 		let (text, plural, rest) = match replacement.split_once('{') {
@@ -1161,12 +1091,25 @@ impl engine {
 
 	// TEXT-HOMOGRAPH NORMALIZER PART
 	pub fn lex(&mut self, buf: &mut cbuf) -> bool {
-		let mut text_done: bool  = false;
-		let mut yymarker: usize = 0;
-
 		if !self.folded { self.folded = true; Self::fold(buf); }
 		if self.context_rule(buf) { return false; }
-		if self.table_rule(buf) { return false; }
+		let lexer_len = self.lexer_len(buf);
+		if self.table_rule(buf, lexer_len) { return false; }
+		self.lexer(buf, false)
+	}
+	fn lexer_len(&mut self, buf: &mut cbuf) -> usize {
+		// the length of the lexer rule that matches at the cursor, without running it or moving the cursor
+		let start = buf.getcurs();
+		self.lexer(buf, true);
+		let end = buf.getcurs();
+		buf.setcurs(start);
+		end - start
+	}
+	fn lexer(&mut self, buf: &mut cbuf, measure_only: bool) -> bool {
+		// match one lexer rule at the cursor and run it; measure_only stops at the end of the match instead.
+		// the rules are one generated matcher, so lexing and measuring share it
+		let mut text_done: bool  = false;
+		let mut yymarker: usize = 0;
 
 		// Final tag variables available in semantic action.
 		#[allow(unused_mut)]
@@ -1386,19 +1329,29 @@ let mut t5;
                     }
                 }
                 1 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// end of text: tell the caller the stream is done
 				text_done = true;
 				break;
-			},
+			}
+                }
                 2 => {
                     yystate = 3;
                     continue 'yyl;
                 }
                 3 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// output whitespace when no match is made including whitespace
 				self.scratch_pad.write_text(" ");
 				break;
-			},
+			}
+                }
                 4 => {
                     yyaccept = 0;
                     yymarker = buf.getcurs();
@@ -1572,11 +1525,19 @@ let mut t5;
                     }
                 }
                 6 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.pause("!");
 				break;
-			},
+			}
+                }
                 7 => {
                     t1 = yyt1;
+                    {
+				if measure_only { break; }
+			}
                     {
 				// a quote next to a comma adds no pause of its own: "Quoted," she said
 				let end = buf.getcurs();
@@ -1618,9 +1579,14 @@ let mut t5;
                     }
                 }
                 9 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" hash tag ");
 				break;
-			},
+			}
+                }
                 10 => {
                     yyaccept = 2;
                     yymarker = buf.getcurs();
@@ -1647,9 +1613,14 @@ let mut t5;
                     }
                 }
                 11 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" dollar sign ");
 				break;
-			},
+			}
+                }
                 12 => {
                     yych = buf.read();
                     match yych {
@@ -1665,6 +1636,10 @@ let mut t5;
                     }
                 }
                 13 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// an apostrophe, or the closing quote of a dropped opening one ('single ones')
 				if self.open_quote && !buf.read().is_ascii_alphabetic() {
 					self.open_quote = false;
@@ -1673,7 +1648,8 @@ let mut t5;
 					self.scratch_pad.write_text("\x27");
 				}
 				break;
-			},
+			}
+                }
                 14 => {
                     yyaccept = 0;
                     yymarker = buf.getcurs();
@@ -1712,6 +1688,10 @@ let mut t5;
                     }
                 }
                 16 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// between two numbers it is times: 5 * 3
 				let next = Self::ahead(buf, 8).into_iter().find(|c| !is_space(*c)).unwrap_or(0);
 				buf.recede();
@@ -1723,7 +1703,8 @@ let mut t5;
 					" asterisk "
 				});
 				break;
-			},
+			}
+                }
                 17 => {
                     yyaccept = 3;
                     yymarker = buf.getcurs();
@@ -1758,9 +1739,14 @@ let mut t5;
                     }
                 }
                 18 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" plus ");
 				break;
-			},
+			}
+                }
                 19 => {
                     yyaccept = 4;
                     yymarker = buf.getcurs();
@@ -1783,9 +1769,14 @@ let mut t5;
                     }
                 }
                 20 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.pause(",");
 				break;
-			},
+			}
+                }
                 21 => {
                     yyaccept = 5;
                     yymarker = buf.getcurs();
@@ -1826,13 +1817,18 @@ let mut t5;
                     }
                 }
                 22 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				if self.digit_prev {
 					self.scratch_pad.write_text(" , ");
 				} else {
 					self.scratch_pad.write_text(" dash ");
 				}
 				break;
-			},
+			}
+                }
                 23 => {
                     yych = buf.read();
                     match yych {
@@ -1855,9 +1851,14 @@ let mut t5;
                     }
                 }
                 24 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" . ");
 				break;
-			},
+			}
+                }
                 25 => {
                     yyaccept = 6;
                     yymarker = buf.getcurs();
@@ -1910,6 +1911,9 @@ let mut t5;
                     t3 = yyt3;
                     t4 = yyt4;
                     t5 = buf.getcurs();
+                    {
+				if measure_only { break; }
+			}
                     {
 				let end = buf.getcurs();
 				// a bare number starting with a zero or past quadrillions: digit by digit
@@ -2061,9 +2065,14 @@ let mut t5;
                     }
                 }
                 29 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.pause("?");
 				break;
-			},
+			}
+                }
                 30 => {
                     yych = buf.read();
                     match yych {
@@ -2085,6 +2094,10 @@ let mut t5;
                     }
                 }
                 31 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// a capital letter alone is spelled ("A" stays the article's capital)
 				let dot = Self::prev_byte(buf) == b'.';
 				if dot { buf.recede(); }
@@ -2094,7 +2107,8 @@ let mut t5;
 				self.scratch_pad.write(if c == b'A' { c } else { c.to_ascii_lowercase() });
 				if dot { let initial = Self::initial(buf); self.end_after_period(buf, !initial); }
 				break;
-			},
+			}
+                }
                 32 => {
                     yych = buf.read();
                     match yych {
@@ -2145,9 +2159,14 @@ let mut t5;
                     }
                 }
                 35 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" caret ");
 				break;
-			},
+			}
+                }
                 36 => {
                     yyaccept = 0;
                     yymarker = buf.getcurs();
@@ -2192,11 +2211,16 @@ let mut t5;
                     }
                 }
                 38 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.is_plural  = false;
 				self.digit_prev = false;
 				self.scratch_pad.write(Self::prev_byte(buf));
 				break;
-			},
+			}
+                }
                 39 => {
                     yystate = 38;
                     continue 'yyl;
@@ -2239,9 +2263,14 @@ let mut t5;
                     }
                 }
                 42 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" vertical bar ");
 				break;
-			},
+			}
+                }
                 43 => {
                     yych = buf.read();
                     match yych {
@@ -2278,29 +2307,54 @@ let mut t5;
                     }
                 }
                 45 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" exclamation point ");
 				break;
-			},
+			}
+                }
                 46 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" double quote ");
 				break;
-			},
+			}
+                }
                 47 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" single quote ");
 				break;
-			},
+			}
+                }
                 48 => {
                     yystate = 20;
                     continue 'yyl;
                 }
                 49 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" right parenthesis ");
 				break;
-			},
+			}
+                }
                 50 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" comma ");
 				break;
-			},
+			}
+                }
                 51 => {
                     yych = buf.read();
                     match yych {
@@ -2375,29 +2429,59 @@ let mut t5;
                     }
                 }
                 53 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" period ");
 				break;
-			},
+			}
+                }
                 54 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" colon ");
 				break;
-			},
+			}
+                }
                 55 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" semicolon ");
 				break;
-			},
+			}
+                }
                 56 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" question mark ");
 				break;
-			},
+			}
+                }
                 57 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" right square bracket ");
 				break;
-			},
+			}
+                }
                 58 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" right curly bracket ");
 				break;
-			},
+			}
+                }
                 59 => {
                     yych = buf.read();
                     match yych {
@@ -2540,9 +2624,14 @@ let mut t5;
                     }
                 }
                 66 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" left parenthesis ");
 				break;
-			},
+			}
+                }
                 67 => {
                     yych = buf.read();
                     match yych {
@@ -2602,22 +2691,37 @@ let mut t5;
                     }
                 }
                 70 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				buf.recede();
 				self.scratch_pad.write_text(" ");
 				break;
-			},
+			}
+                }
                 71 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.pause(".");
 				// leave the space, so an abbreviation starting the next sentence still has its word boundary
 				buf.recede();
 				break;
-			},
+			}
+                }
                 72 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// a dot inside a name: "example.com"
 				buf.recede();
 				self.scratch_pad.write_text(" dot ");
 				break;
-			},
+			}
+                }
                 73 => {
                     yych = buf.read();
                     match yych {
@@ -2766,6 +2870,10 @@ let mut t5;
                     }
                 }
                 81 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" A m ");
@@ -2773,7 +2881,8 @@ let mut t5;
 					self.scratch_pad.write_text("am");
 				}
 				break;
-			},
+			}
+                }
                 82 => {
                     yystate = 31;
                     continue 'yyl;
@@ -2796,6 +2905,10 @@ let mut t5;
                     }
                 }
                 84 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" p m ");
@@ -2803,11 +2916,17 @@ let mut t5;
 					self.scratch_pad.write_text("pm");
 				}
 				break;
-			},
+			}
+                }
                 85 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" left square bracket ");
 				break;
-			},
+			}
+                }
                 86 => {
                     yych = buf.read();
                     match yych {
@@ -2863,9 +2982,14 @@ let mut t5;
                     }
                 }
                 89 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" left curly bracket ");
 				break;
-			},
+			}
+                }
                 90 => {
                     yyaccept = 9;
                     yymarker = buf.getcurs();
@@ -2883,9 +3007,14 @@ let mut t5;
                     }
                 }
                 91 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" section ");
 				break;
-			},
+			}
+                }
                 92 => {
                     yych = buf.read();
                     match yych {
@@ -2935,6 +3064,10 @@ let mut t5;
                     }
                 }
                 94 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// a spaced dash is a pause, but minus between numbers: 5 - 3
 				let end = buf.getcurs();
 				let next = buf.read();
@@ -2947,7 +3080,8 @@ let mut t5;
 					self.pause(",");
 				}
 				break;
-			},
+			}
+                }
                 95 => {
                     yych = buf.read();
                     match yych {
@@ -3097,6 +3231,9 @@ let mut t5;
                 103 => {
                     t1 = yyt1;
                     {
+				if measure_only { break; }
+			}
+                    {
 				// the suffix is not checked: "21th" reads twenty first
 				self.digit_prev = false;
 				let end = buf.getcurs();
@@ -3139,9 +3276,14 @@ let mut t5;
                     }
                 }
                 105 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" oh clock ");
 				break;
-			},
+			}
+                }
                 106 => {
                     yych = buf.read();
                     match yych {
@@ -3242,10 +3384,15 @@ let mut t5;
                     }
                 }
                 113 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// an em dash is a pause
 				self.pause(",");
 				break;
-			},
+			}
+                }
                 114 => {
                     yystate = 13;
                     continue 'yyl;
@@ -3421,18 +3568,28 @@ let mut t5;
                     }
                 }
                 125 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// a time of day; its period may also end the sentence
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" A m ");
 				self.end_after_period(buf, true);
 				break;
-			},
+			}
+                }
                 126 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" p m ");
 				self.end_after_period(buf, true);
 				break;
-			},
+			}
+                }
                 127 => {
                     yych = buf.read();
                     match yych {
@@ -3492,9 +3649,14 @@ let mut t5;
                     }
                 }
                 131 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" sections ");
 				break;
-			},
+			}
+                }
                 132 => {
                     yystate = 113;
                     continue 'yyl;
@@ -3563,6 +3725,9 @@ let mut t5;
                     t1 = yyt1;
                     t2 = yyt2;
                     {
+				if measure_only { break; }
+			}
+                    {
 				// a state in capitals after a comma: "Austin, TX" reads texas; lowercase "or", "pa", "al" stay words.
 				// any other two letters: just the comma
 				const STATES: [(&[u8; 2], &str); 51] = [
@@ -3589,10 +3754,12 @@ let mut t5;
 					self.say(st.1);
 					if dot { self.end_after_period(buf, true); }
 				} else {
-					// as the comma rule
+					// as the comma rule, which is one byte long, so a fixed-text rule here goes first (", Jr.")
 					buf.setcurs(t1);
-					buf.advance();
-					self.pause(",");
+					if !self.table_rule(buf, 1) {
+						buf.advance();
+						self.pause(",");
+					}
 				}
 				break;
 			}
@@ -3670,10 +3837,15 @@ let mut t5;
                     }
                 }
                 142 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" A m ");
 				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
 				break;
-			},
+			}
+                }
                 143 => {
                     yych = buf.read();
                     match yych {
@@ -3704,10 +3876,15 @@ let mut t5;
                     }
                 }
                 145 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" p m ");
 				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
 				break;
-			},
+			}
+                }
                 146 => {
                     yych = buf.read();
                     match yych {
@@ -3751,17 +3928,27 @@ let mut t5;
                     }
                 }
                 149 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// "fer" becomes "for" before word-initial vowels
 				buf.recede();
 				self.scratch_pad.write_text(" FOR ");
 				break;
-			},
+			}
+                }
                 150 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				// "thee" before a vowel ("thee apple")
 				buf.recede();
 				self.scratch_pad.write_text(" thee ");
 				break;
-			},
+			}
+                }
                 151 => {
                     yych = buf.read();
                     match yych {
@@ -3985,6 +4172,9 @@ let mut t5;
                 168 => {
                     t1 = yyt1;
                     {
+				if measure_only { break; }
+			}
+                    {
 				self.digit_prev = true;
 				let end = buf.getcurs();
 				buf.setcurs(t1);
@@ -4128,9 +4318,14 @@ let mut t5;
                     }
                 }
                 178 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" anthony c bartman ");
 				break;
-			},
+			}
+                }
                 179 => {
                     yych = buf.read();
                     match yych {
@@ -4188,9 +4383,14 @@ let mut t5;
                     }
                 }
                 183 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" version one point five ");
 				break;
-			},
+			}
+                }
                 184 => {
                     yych = buf.read();
                     match yych {
@@ -4220,9 +4420,14 @@ let mut t5;
                     }
                 }
                 186 => {
+                    {
+				if measure_only { break; }
+			}
+                    {
 				self.scratch_pad.write_text(" november tenth , twenty twenty six ");
 				break;
-			},
+			}
+                }
                 _ => panic!("internal lexer error"),
             }
         }

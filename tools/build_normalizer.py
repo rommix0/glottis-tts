@@ -146,8 +146,9 @@ def main():
     n = write_tables(rules, os.path.join(SRC, '_text_rules.rs'))
     print(f'{len(rules)} rules, {n} patterns')
     re2c = sys.argv[1] if len(sys.argv) > 1 else 're2c'
-    subprocess.run([re2c, '--lang', 'rust', '--no-unsafe', '--no-generation-date', os.path.join(SRC, '_textskeleton.rs'),
-                    '-o', os.path.join(SRC, '_text.rs')], check=True)
+    # -c: the lexer's rules are in a condition, for the check that runs before each rule's action
+    subprocess.run([re2c, '-c', '--lang', 'rust', '--no-unsafe', '--no-generation-date',
+                    os.path.join(SRC, '_textskeleton.rs'), '-o', os.path.join(SRC, '_text.rs')], check=True)
     print('src/_text.rs regenerated')
 
 

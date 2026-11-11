@@ -933,7 +933,7 @@ impl engine {
 		// an emoticon after a space is the emoticon, not "colon"
 		if is_space(at(0)) && matches!(at(1), b':' | b';' | b'=') {
 			buf.advance();
-			let face = Self::table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= Self::lexer_len(buf));
+			let face = Self::table_best(buf).is_some_and(|(n, _)| n >= 2 && n >= self.lexer_len(buf));
 			buf.recede();
 			if face {
 				self.scratch_pad.write_text(" ");
@@ -945,12 +945,9 @@ impl engine {
 	}
 
 	// FIXED-TEXT RULE PART
-	fn match_len(buf: &mut cbuf, pat: &[u8]) -> Option<usize> {
-		// the length of an exact pattern if it matches at the cursor (None if not), without moving the cursor
-		Self::match_by(buf, pat, |c, p| c == p)
-	}
 	fn match_rule(buf: &mut cbuf, pat: &str, any_case: bool) -> Option<usize> {
-		// the same for a fixed-text rule: a space matches any space, an any-case rule ignores case
+		// the length of a fixed-text rule if it matches at the cursor (None if not), without moving the cursor.
+		// a space matches any space, an any-case rule ignores case
 		Self::match_by(buf, pat.as_bytes(), |c, p| {
 			if p == b' ' {
 				is_space(c)
@@ -973,72 +970,6 @@ impl engine {
 		}
 		buf.setcurs(start);
 		if hit { Some(pat.len()) } else { None }
-	}
-	fn lexer_len(buf: &mut cbuf) -> usize {
-		// the longest match at the cursor of the lexer rules a fixed-text rule can lose to:
-		// " for" or " the" before a vowel, a ":00" time, a "__tag__"
-		let start = buf.getcurs();
-		let mut best = 0;
-		for w in [&b" for"[..], &b" the"[..]] {
-			if let Some(n) = Self::match_len(buf, w) {
-				consume(buf, n);
-				let mut k = n;
-				while buf.read() == b' ' { buf.advance(); k += 1; }
-				if k > n && matches!(buf.read(), b'a' | b'e' | b'i' | b'o' | b'u') { best = best.max(k + 1); }
-				buf.setcurs(start);
-			}
-		}
-		if let Some(n) = Self::match_len(buf, b":00") {
-			let mut k = n;
-			consume(buf, n);
-			if buf.read() == b' ' { buf.advance(); k += 1; }
-			let ap = buf.read().to_ascii_lowercase();
-			if ap == b'a' || ap == b'p' {
-				buf.advance();
-				let mut j = k + 1;
-				if buf.read() == b'.' { buf.advance(); j += 1; }
-				if buf.read().to_ascii_lowercase() == b'm' {
-					buf.advance();
-					j += 1;
-					if buf.read() == b'.' { j += 1; }
-					k = j;
-				} else {
-					k = n;
-				}
-			} else {
-				k = n;
-			}
-			best = best.max(k);
-			buf.setcurs(start);
-		}
-		for tag in [&b"__version__"[..], b"__author__", b"__build_date__"] {
-			if let Some(n) = Self::match_len(buf, tag) { best = best.max(n); }
-		}
-		best.max(Self::number_len(buf))
-	}
-	fn number_len(buf: &mut cbuf) -> usize {
-		// a number may start with a digit separator ("_00"), so it can outlast a fixed-text rule for "_"
-		let start = buf.getcurs();
-		let mut n = 0;
-		loop {
-			let save = (buf.getcurs(), n);
-			if matches!(buf.read(), b',' | b'\'' | b'_') { buf.advance(); n += 1; }
-			if !buf.read().is_ascii_digit() { buf.setcurs(save.0); n = save.1; break; }
-			while buf.read().is_ascii_digit() { buf.advance(); n += 1; }
-		}
-		if n > 0 {
-			let c = buf.read();
-			buf.advance();
-			let d = buf.read();
-			if c == b'.' && d.is_ascii_digit() {
-				n += 1;
-				while buf.read().is_ascii_digit() { buf.advance(); n += 1; }
-			} else if matches!((c, d), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h')) {
-				n += 2;
-			}
-		}
-		buf.setcurs(start);
-		n
 	}
 	fn end_after_period(&mut self, buf: &mut cbuf, before_capital: bool) {
 		// let an abbreviation's period also end the sentence when only spaces follow,
@@ -1116,9 +1047,9 @@ impl engine {
 		}
 		best
 	}
-	fn table_rule(&mut self, buf: &mut cbuf) -> bool {
-		// write the replacement of the longest fixed-text rule at the cursor, unless a lexer rule matches longer.
-		// the lexer's " for"/" the" rules come first, so they also win a tie
+	fn table_rule(&mut self, buf: &mut cbuf, lexer_len: usize) -> bool {
+		// write the replacement of the longest fixed-text rule at the cursor, unless the lexer's own match there
+		// (lexer_len long) is longer. a lexer rule starting with a space (" for" before a vowel) also wins a tie
 		let first = buf.read();
 		let Some((n, r)) = Self::table_best(buf) else { return false };
 		// a rule that starts (ends) with a letter starts (ends) a word: no "kg" inside "background" or "kgb"
@@ -1132,8 +1063,7 @@ impl engine {
 			for _ in 0..n { buf.recede(); }
 			if next.is_ascii_alphabetic() { return false; }
 		}
-		let lex = Self::lexer_len(buf);
-		if lex > n || (lex == n && matches!(first, b' ')) { return false; }
+		if lexer_len > n || (lexer_len == n && first == b' ') { return false; }
 		consume(buf, n);
 		// "bit{s} per second": the part in braces is added only after a plural number
 		let (text, plural, rest) = match replacement.split_once('{') {
@@ -1160,12 +1090,25 @@ impl engine {
 
 	// TEXT-HOMOGRAPH NORMALIZER PART
 	pub fn lex(&mut self, buf: &mut cbuf) -> bool {
-		let mut text_done: bool  = false;
-		let mut yymarker: usize = 0;
-
 		if !self.folded { self.folded = true; Self::fold(buf); }
 		if self.context_rule(buf) { return false; }
-		if self.table_rule(buf) { return false; }
+		let lexer_len = self.lexer_len(buf);
+		if self.table_rule(buf, lexer_len) { return false; }
+		self.lexer(buf, false)
+	}
+	fn lexer_len(&mut self, buf: &mut cbuf) -> usize {
+		// the length of the lexer rule that matches at the cursor, without running it or moving the cursor
+		let start = buf.getcurs();
+		self.lexer(buf, true);
+		let end = buf.getcurs();
+		buf.setcurs(start);
+		end - start
+	}
+	fn lexer(&mut self, buf: &mut cbuf, measure_only: bool) -> bool {
+		// match one lexer rule at the cursor and run it; measure_only stops at the end of the match instead.
+		// the rules are one generated matcher, so lexing and measuring share it
+		let mut text_done: bool  = false;
+		let mut yymarker: usize = 0;
 
 		// Final tag variables available in semantic action.
 		/*!svars:re2c format = '#[allow(unused_mut)]\nlet mut @@;\n'; */
@@ -1190,6 +1133,9 @@ impl engine {
 			re2c:yyfill:enable  = 0;
 			re2c:indent:top     = 1;
 			re2c:tags           = 1;
+			/* every rule is in one condition, text, only so the check below runs before each action;
+			   with one condition the lexer always starts in it, at state 0 */
+			re2c:YYGETCOND      = "0";
 
 			/* NORMAL GRAMMAR */
 			space       = " " | "\x09" | "\x0A";
@@ -1220,15 +1166,20 @@ impl engine {
 			area_code   = "("? digit{3} area_sep;
 			phone_num   = area_code? digit{3} pnum_sep digit{4};
 
+			/* runs before the action of every rule in text: measuring stops at the end of the match */
+			<!text> {
+				if measure_only { break; }
+			}
+
 			/* homographs first: an uppercase word marks the other reading */
 
-			" for" " "+ vowel {
+			<text> " for" " "+ vowel {
 				// "fer" becomes "for" before word-initial vowels
 				buf.recede();
 				self.scratch_pad.write_text(" FOR ");
 				break;
 			}
-			" the" " "+ vowel {
+			<text> " the" " "+ vowel {
 				// "thee" before a vowel ("thee apple")
 				buf.recede();
 				self.scratch_pad.write_text(" thee ");
@@ -1239,7 +1190,7 @@ impl engine {
 			/* STATE ABBREVIATIONS */
 			/*---------------------*/
 
-			@t1 comma [ ]+ @t2 letter letter period? space {
+			<text> @t1 comma [ ]+ @t2 letter letter period? space {
 				// a state in capitals after a comma: "Austin, TX" reads texas; lowercase "or", "pa", "al" stay words.
 				// any other two letters: just the comma
 				const STATES: [(&[u8; 2], &str); 51] = [
@@ -1266,21 +1217,23 @@ impl engine {
 					self.say(st.1);
 					if dot { self.end_after_period(buf, true); }
 				} else {
-					// as the comma rule
+					// as the comma rule, which is one byte long, so a fixed-text rule here goes first (", Jr.")
 					buf.setcurs(t1);
-					buf.advance();
-					self.pause(",");
+					if !self.table_rule(buf, 1) {
+						buf.advance();
+						self.pause(",");
+					}
 				}
 				break;
 			}
 
 			/* section signs */
 
-			"\xA7"{2,} {
+			<text> "\xA7"{2,} {
 				self.scratch_pad.write_text(" sections ");
 				break;
 			}
-			"\xA7" {
+			<text> "\xA7" {
 				self.scratch_pad.write_text(" section ");
 				break;
 			}
@@ -1289,19 +1242,19 @@ impl engine {
 			/* SOME PUNCTUATIONS RULES */
 			/*-------------------------*/
 
-			space exc_point {
+			<text> space exc_point {
 				self.scratch_pad.write_text(" exclamation point ");
 				break;
 			}
-			"(" space {
+			<text> "(" space {
 				self.scratch_pad.write_text(" left parenthesis ");
 				break;
 			}
-			space ")" {
+			<text> space ")" {
 				self.scratch_pad.write_text(" right parenthesis ");
 				break;
 			}
-			"*" {
+			<text> "*" {
 				// between two numbers it is times: 5 * 3
 				let next = Self::ahead(buf, 8).into_iter().find(|c| !is_space(*c)).unwrap_or(0);
 				buf.recede();
@@ -1314,45 +1267,45 @@ impl engine {
 				});
 				break;
 			}
-			space comma {
+			<text> space comma {
 				self.scratch_pad.write_text(" comma ");
 				break;
 			}
-			space period {
+			<text> space period {
 				self.scratch_pad.write_text(" period ");
 				break;
 			}
-			space ":" {
+			<text> space ":" {
 				self.scratch_pad.write_text(" colon ");
 				break;
 			}
-			space ";" {
+			<text> space ";" {
 				self.scratch_pad.write_text(" semicolon ");
 				break;
 			}
-			":" space | ";" space | period space {
+			<text> ":" space | ";" space | period space {
 				self.pause(".");
 				// leave the space, so an abbreviation starting the next sentence still has its word boundary
 				buf.recede();
 				break;
 			}
-			space ques_mark {
+			<text> space ques_mark {
 				self.scratch_pad.write_text(" question mark ");
 				break;
 			}
-			"[" space {
+			<text> "[" space {
 				self.scratch_pad.write_text(" left square bracket ");
 				break;
 			}
-			space dquote {
+			<text> space dquote {
 				self.scratch_pad.write_text(" double quote ");
 				break;
 			}
-			space squote {
+			<text> space squote {
 				self.scratch_pad.write_text(" single quote ");
 				break;
 			}
-			squote {
+			<text> squote {
 				// an apostrophe, or the closing quote of a dropped opening one ('single ones')
 				if self.open_quote && !buf.read().is_ascii_alphabetic() {
 					self.open_quote = false;
@@ -1362,49 +1315,49 @@ impl engine {
 				}
 				break;
 			}
-			space "]" {
+			<text> space "]" {
 				self.scratch_pad.write_text(" right square bracket ");
 				break;
 			}
-			"^" {
+			<text> "^" {
 				self.scratch_pad.write_text(" caret ");
 				break;
 			}
-			"{" space {
+			<text> "{" space {
 				self.scratch_pad.write_text(" left curly bracket ");
 				break;
 			}
-			space "}" {
+			<text> space "}" {
 				self.scratch_pad.write_text(" right curly bracket ");
 				break;
 			}
-			"|" {
+			<text> "|" {
 				self.scratch_pad.write_text(" vertical bar ");
 				break;
 			}
-			exc_point {
+			<text> exc_point {
 				self.pause("!");
 				break;
 			}
-			ques_mark {
+			<text> ques_mark {
 				self.pause("?");
 				break;
 			}
-			':00' " "? 'a' period? 'm' period? {
+			<text> ':00' " "? 'a' period? 'm' period? {
 				self.scratch_pad.write_text(" A m ");
 				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
 				break;
 			}
-			':00' " "? 'p' period? 'm' period? {
+			<text> ':00' " "? 'p' period? 'm' period? {
 				self.scratch_pad.write_text(" p m ");
 				if Self::prev_byte(buf) == b'.' { self.end_after_period(buf, true); }
 				break;
 			}
-			':00' {
+			<text> ':00' {
 				self.scratch_pad.write_text(" oh clock ");
 				break;
 			}
-			'am' {
+			<text> 'am' {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" A m ");
@@ -1413,7 +1366,7 @@ impl engine {
 				}
 				break;
 			}
-			'pm' {
+			<text> 'pm' {
 				if self.digit_prev {
 					self.digit_prev = false;
 					self.scratch_pad.write_text(" p m ");
@@ -1422,21 +1375,21 @@ impl engine {
 				}
 				break;
 			}
-			'a.m.' {
+			<text> 'a.m.' {
 				// a time of day; its period may also end the sentence
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" A m ");
 				self.end_after_period(buf, true);
 				break;
 			}
-			'p.m.' {
+			<text> 'p.m.' {
 				self.digit_prev = false;
 				self.scratch_pad.write_text(" p m ");
 				self.end_after_period(buf, true);
 				break;
 			}
 
-			space "-" space {
+			<text> space "-" space {
 				// a spaced dash is a pause, but minus between numbers: 5 - 3
 				let end = buf.getcurs();
 				let next = buf.read();
@@ -1450,13 +1403,13 @@ impl engine {
 				}
 				break;
 			}
-			space? "\u2014" space? {
+			<text> space? "\u2014" space? {
 				// an em dash is a pause
 				self.pause(",");
 				break;
 			}
 
-			@t1 dquote {
+			<text> @t1 dquote {
 				// a quote next to a comma adds no pause of its own: "Quoted," she said
 				let end = buf.getcurs();
 				let next = buf.read();
@@ -1470,7 +1423,7 @@ impl engine {
 				}
 				break;
 			}
-			comma | space "(" | ")" space {
+			<text> comma | space "(" | ")" space {
 				self.pause(",");
 				break;
 			}
@@ -1479,15 +1432,15 @@ impl engine {
 			/* FUN STUFF GOES HERE */
 			/*---------------------*/
 
-			fun_tag "version" fun_tag {
+			<text> fun_tag "version" fun_tag {
 				self.scratch_pad.write_text(" version one point five ");
 				break;
 			}
-			fun_tag "author" fun_tag {
+			<text> fun_tag "author" fun_tag {
 				self.scratch_pad.write_text(" anthony c bartman ");
 				break;
 			}
-			fun_tag "build_date" fun_tag {
+			<text> fun_tag "build_date" fun_tag {
 				self.scratch_pad.write_text(" november tenth , twenty twenty six ");
 				break;
 			}
@@ -1497,7 +1450,7 @@ impl engine {
 			/*-----------------*/
 
 			/* DEAL WITH UPPERCASE LETTERS FIRST */
-			[A-Z] period? {
+			<text> [A-Z] period? {
 				// a capital letter alone is spelled ("A" stays the article's capital)
 				let dot = Self::prev_byte(buf) == b'.';
 				if dot { buf.recede(); }
@@ -1510,7 +1463,7 @@ impl engine {
 			}
 
 			/* NORMAL ROUTINE FOR LETTERS */
-			letter {
+			<text> letter {
 				self.is_plural  = false;
 				self.digit_prev = false;
 				self.scratch_pad.write(Self::prev_byte(buf));
@@ -1518,7 +1471,7 @@ impl engine {
 			}
 
 			/* ROUTINE FOR U.S. PHONE NUMBERS */
-			@t1 phone_num {
+			<text> @t1 phone_num {
 				self.digit_prev = true;
 				let end = buf.getcurs();
 				buf.setcurs(t1);
@@ -1536,7 +1489,7 @@ impl engine {
 			}
 
 			/* ROUTINE FOR ORDINAL NUMBERS */
-			@t1 whole_num ordinal_tag {
+			<text> @t1 whole_num ordinal_tag {
 				// the suffix is not checked: "21th" reads twenty first
 				self.digit_prev = false;
 				let end = buf.getcurs();
@@ -1551,7 +1504,7 @@ impl engine {
 			}
 
 			/* ROUTINES FOR PROCESSING MOST NUMBERS */
-			@t1 plusminus? @t2 numspecial? @t3 whole_num @t4 decimal? @t5 {
+			<text> @t1 plusminus? @t2 numspecial? @t3 whole_num @t4 decimal? @t5 {
 				let end = buf.getcurs();
 				// a bare number starting with a zero or past quadrillions: digit by digit
 				buf.setcurs(t3);
@@ -1665,28 +1618,28 @@ impl engine {
 			}
 
 			/* LEFT OVER DOLLAR SIGN RULE */
-			"$" {
+			<text> "$" {
 				self.scratch_pad.write_text(" dollar sign ");
 				break;
 			}
 			/* LEFT OVER HASH RULE */
-			"#" {
+			<text> "#" {
 				self.scratch_pad.write_text(" hash tag ");
 				break;
 			}
 			/* LEFT OVER PLUS RULE */
-			"+" {
+			<text> "+" {
 				self.scratch_pad.write_text(" plus ");
 				break;
 			}
 			/* COMPOUND HYPHEN RULE */
-			"-" letter {
+			<text> "-" letter {
 				buf.recede();
 				self.scratch_pad.write_text(" ");
 				break;
 			}
 			/* LEFT OVER HYPHEN RULE */
-			"-" {
+			<text> "-" {
 				if self.digit_prev {
 					self.scratch_pad.write_text(" , ");
 				} else {
@@ -1695,24 +1648,24 @@ impl engine {
 				break;
 			}
 			/* LEFT OVER PERIOD RULE */
-			"." letter {
+			<text> "." letter {
 				// a dot inside a name: "example.com"
 				buf.recede();
 				self.scratch_pad.write_text(" dot ");
 				break;
 			}
-			"." {
+			<text> "." {
 				self.scratch_pad.write_text(" . ");
 				break;
 			}
 			/* LEFT OVER RULE OVERALL */
-			* {
+			<text> * {
 				// output whitespace when no match is made including whitespace
 				self.scratch_pad.write_text(" ");
 				break;
 			}
 			/* END OF TEXT */
-			[\x00] {
+			<text> [\x00] {
 				// end of text: tell the caller the stream is done
 				text_done = true;
 				break;

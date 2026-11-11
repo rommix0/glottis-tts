@@ -319,7 +319,8 @@ fn feats(x: u8) -> u32 {
 		Z | ZH                            => VOICED | ALVEOLAR | SIBILANT | FRICATIVE,
 		CH                                => ALVEOLAR | STOP | SIBILANT | AFFRICATE,
 		JH                                => VOICED | ALVEOLAR | STOP | SIBILANT | AFFRICATE,
-		L | LX                            => VOICED | ALVEOLAR | LATERAL,
+		L                                 => VOICED | ALVEOLAR | LATERAL,
+		LX                                => VOICED | LATERAL,				// dark l: the tongue is back
 		R | RX                            => VOICED | ALVEOLAR | RHOTIC,
 		Y                                 => VOICED | GLIDE,
 		W                                 => VOICED | BILABIAL | GLIDE,
@@ -907,8 +908,7 @@ impl engine {
 			if self.pft_l1 & ALVEOLAR != 0 {
 				self.F2_A_src += 250.0 * factor;
 			}
-			// not into a dark l, which pulls F2 down, or the vowel goes up and back down ("full")
-			if self.pft_r1 & ALVEOLAR != 0 && self.phn_r1 != LX {
+			if self.pft_r1 & ALVEOLAR != 0 {
 				self.F2_B_src += 250.0 * factor;
 			}
 		}
