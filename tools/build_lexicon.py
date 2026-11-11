@@ -20,7 +20,8 @@ The dictionary holds:
   - tools/lexicon_manual.txt, which overrides or adds entries;
   - the function words in tools/function_words.txt, flagged, with their CMUdict pronunciation. A one-syllable
     function word is given without stress and with its vowel reduced (ah -> ax, ih -> ix, er -> axr), as it is
-    said unaccented in running speech; longer ones keep CMUdict's stress.
+    said unaccented in running speech; longer ones keep CMUdict's stress. A function word in
+    tools/lexicon_manual.txt takes that pronunciation instead and stays flagged ("but" keeps its vowel).
 
 --heldout trains on 90 % of ALIGNED and reports how many of the other words decode() gets exactly right; nothing
 is written.
@@ -382,7 +383,8 @@ def main():
     fw_pron = {}
     for w in fwords:
         if w in cmu:
-            fw_pron[tuple(w)] = weak_form(cmu[w])
+            # a hand entry gives a function word its own pronunciation (unreduced: "but")
+            fw_pron[tuple(w)] = over.get(tuple(w)) or weak_form(cmu[w])
         else:
             print(f'not in CMUdict, left unflagged: {w}', file=sys.stderr)
 
@@ -409,7 +411,7 @@ def main():
             entries.append((g, fw_pron[g], True))
         else:
             entries.append((g, over.get(g, p), False))
-    entries += [(g, p, False) for g, p in manual if g not in listed and ''.join(g) == ''.join(g).lower()]
+    entries += [(g, p, False) for g, p in manual if g not in listed and g not in fw_pron and ''.join(g) == ''.join(g).lower()]
     entries += [(g, p, True) for g, p in fw_pron.items() if g not in listed]
     print('dictionary %d bytes, %d entries' % write_dict(entries, os.path.join(SRC, '_dict.rs')))
 
