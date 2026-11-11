@@ -37,6 +37,7 @@ const WORD_INITIAL_CONSONANT: f32 = 1.1;
 const TENSE_VOWEL:            f32 = 1.4;		// long (tense) vowels and diphthongs: aa ae ao aw ay er ey iy ow oy uw
 const SYLLABIC_L_SCHWA:       f32 = 0.5;		// the schwa of a syllabic (dark) l ("example") is mostly the l
 const GLIDE_THROUGH:          f32 = 0.3;		// a w or y a vowel glides through into the next one ("follower")
+const BEFORE_DENTAL:          f32 = 0.5;		// an s, z, f or v runs into a th or dh after it ("sixths", "twelfth")
 
 pub fn phone_dur(p: u8) -> PhoneDur {
 	match p {
@@ -142,6 +143,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 			let cons = |j: usize| same_word(j) && !is_vowel(utt.segs[j].phone);
 			if cons(i + 1) || (i > 0 && cons(i - 1)) { apply("cluster", CLUSTER_CONSONANT); }
 			if i == word.segs.start { apply("word-initial", WORD_INITIAL_CONSONANT); }
+			if matches!(p, 34 | 43 | 16 | 40) && same_word(i + 1) && matches!(utt.segs[i + 1].phone, 37 | 12) { apply("before-dental", BEFORE_DENTAL); }
 			if utt.segs[i].glide { apply("glide-through", GLIDE_THROUGH); }
 		}
 
@@ -189,6 +191,19 @@ mod tests {
 		assert!(b.segs[1].dur_ms < a.segs[1].dur_ms);
 		// pauses shrink by the rate too
 		assert_eq!(pause_after(Boundary::Comma, 2.0), COMMA_PAUSE_MS / (2.0 * TEMPO));
+	}
+
+	#[test]
+	fn s_and_f_before_th_are_short() {
+		// s 'ih k s th s .  against  s 'ih k s t s ., then the same with f for the s
+		for c in [72, 46] {
+			let mut th = build(&[CW, 72, 25, 56, c, 77, 72, PERIOD]);
+			let mut t = build(&[CW, 72, 25, 56, c, 76, 72, PERIOD]);
+			assign(&mut th, 1.0);
+			assign(&mut t, 1.0);
+			let ratio = stretch(&th, 3) / stretch(&t, 3);
+			assert!((ratio - BEFORE_DENTAL).abs() < 0.01, "{}: ratio {}", c, ratio);
+		}
 	}
 
 	#[test]
