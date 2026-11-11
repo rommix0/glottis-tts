@@ -202,6 +202,12 @@ fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
 // k and g next to a high front vowel: F2 at least this far above the vowel's
 const VELAR_F2_ABOVE: f32 = 150.0;
+// a vowel into th: (slope, offset) of F2 = offset + slope * the vowel's F2.
+// flatter than th's locus(), which still sets the way out of th
+const TH_ENTRY: (f32, f32) = (0.7, 570.0);
+// th next to a back vowel (F2 under TH_BACK_F2): F3 at least TH_F3_ABOVE over the vowel's
+const TH_BACK_F2: f32 = 1500.0;
+const TH_F3_ABOVE: f32 = 250.0;
 // ng's F3 comes down to just above its F2 (the velar pinch that sets it apart from n)
 const NG_PINCH_HZ: f32 = 300.0;
 
@@ -969,7 +975,7 @@ impl engine {
 		if matches!(self.phn_r1, AX | IX | PAU) { return target; }
 		self.reduced(target, self.pdr_r1)
 	}
-	fn loci(&mut self, prev_f2: f32) {
+	fn loci(&mut self, prev_f2: f32, prev_f3: f32) {
 		let prev_vowel = self.pft_l1 & VOWEL != 0;
 		let next_vowel = self.pft_r1 & VOWEL != 0;
 		if self.phn_c == HH {
@@ -1002,6 +1008,13 @@ impl engine {
 		// a side with no vowel holds the other side's value
 		if let Some(v) = left.or(right) { (self.F2_A_src, self.F3_A_src) = edge(v, self.F3_A_src); }
 		if let Some(v) = right.or(left) { (self.F2_B_src, self.F3_B_src) = edge(v, self.F3_B_src); }
+		if phn == TH {
+			// into th from a vowel the tongue is already near the teeth: F2 hardly moves after a front vowel
+			if let Some(v) = left { self.F2_A_src = TH_ENTRY.1 + TH_ENTRY.0 * v; }
+			// the tongue tip up at the teeth lifts F3 over a back vowel's, on either side
+			if prev_vowel && prev_f2 < TH_BACK_F2 { self.F3_A_src = self.F3_A_src.max(prev_f3 + TH_F3_ABOVE); }
+			if next_vowel && next_f2 < TH_BACK_F2 { self.F3_B_src = self.F3_B_src.max(next_f3 + TH_F3_ABOVE); }
+		}
 		// ng's F3 pinches to just above its F2
 		if phn == NG { (self.F3_A_src, self.F3_B_src) = (self.F2_A_src + NG_PINCH_HZ, self.F2_B_src + NG_PINCH_HZ); }
 	}
@@ -1354,7 +1367,7 @@ impl engine {
 		self.reduce();
 
 		// consonants take their formants at each edge from the neighbouring vowel
-		self.loci(prev_f[1]);
+		self.loci(prev_f[1], prev_f[2]);
 
 		// the phrase-end release is the last phone's voice dying away, so it keeps that voice's Rd
 		if matches!(self.phn_c, AXP | IXP) {
@@ -2500,6 +2513,25 @@ mod tests {
 		let (th, f) = (fall(37), fall(16));
 		assert!(th > 400.0, "er's F3 starts only {} Hz over its middle after th", th);
 		assert!(f.abs() < 150.0, "er's F3 starts {} Hz off its middle after f", f);
+	}
+
+	#[test]
+	fn th_keeps_a_front_vowels_f2_and_lifts_a_back_vowels_f3() {
+		// "path": F2 stays put into th (a fall would sound like f); "cloth of": F3 rises on both sides
+		let th = |v: u8| {
+			let (mut vowel, mut th) = (None, None);
+			drive(&[(PAU, 50, true), (v, 150, true), (TH, 100, true), (v, 150, true), (AXP, 100, true), (SIL, 50, true)],
+				|e, _| {
+					if e.phn_c == v && vowel.is_none() { vowel = Some((e.F2_B_src, e.F3_B_src)); }
+					if e.phn_c == TH && e.counter == 0 { th = Some((e.F2_A_src, e.F3_A_src, e.F3_B_src)); }
+				});
+			(vowel.unwrap(), th.unwrap())
+		};
+		let ((ae_f2, _), (f2, _, _)) = th(AE);
+		assert!((f2 - ae_f2).abs() < 40.0, "th's F2 {} Hz is off ae's {} Hz", f2, ae_f2);
+		let ((_, ao_f3), (_, in_f3, out_f3)) = th(AO);
+		assert!(in_f3 >= ao_f3 + TH_F3_ABOVE && out_f3 >= ao_f3 + TH_F3_ABOVE,
+			"th's F3 {} / {} Hz is not {} Hz over ao's {} Hz", in_f3, out_f3, TH_F3_ABOVE, ao_f3);
 	}
 
 	#[test]
