@@ -698,6 +698,20 @@ mod tests {
 	}
 
 	#[test]
+	fn homographs_from_the_next_word() {
+		let t = says("I will read the book you read yesterday. Lead the team to the lead mine. Record a new record. They live in a house \
+			with live music. A tear fell as I saw the tear in the paper. Wind the clock in the wind. Close the door; we are close. Bow to the \
+			crowd, then tie a bow. The desert is dry; do not desert me. Wait a minute for the minute details. I object to that object. \
+			Present the present. Content with the content.");
+		assert_eq!(t, "i will read the book you READ yesterday . lead the team to the LEAD mine . RECORD a new record . they live in a \
+			house with LIVE music . a TEAR fell as i saw the tear in the paper . WIND the clock in the wind . close the door . we are CLOSE . \
+			BOW to the crowd , then tie a bow . the desert is dry . do not DESERT me . wait a minute for the MINUTE details . i object to \
+			that OBJECT . present the PRESENT . CONTENT with the content .");
+		says_all(&[("I have read it.", "have READ it"), ("I want to read it last week", "to read it"), ("Tears ran down.", "TEARS ran"),
+			("Tear it up.", "tear it up"), ("Very minute.", "very MINUTE"), ("In contrast the results", "in contrast the")]);
+	}
+
+	#[test]
 	fn a_run_of_marks_is_one_mark() {
 		// a question if any of them asks, else an exclamation; one mark, so one sentence
 		for (t, want) in [("You did that?!", "you did that ?"), ("You did that!?", "you did that ?"), ("No way!!!", "no way !"),

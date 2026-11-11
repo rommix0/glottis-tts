@@ -299,6 +299,11 @@ impl engine {
 		const BEFORE_NOUN: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our",
 			"their", "no", "every", "each", "any", "some", "another", "of", "new", "old", "first", "last", "final", "big", "great",
 			"good", "best", "is", "are", "was", "were", "be", "been", "very", "so", "too", "quite"];
+		// these come before a noun, so a word of STRESS_PAIRS (or wind, bow) right before one is a verb ("Record a song")
+		const DETERMINERS: &[&str] = &["a", "an", "the", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our",
+			"their", "some", "every", "each"];
+		// "tear" before these is the rip ("a tear in the paper", "tear it up")
+		const RIP_NEXT: &[&str] = &["in", "on", "up", "down", "apart", "off", "out", "through", "into", "it", "them"];
 		// an adjective follows these ("it is close", "she was content")
 		const BEFORE_ADJ: &[&str] = &["is", "are", "was", "were", "be", "been", "am", "so", "very", "too", "quite", "really",
 			"fairly", "pretty", "stay", "stayed", "remain", "feel"];
@@ -306,6 +311,16 @@ impl engine {
 		if a.is_empty() { return false; }
 		let at = |i: usize| a.get(i).copied().unwrap_or(0);
 		let prev = Self::prev_byte(buf);
+		// the word after a[from..] past spaces (none if no space comes first), and whether it is a plural noun
+		let word_after = |from: usize| {
+			let mut k = from;
+			while is_space(at(k)) { k += 1; }
+			let mut w = String::new();
+			if k > from { while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
+			(w, k)
+		};
+		let plural = |w: &str| PLURAL.contains(&w) || (w.len() >= 3 && w.ends_with('s')
+			&& !w.ends_with("ss") && !w.ends_with("us") && !w.ends_with("is") && !NOT_PLURAL.contains(&w));
 
 		// an opening double quote is not read out
 		if is_space(at(0)) {
@@ -597,16 +612,6 @@ impl engine {
 			let ordinal = matches!((at(n1), at(n1 + 1)), (b's', b't') | (b'n', b'd') | (b'r', b'd') | (b't', b'h'));
 			let before = if is_space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
 			let cue = YEAR_AFTER.contains(&before.as_str());
-			// the word after a[from..] past spaces (none if no space comes first), and whether it is a plural noun
-			let word_after = |from: usize| {
-				let mut k = from;
-				while is_space(at(k)) { k += 1; }
-				let mut w = String::new();
-				if k > from { while at(k).is_ascii_alphabetic() { w.push(at(k).to_ascii_lowercase() as char); k += 1; } }
-				(w, k)
-			};
-			let plural = |w: &str| PLURAL.contains(&w) || (w.len() >= 3 && w.ends_with('s')
-				&& !w.ends_with("ss") && !w.ends_with("us") && !w.ends_with("is") && !NOT_PLURAL.contains(&w));
 			let (w, k) = word_after(n1);
 			let counted = plural(&w);
 			// "X to Y": a count when Y is smaller or counts something ("2015 to 1987", "1300 to 1400 visitors")
@@ -698,14 +703,42 @@ impl engine {
 			let plain = a[1..n].iter().all(u8::is_ascii_lowercase) && !matches!(at(n), b'\'' | b'-');
 			let before = if is_space(prev) { Self::prev_word(buf).to_ascii_lowercase() } else { String::new() };
 			let b = before.as_str();
+			// the next two words, when only spaces come between
+			let (next, k) = word_after(n);
+			let next2 = if next.is_empty() || at(k) == b'\'' { String::new() } else { word_after(k).0 };
+			let det_next = DETERMINERS.contains(&next.as_str());
 			let pair = STRESS_PAIRS.iter().find(|p| p.0 == w);
+			// these cues read only the words either side, so they miss a verb or noun further off ("the wind
+			// that blew", "bow of the ship", "every minute counts")
 			let cap = if !plain { None } else if let Some(&(_, cap_verb, default_verb)) = pair {
 				let verb = if w.ends_with('s') { BEFORE_VERB_S.contains(&b) } else { BEFORE_VERB.contains(&b) };
 				let noun = !verb && BEFORE_NOUN.contains(&b);
+				// no cue before but a determiner after: a verb ("Record a song"), not after a preposition ("in contrast the")
+				let verb = verb || (!noun && det_next && !matches!(b, "in" | "on" | "at" | "by" | "for" | "with" | "from" | "into" | "without" | "under"));
 				Some(if verb { cap_verb } else if noun { !cap_verb } else { cap_verb == default_verb })
-			} else if w == "close" || w == "content" {
-				Some(BEFORE_ADJ.contains(&b))
-			} else { None };
+			} else {
+				match w.as_str() {
+					"close" => Some(BEFORE_ADJ.contains(&b)),
+					"content" => Some(BEFORE_ADJ.contains(&b) || next == "with"),
+					// past tense after have/was..., or before a time gone by ("you read yesterday", "read it last
+					// week"); not after "to" or a modal ("will read")
+					"read" => {
+						let modal = BEFORE_VERB.contains(&b) && !matches!(b, "i" | "you" | "we" | "they" | "who");
+						let past = ["yesterday", "last", "earlier", "ago"];
+						let gone = past.contains(&next.as_str()) || (!det_next && past.contains(&next2.as_str()));
+						Some(matches!(b, "have" | "has" | "had" | "having" | "was" | "were" | "been" | "being" | "ve") || (!modal && gone))
+					},
+					"wind" => Some(BEFORE_VERB.contains(&b) || (!BEFORE_NOUN.contains(&b) && (det_next || next == "up" || next == "down"))),
+					"bow" => Some(BEFORE_VERB.contains(&b) || det_next || matches!(next.as_str(), "to" | "down" | "out" | "before")),
+					// crying after a determiner ("a tear fell"), the rip before a particle ("a tear in the paper")
+					"tear" => Some(DETERMINERS.contains(&b) && !RIP_NEXT.contains(&next.as_str())),
+					"tears" => Some(!BEFORE_VERB_S.contains(&b) && !det_next && !RIP_NEXT.contains(&next.as_str())),
+					// tiny before a plural noun ("the minute details") or after very/so/too
+					"minute" => Some(matches!(b, "very" | "so" | "too") || (plural(&next) && next != "minutes"
+						&& !matches!(b, "a" | "an" | "one" | "every" | "each" | "per" | "last" | "next" | "this" | "that"))),
+					_ => None,
+				}
+			};
 			if cap == Some(true) {
 				// a word ends what a number before it started, as any letter does
 				self.digit_prev = false;
