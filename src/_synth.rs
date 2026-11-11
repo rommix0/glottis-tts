@@ -216,6 +216,8 @@ const FV_EXIT: (f32, f32) = (0.75, 300.0);
 const FV_F3_BELOW: f32 = 150.0;
 // s and z: F3 this far over the neighbouring vowel's (the table's F3 sits far above any vowel)
 const SZ_F3_ABOVE: f32 = 100.0;
+// dh next to a vowel: F3 this far over a back vowel's, under a front one's
+const DH_F3_SHIFT: f32 = 100.0;
 // ng's F3 comes down to just above its F2 (the velar pinch that sets it apart from n)
 const NG_PINCH_HZ: f32 = 300.0;
 
@@ -225,8 +227,9 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 		B | P | M               => Some((0.9, 0.0, 0.0)),					// bilabial
 		F | V                   => Some((0.8, 300.0, 0.0)),					// labiodental
 		TH                      => Some((0.4, 900.0, 0.0)),					// dental
-		DH                      => Some((0.5, 900.0, 0.0)),
-		D | T | N | S | Z | DX  => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),	// alveolar
+		DH                      => Some((0.5, 700.0, 0.0)),					// lower: pulls F2 down by front vowels
+		D | T | N | S | DX      => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),	// alveolar
+		Z                       => Some((0.5, 750.0, 0.0)),					// lower and flatter than s
 		SH | ZH | CH | JH       => Some((0.3, 1500.0, 0.0)),				// postalveolar
 		G | K                   => Some((0.5, 1100.0, 0.0)),				// velar
 		NG                      => Some((0.9, 400.0, 0.0)),					// near the vowel's own F2
@@ -1031,6 +1034,12 @@ impl engine {
 				if let Some(side) = left.or(right) { self.F3_A_src = f3(side); }
 				if let Some(side) = right.or(left) { self.F3_B_src = f3(side); }
 				if let Some((v, _)) = right { self.F2_B_src = FV_EXIT.1 + FV_EXIT.0 * v; }
+			}
+			DH => {
+				// dh's F3 stays near the vowel's: a little over a back one, under a front one
+				let f3 = |side: (f32, f32)| if back(&side) { side.1 + DH_F3_SHIFT } else { side.1 - DH_F3_SHIFT };
+				if let Some(side) = left.or(right) { self.F3_A_src = f3(side); }
+				if let Some(side) = right.or(left) { self.F3_B_src = f3(side); }
 			}
 			S | Z => {
 				// s and z keep F3 just over the vowel's on each side
@@ -2564,11 +2573,29 @@ mod tests {
 
 	#[test]
 	fn th_starts_a_front_vowel_low() {
-		// "theme": the vowel rises out of th, like the speaker's; dh keeps its own locus
+		// "theme": the vowel rises out of th, like the speaker's
 		let (_, (_, _, th_f2, _), (iy_f2, _)) = edges(IY, TH);
 		assert!(iy_f2 - th_f2 > 450.0, "th's F2 {} Hz is only {} Hz under iy's", th_f2, iy_f2 - th_f2);
-		let (_, (_, _, dh_f2, _), _) = edges(IY, DH);
-		assert!(dh_f2 > th_f2 + 100.0, "dh's F2 {} Hz moved with th's {} Hz", dh_f2, th_f2);
+	}
+
+	#[test]
+	fn z_and_dh_pull_f2_down_by_a_front_vowel_and_little_up_by_a_back_one() {
+		// "ease", "breathe": F2 falls into them after iy; "was", "father": it hardly rises after a back vowel
+		for (c, below) in [(Z, 300.0), (DH, 400.0)] {
+			let ((iy_f2, _), (f2, _, _, _), _) = edges(IY, c);
+			assert!(iy_f2 - f2 > below, "{}: F2 {} Hz is only {} Hz under iy's", c, f2, iy_f2 - f2);
+			let ((ao_f2, _), (f2, _, _, _), _) = edges(AO, c);
+			assert!(f2 - ao_f2 < 400.0, "{}: F2 {} Hz is {} Hz over ao's", c, f2, f2 - ao_f2);
+		}
+	}
+
+	#[test]
+	fn dh_keeps_f3_near_the_vowels() {
+		// the table's F3 (2764 Hz) is over most vowels': a little under a front one, a little over a back one
+		let ((_, iy_f3), (_, f3, _, _), _) = edges(IY, DH);
+		assert!((f3 - (iy_f3 - DH_F3_SHIFT)).abs() < 1.0, "dh's F3 {} Hz after iy's {} Hz", f3, iy_f3);
+		let ((_, ao_f3), (_, f3, _, _), _) = edges(AO, DH);
+		assert!((f3 - (ao_f3 + DH_F3_SHIFT)).abs() < 1.0, "dh's F3 {} Hz after ao's {} Hz", f3, ao_f3);
 	}
 
 	#[test]
