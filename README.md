@@ -14,7 +14,7 @@ text -> normalizer -> dictionary / suffix matching / letter-to-sound
 ## Features
 
 - Text normalizer for numbers, money, times, abbreviations and symbols
-- Pronunciation from a dictionary, stem + suffix matching, and a letter-to-sound tree trained on CMUdict
+- Pronunciation from a dictionary, stem + suffix matching, and a letter-to-sound tree trained on the included lexicon files
 - Pitch contours for statements, yes/no and wh-questions, exclamations and commas
 - 8 voices and an adjustable speaking rate
 - Async, streaming output: samples go to your writer as they are made, so it can feed a sound card in any runtime
@@ -55,7 +55,7 @@ See [how to use.txt](how%20to%20use.txt) for the full guide: voices, rate, float
 
 The `tools/` folder holds the Python scripts that generate parts of `src/`:
 
-- `build_lexicon.py` builds the letter-to-sound tree and exceptions dictionary from CMUdict
+- `build_lexicon.py` builds the letter-to-sound tree and exceptions dictionary from the included lexicon files
 - `build_normalizer.py` builds the text normalizer from `normalizer_rules.txt` (needs `re2c`)
 - `formant_editor.py` is a Tk GUI for editing the formant table with live preview
 
