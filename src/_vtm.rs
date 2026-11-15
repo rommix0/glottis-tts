@@ -642,6 +642,7 @@ pub struct vtm {
 	fric_a:   f32,		// frication lowpass coefficient
 	lip_d:    f32,		// lip radiation coefficient at this rate
 	out_g:    f32,		// output trim, linear
+	voiced:   bool,		// AV was above 0 last sample
 }
 impl vtm {
 	pub fn new() -> vtm {
@@ -706,6 +707,7 @@ impl vtm {
 			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
 			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
 			out_g:   db_amp(OUT_DB),
+			voiced:  false,
 		};
 		// set voice 0 fully: jitter and shimmer live in the glottal source, which only set_voice reaches
 		tract.set_voice(VOICES[0]);
@@ -840,6 +842,9 @@ impl vtm {
 		// apply voice profile and sample from the sound generators
 		self.apply_voice();
 		let white = self.noisegen.step();
+		// voicing starts with a pulse, not wherever the free-running period happens to be
+		if self.AV > 0.0 && !self.voiced { self.glottal.pos_in_period = 0.0; }
+		self.voiced = self.AV > 0.0;
 		let (mut voicing, nmod) = self.glottal.step(self.F0, self.RD, self.voice.fl);
 		voicing *= 0.01;
 
@@ -1031,6 +1036,21 @@ mod tests {
 		let tail = &x[x.len() - 8192..];
 		let h = hnr(tail, 120.0, 2000.0, 4000.0);
 		assert!(h > 40.0, "2-4 kHz harmonics only {} dB over the rest", h);
+	}
+
+	#[test]
+	fn voicing_starts_with_a_pulse() {
+		// after a silence of any length, a pulse fires on the first voiced sample
+		for silent in [100, 160, 230, 300] {
+			let mut v = vtm::new();
+			for i in 0..=silent {
+				v.F0 = 120.0;
+				v.AV = if i < silent { 0.0 } else { DB_GAIN[60] };
+				v.step();
+			}
+			let since_pulse = v.glottal.pos_in_period / v.glottal.last_inc;
+			assert!(since_pulse < 1.01, "after {} silent samples the last pulse was {} samples ago", silent, since_pulse);
+		}
 	}
 
 	#[test]
