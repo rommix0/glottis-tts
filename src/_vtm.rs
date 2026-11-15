@@ -86,13 +86,11 @@ fn bw_widen3(f1: f32, f2: f32, f3: f32, f4: f32) -> [f32; 3] {
 	let b2 = bw_widen((f2 - f3).abs());
 	[bw_widen((f1 - f2).abs()), b2, bw_widen((f3 - f4).abs()).max(b2)]
 }
-// build a fixed upper formant (F4 and up) at the voice's scale
-fn upper_formant(v: &Voice, hz: f32, bw: f32) -> resonator {
-	resonator::new((hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32), bw * (v.fhi / 100.0), false)
+// a fixed upper formant (F4 and up) at the voice's scale: its frequency and bandwidth
+fn upper_formant(v: &Voice, hz: f32, bw: f32) -> (f32, f32) {
+	((hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32), bw * (v.fhi / 100.0))
 }
 
-// how much voicing modulates frication (1 is half-level noise in every other half period, 2 is none)
-const FRIC_MOD: f32 = 1.0;
 // breath noise follows the glottal flow, whose power over a period is oq/2 of steady noise's:
 // this times 1/sqrt(oq) keeps the average breath level
 const BREATH_FLOW_GAIN: f32 = core::f32::consts::SQRT_2;
@@ -186,17 +184,21 @@ fn asp_level(v: &Voice) -> f32 {
 	let row = |k: usize| formant_tbl[IXP as usize * ROW_LEN + k] as f32;
 	let (f1, f2, f3) = (row(5) * s1, row(6) * s2, row(7) * s3);
 	let [a1, a2, a3] = bw_widen3(f1, f2, f3, F4_INIT * (v.fhi / 100.0));
+	let upper = |hz: f32, bw: f32| {
+		let (f, b) = upper_formant(v, hz, bw);
+		resonator::new(f, b)
+	};
 	let mut rs = [
-		resonator::new(f1.min(top), row(8) * s1 * a1, false),
-		resonator::new(f2.min(top), row(9) * s2 * a2, false),
-		resonator::new(f3.min(top), row(10) * s3 * a3, false),
-		upper_formant(v, F4_INIT, B4_INIT), upper_formant(v, F5_INIT, B5_INIT),
-		upper_formant(v, F6_INIT, B6_INIT), upper_formant(v, F7_INIT, B7_INIT), upper_formant(v, F8_INIT, B8_INIT),
+		resonator::new(f1.min(top), row(8) * s1 * a1),
+		resonator::new(f2.min(top), row(9) * s2 * a2),
+		resonator::new(f3.min(top), row(10) * s3 * a3),
+		upper(F4_INIT, B4_INIT), upper(F5_INIT, B5_INIT), upper(F6_INIT, B6_INIT), upper(F7_INIT, B7_INIT),
+		upper(F8_INIT, B8_INIT),
 	];
 	let (mut e, mut prev) = (0.0f32, 0.0f32);
 	for n in 0..4096 {
 		let mut y = if n == 0 { 1.0 } else { 0.0 };
-		for r in rs.iter_mut() { y = r.step(y, 0.0, 0.0); }
+		for r in rs.iter_mut() { y = r.step(y); }
 		e += (y - prev) * (y - prev);
 		prev = y;
 	}
@@ -212,10 +214,10 @@ impl noise {
 		self.nxt ^= self.nxt >> 17;
 		self.nxt ^= self.nxt << 5;
 	}
-	fn step(&mut self) -> f32 {
-		// white noise
+	fn step(&mut self) -> i32 {
+		// white noise, Q27 (-1 to 1)
 		self.xorshift();
-		((self.nxt >> 16) as u16 as i16) as f32 / 32767.0
+		(((self.nxt >> 16) as u16 as i16) as i32) << (SIG_BITS - 15)
 	}
 }
 
@@ -349,78 +351,248 @@ fn pole_radius(bw: f32) -> f32 {
 	EXP_TABLE[i] + (EXP_TABLE[i + 1] - EXP_TABLE[i]) * (t - i as f32)
 }
 
-// klatt style resonator
+// klatt style resonator, in float: designs the coefficients, and checks the aspiration's level
+fn res_coeffs(bf: f32, bw: f32) -> [f32; 3] {
+	let r: f32 = pole_radius(bw);
+	let c = -(r * r);
+	let b = 2.0 * r * cos_hz(bf);
+	[1.0 - b - c, b, c]
+}
 struct resonator {
 	a:     f32,
 	b:     f32,
 	c:     f32,
 	xp1:   f32,
 	xp2:   f32,
-	anti:  bool,
-	bf:    f32,
-	bw:    f32,
 }
 impl resonator {
-	fn new(bf: f32, bw: f32, anti: bool) -> resonator {
-		let mut r = resonator { a: 0.0, b: 0.0, c: 0.0, xp1: 0.0, xp2: 0.0, anti, bf, bw };
-		r.set_coeffs(bf, bw);
-		r
+	fn new(bf: f32, bw: f32) -> resonator {
+		let [a, b, c] = res_coeffs(bf, bw);
+		resonator { a, b, c, xp1: 0.0, xp2: 0.0 }
 	}
-	fn set_coeffs(&mut self, bf: f32, bw: f32) {
-		let r: f32 = pole_radius(bw);
-		self.c = -(r * r);
-		self.b = 2.0 * r * cos_hz(bf);
-		self.a = 1.0 - self.b - self.c;
-
-		// anti-resonator (the nasal zero): the inverse transfer function
-		if self.anti {
-			self.a = 1.0 / self.a;
-			self.b *= -self.a;
-			self.c *= -self.a;
-		}
-
-		// Fujisaki-style gain compensation (KLSYN88-Qlatt)
-		if self.bf != 0.0 && bf < self.bf {
-			let g = bf / self.bf;
-			self.xp1 *= g;
-			self.xp2 *= g;
-		}
-		self.bf = bf;
-		self.bw = bw;
-	}
-	fn step(&mut self, x: f32, bf: f32, bw: f32) -> f32 {
-		// a 0 keeps the current value; a fixed resonator (stepped with 0, 0) keeps its coefficients
-		if bf > 0.0 || bw > 0.0 {
-			let bf = if bf == 0.0 { self.bf } else { bf };
-			let bw = if bw == 0.0 { self.bw } else { bw };
-			self.set_coeffs(bf, bw);
-		}
+	fn step(&mut self, x: f32) -> f32 {
 		let ot: f32 = self.a * x + self.b * self.xp1 + self.c * self.xp2;
 		self.xp2 = self.xp1;
-		self.xp1 = if self.anti { x } else { ot };
+		self.xp1 = ot;
 		ot
+	}
+}
+
+// FIXED POINT
+// the DSP runs on 32-bit integers, so a chip without a floating-point unit keeps up. every FRAME samples the
+// inputs are read and turned into coefficients and gains (in float), and the DSP glides to them sample by sample
+pub const FRAME: u32 = 32;
+// coefficients and gains are Q28 (-8 to 8); the source, the parallel branch and the output are Q27 (-16 to 16);
+// the cascade's signals are only a few thousandths, so they carry CASC_BITS fraction bits
+const COEF_BITS: u32 = 28;
+const SIG_BITS:  u32 = 27;
+const CASC_BITS: u32 = 35;
+const ONE: i32 = 1 << COEF_BITS;
+const OUT_SCALE: f32 = 1.0 / (1u32 << SIG_BITS) as f32;
+
+// x with bits fraction bits, saturating
+fn to_q(x: f32, bits: u32) -> i32 { libm::roundf(x * (1u64 << bits) as f32) as i32 }
+fn sat(x: i64) -> i32 { x.clamp(i32::MIN as i64, i32::MAX as i64) as i32 }
+// a Q28 coefficient or gain times a signal
+fn mul(c: i32, x: i32) -> i32 { sat((c as i64 * x as i64) >> COEF_BITS) }
+
+// a coefficient or gain gliding to the value set at a frame, over the frame
+#[derive(Default, Clone, Copy)]
+struct Glide {
+	now:    i32,
+	step:   i32,
+	target: i32,
+}
+impl Glide {
+	fn set(&mut self, v: i32) {
+		self.now = v;
+		self.step = 0;
+		self.target = v;
+	}
+	fn to(&mut self, target: i32) {
+		// start from where the last glide was headed, so a value held (or 0) is held exactly
+		self.now = self.target;
+		self.target = target;
+		self.step = ((target as i64 - self.now as i64) / FRAME as i64) as i32;
+	}
+	fn next(&mut self) -> i32 {
+		self.now = self.now.saturating_add(self.step);
+		self.now
+	}
+}
+
+// a falling frequency would raise a ring's level: the scale that takes it back, a little each sample of the frame
+fn shrink_per_sample(to: f32, from: f32) -> i32 {
+	if to >= from || from <= 0.0 { return ONE; }
+	// the FRAME-th root of to / from, to first order: a frame's step is small
+	to_q(1.0 - (1.0 - to / from) / FRAME as f32, COEF_BITS)
+}
+
+// a resonator in fixed point, gliding to the coefficients set once a frame
+struct fx_res {
+	a:      Glide,
+	b:      Glide,
+	c:      Glide,
+	y1:     i32,
+	y2:     i32,
+	shrink: i32,		// per-sample scale of the ring while the frequency falls (Q28)
+	bf:     f32,		// frequency it glides to, Hz
+}
+impl fx_res {
+	fn new(bf: f32, bw: f32) -> fx_res {
+		let [a, b, c] = res_coeffs(bf, bw);
+		let g = Glide::default();
+		let mut r = fx_res { a: g, b: g, c: g, y1: 0, y2: 0, shrink: ONE, bf };
+		r.a.set(to_q(a, COEF_BITS));
+		r.b.set(to_q(b, COEF_BITS));
+		r.c.set(to_q(c, COEF_BITS));
+		r
+	}
+	fn glide_to(&mut self, bf: f32, bw: f32) {
+		self.shrink = shrink_per_sample(bf, self.bf);
+		let [a, b, c] = res_coeffs(bf, bw);
+		self.a.to(to_q(a, COEF_BITS));
+		self.b.to(to_q(b, COEF_BITS));
+		self.c.to(to_q(c, COEF_BITS));
+		self.bf = bf;
+	}
+	fn step(&mut self, x: i32) -> i32 {
+		if self.shrink != ONE {
+			self.y1 = mul(self.shrink, self.y1);
+			self.y2 = mul(self.shrink, self.y2);
+		}
+		let (a, b, c) = (self.a.next() as i64, self.b.next() as i64, self.c.next() as i64);
+		let y = sat((a * x as i64 + b * self.y1 as i64 + c * self.y2 as i64) >> COEF_BITS);
+		self.y2 = self.y1;
+		self.y1 = y;
+		y
+	}
+}
+
+// a fixed upper formant in fixed point: set once for the voice
+struct fixed_res {
+	a:   i32,
+	b:   i32,
+	c:   i32,
+	y1:  i32,
+	y2:  i32,
+	bf:  f32,		// its frequency, Hz
+}
+impl fixed_res {
+	fn new(bf: f32, bw: f32) -> fixed_res {
+		let [a, b, c] = res_coeffs(bf, bw).map(|v| to_q(v, COEF_BITS));
+		fixed_res { a, b, c, y1: 0, y2: 0, bf }
+	}
+	fn step(&mut self, x: i32) -> i32 {
+		let acc = self.a as i64 * x as i64 + self.b as i64 * self.y1 as i64 + self.c as i64 * self.y2 as i64;
+		let y = sat(acc >> COEF_BITS);
+		self.y2 = self.y1;
+		self.y1 = y;
+		y
+	}
+}
+
+// the nasal pair in fixed point: the zero and the pole as one filter. the zero alone (an inverted resonator)
+// gains up to 60 dB on the way to the pole, too much range for fixed point
+struct fx_nasal {
+	n0:  Glide,		// the zero, times the pole's gain
+	n1:  Glide,
+	n2:  Glide,
+	b:   Glide,		// the pole
+	c:   Glide,
+	x1:  i32,
+	x2:  i32,
+	y1:  i32,
+	y2:  i32,
+	shrink_z: i32,	// per-sample scales of the history while a frequency falls (Q28)
+	shrink_p: i32,
+	fz:  f32,		// the zero's frequency, Hz
+	fp:  f32,		// the pole's
+}
+impl fx_nasal {
+	fn new(f: f32, bw: f32) -> fx_nasal {
+		let g = Glide::default();
+		let mut n = fx_nasal {
+			n0: g, n1: g, n2: g, b: g, c: g, x1: 0, x2: 0, y1: 0, y2: 0, shrink_z: ONE, shrink_p: ONE, fz: f, fp: f,
+		};
+		n.set(f, bw, f, bw);
+		n
+	}
+	// the coefficients for a zero at fz and a pole at fp: n0, n1, n2, b, c
+	fn coeffs(fz: f32, bz: f32, fp: f32, bp: f32) -> [i32; 5] {
+		let [za, zb, zc] = res_coeffs(fz, bz);
+		let [pa, pb, pc] = res_coeffs(fp, bp);
+		// the zero is a resonator inverted: (1 - zb z^-1 - zc z^-2) / za
+		let k = pa / za;
+		[k, -zb * k, -zc * k, pb, pc].map(|v| to_q(v, COEF_BITS))
+	}
+	fn set(&mut self, fz: f32, bz: f32, fp: f32, bp: f32) {
+		let [n0, n1, n2, b, c] = Self::coeffs(fz, bz, fp, bp);
+		self.n0.set(n0);
+		self.n1.set(n1);
+		self.n2.set(n2);
+		self.b.set(b);
+		self.c.set(c);
+	}
+	fn glide_to(&mut self, fz: f32, bz: f32, fp: f32, bp: f32) {
+		// as with a resonator, a falling frequency scales its history down
+		self.shrink_z = shrink_per_sample(fz, self.fz);
+		self.shrink_p = shrink_per_sample(fp, self.fp);
+		let [n0, n1, n2, b, c] = Self::coeffs(fz, bz, fp, bp);
+		self.n0.to(n0);
+		self.n1.to(n1);
+		self.n2.to(n2);
+		self.b.to(b);
+		self.c.to(c);
+		self.fz = fz;
+		self.fp = fp;
+	}
+	fn step(&mut self, x: i32) -> i32 {
+		if self.shrink_z != ONE {
+			self.x1 = mul(self.shrink_z, self.x1);
+			self.x2 = mul(self.shrink_z, self.x2);
+		}
+		if self.shrink_p != ONE {
+			self.y1 = mul(self.shrink_p, self.y1);
+			self.y2 = mul(self.shrink_p, self.y2);
+		}
+		let zeros = self.n0.next() as i64 * x as i64 + self.n1.next() as i64 * self.x1 as i64
+			+ self.n2.next() as i64 * self.x2 as i64;
+		let poles = self.b.next() as i64 * self.y1 as i64 + self.c.next() as i64 * self.y2 as i64;
+		let y = sat((zeros + poles) >> COEF_BITS);
+		self.x2 = self.x1;
+		self.x1 = x;
+		self.y2 = self.y1;
+		self.y1 = y;
+		y
 	}
 }
 
 // glottal model (refactoring of Qlatt's version of the Liljencrants-Fant glottal model using filters)
 #[derive(Default)]
 struct Biquad {
-	b0: f32,
-	b1: f32,
-	b2: f32,
-	a1: f32,
-	a2: f32,
-	x1: f32,
-	x2: f32,
-	y1: f32,
-	y2: f32,
+	b0: i32,
+	b1: i32,
+	b2: i32,
+	a1: i32,
+	a2: i32,
+	x1: i32,
+	x2: i32,
+	y1: i32,
+	y2: i32,
 }
 impl Biquad {
 	fn set(&mut self, b0: f32, b1: f32, b2: f32, a1: f32, a2: f32) {
-		(self.b0, self.b1, self.b2, self.a1, self.a2) = (b0, b1, b2, a1, a2);
+		self.b0 = to_q(b0, COEF_BITS);
+		self.b1 = to_q(b1, COEF_BITS);
+		self.b2 = to_q(b2, COEF_BITS);
+		self.a1 = to_q(a1, COEF_BITS);
+		self.a2 = to_q(a2, COEF_BITS);
 	}
-	fn step(&mut self, x: f32) -> f32 {
-		let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2 - self.a1 * self.y1 - self.a2 * self.y2;
+	fn step(&mut self, x: i32) -> i32 {
+		let acc = self.b0 as i64 * x as i64 + self.b1 as i64 * self.x1 as i64 + self.b2 as i64 * self.x2 as i64
+			- self.a1 as i64 * self.y1 as i64 - self.a2 as i64 * self.y2 as i64;
+		let y = sat(acc >> COEF_BITS);
 		self.x2 = self.x1;
 		self.x1 = x;
 		self.y2 = self.y1;
@@ -430,55 +602,77 @@ impl Biquad {
 }
 
 #[derive(Default)]
-struct LpPole { a: f32, y1: f32, }
+struct LpPole { a: i32, y1: i32, }
 impl LpPole {
-	fn step(&mut self, x: f32) -> f32 {
-		let y = (1.0 - self.a) * x + self.a * self.y1;
+	fn step(&mut self, x: i32) -> i32 {
+		let y = mul(ONE - self.a, x) + mul(self.a, self.y1);
 		self.y1 = y;
 		y
 	}
 }
+
+// the first half of the cosine table in Q14, for the breath's flow shape
+const FLOW_STEPS: usize = COS_STEPS / 2;
+const FLOW_Q14: [i32; FLOW_STEPS + 1] = flow_table();
+const fn flow_table() -> [i32; FLOW_STEPS + 1] {
+	let mut t = [0; FLOW_STEPS + 1];
+	let mut i = 0;
+	while i <= FLOW_STEPS {
+		t[i] = (COS_TABLE[i] * 16384.0 + 0.5) as i32;
+		i += 1;
+	}
+	t
+}
+
+// phase step per sample for a pitch: 2^32 is a whole period
+fn phase_step(hz: f32) -> i32 { (hz.max(0.0) / m_sr as f32 * 4294967296.0) as i32 }
 
 // a glottal pulse spreads this many samples either side of its exact time, so the voice plays that late
 const PULSE_HALF: usize = 4;
 const PULSE_RING: usize = 16;
 
 struct LfSource {
-	pos_in_period: f32,
-	last_inc: f32,				// period fraction the last sample advanced by
-	exc: [f32; PULSE_RING],		// excitation still to play, by sample index
-	n: usize,					// sample index, modulo PULSE_RING
-	glottal: Biquad,
-	tilt: LpPole,
+	phase:      u32,				// how far through the period: 2^32 is a whole period
+	due:        bool,				// the period has run out: a pulse is due
+	inc:        u32,				// phase step the last sample took
+	exc:        [i32; PULSE_RING],	// excitation still to play, by sample index (Q27)
+	n:          usize,				// sample index, modulo PULSE_RING
+	glottal:    Biquad,
+	tilt:       LpPole,
 	flut_clock: u32,
-	flut_from: f32,				// the flutter sines at the start of this millisecond
-	flut_to:   f32,				// and at its end
-	ra: f32,
-	oq: f32,					// open quotient: share of the period the glottis is open
-	jitter: f32,				// average period change between pulses, in %
-	shimmer: f32,				// average level change between pulses, in dB
-	rng: noise,					// for jitter and shimmer
-	jit_k: f32,					// this period's rate factor
+	ra:         f32,
+	oq:         f32,				// open quotient: share of the period the glottis is open
+	open_end:   u32,				// phase where the glottis closes
+	open_k:     u32,				// phase to flow-table steps: FLOW_STEPS * 2 over the open phase
+	breath_k:   i32,				// breath gain for this oq (Q14) that keeps its average level
+	jitter:     f32,				// average period change between pulses, in %
+	shimmer:    f32,				// average level change between pulses, in dB
+	rng:        noise,				// for jitter and shimmer
+	jit_q:      u32,				// this period's rate factor (Q30)
 }
 impl LfSource {
 	fn new() -> LfSource {
-		LfSource {
-			pos_in_period: 0.0,
-			last_inc: 0.0,
-			exc: [0.0; PULSE_RING],
+		let mut g = LfSource {
+			phase: 0,
+			due: true,
+			inc: 0,
+			exc: [0; PULSE_RING],
 			n: 0,
 			glottal: Biquad::default(),
 			tilt: LpPole::default(),
 			flut_clock: 0,
-			flut_from: 0.0,
-			flut_to: 0.0,
 			ra: 0.0,
 			oq: 0.5,
+			open_end: 0,
+			open_k: 0,
+			breath_k: 0,
 			jitter: 0.0,
 			shimmer: 0.0,
 			rng: noise { nxt: 0x6C8E9CF5 },
-			jit_k: 1.0,
-		}
+			jit_q: 1 << 30,
+		};
+		g.set_oq(0.5);
+		g
 	}
 	fn rand(&mut self) -> f32 {
 		// uniform in -1..1
@@ -498,12 +692,12 @@ impl LfSource {
 		}
 		let sum: f32 = w.iter().sum();
 		for (k, wk) in w.iter().enumerate() {
-			self.exc[(first + k) % PULSE_RING] += wk / sum * amp;
+			self.exc[(first + k) % PULSE_RING] += to_q(wk / sum * amp, SIG_BITS);
 		}
 	}
 	fn calc_fant(&mut self, f0: f32, rd: f32) {
 		// get Fant 1997 parameters
-		let t0 = 1.0 / f0;
+		let t0 = 1.0 / f0.max(1.0);
 		// under Rd 0.21 the return phase Ra goes negative and the tilt filter blows up
 		let rd = rd.max(RD_MIN);
 		self.ra = (-1.0 + 4.8  * rd) / 100.0;
@@ -513,7 +707,7 @@ impl LfSource {
 
 		// open quotient (pulse width of glottal basically)
 		let oq = (1.0 + rk) / (2.0 * rg);
-		self.oq = oq.clamp(0.05, 1.0);
+		self.set_oq(oq);
 
 		// glottal frequency and bandwidth calculations
 		let fg = 1.0 / (2.0 * oq * t0);
@@ -524,75 +718,84 @@ impl LfSource {
 		let a1 = -2.0 * libm::expf(-PI * bg / m_sr as f32) * libm::cosf(2.0 * PI * fg / m_sr as f32);
 		let a2 = libm::expf(-2.0 * PI * bg / m_sr as f32);
 		let ag = 1.0 / libm::sinf(PI * (1.0 - alpha_m));
-		let b0 = 0.0;
-		let b1 = -ag;
-		let b2 = ag;
-		self.glottal.set(b0, b1, b2, a1, a2);
+		self.glottal.set(0.0, -ag, ag, a1, a2);
 
 		// calculate coefficients for tilt filter
 		let fa = 1.0 / (2.0 * PI * self.ra * t0);
-		self.tilt.a = libm::expf(-2.0 * PI * fa / m_sr as f32);
+		self.tilt.a = to_q(libm::expf(-2.0 * PI * fa / m_sr as f32), COEF_BITS);
+	}
+	fn set_oq(&mut self, oq: f32) {
+		self.oq = oq.clamp(0.05, 1.0);
+		self.open_end = (self.oq * 4294967296.0) as u32;
+		self.open_k = (2.0 * FLOW_STEPS as f32 / self.oq) as u32;
+		self.breath_k = to_q(BREATH_FLOW_GAIN / libm::sqrtf(self.oq), 14);
 	}
 	fn flutter_sines(c: u32) -> f32 {
 		let w = 2.0 * PI * (c as f32 / m_sr as f32);
 		libm::sinf(12.7 * w) + libm::sinf(7.1 * w) + libm::sinf(4.7 * w)
 	}
-	fn calc_flutter(&mut self, f0: f32, flutter: f32) -> f32 {
-		// KLGLOTT88 pitch flutter algorithm
+	fn flutter(&mut self, f0: f32, flutter: f32) -> f32 {
+		// KLGLOTT88 pitch flutter algorithm, once a frame; the pitch glides between frames
 		if flutter <= 0.0 { return 0.0; }
-		// the sines barely move in a millisecond: compute them at each end, interpolate in between
-		let step = m_sr / 1000;
-		let n = self.flut_clock % step;
-		if n == 0 {
-			(self.flut_from, self.flut_to) =
-				(Self::flutter_sines(self.flut_clock), Self::flutter_sines(self.flut_clock + step));
-		}
-		let a = self.flut_from + (self.flut_to - self.flut_from) * (n as f32 / step as f32);
+		let a = Self::flutter_sines(self.flut_clock);
 		// 10 s holds a whole number of cycles of all three, so the wrap is seamless
-		self.flut_clock = (self.flut_clock + 1) % (10 * m_sr);
+		self.flut_clock = (self.flut_clock + FRAME) % (10 * m_sr);
 		a * (flutter / 50.0) * (f0 / 100.0)
 	}
-	fn openness(&self) -> f32 {
-		// glottal flow shape: a half sine over the open phase, closed after it
-		if self.pos_in_period < self.oq { libm::sinf(PI * self.pos_in_period / self.oq) } else { 0.0 }
+	fn restart(&mut self) {
+		self.phase = 0;
+		self.due = true;
 	}
-	fn step(&mut self, f0: f32, rd: f32, flutter: f32) -> (f32, f32) {
-		// slow F0 flutter on top of the asked pitch
-		let f0_final = f0 + self.calc_flutter(f0, flutter);
-
-		// determine noise modulation amount
-		let nmod = if self.pos_in_period >= 0.5 { 0.5 } else { 1.0 };
+	fn openness(&self) -> i32 {
+		// glottal flow shape (Q14): a half sine over the open phase, closed after it
+		if self.due || self.phase >= self.open_end { return 0; }
+		// sin(pi t) = cos(pi (t - 1/2)), from the table's first half
+		let u = ((self.phase as u64 * self.open_k as u64) >> 32) as i32;
+		FLOW_Q14[((u - FLOW_STEPS as i32).unsigned_abs() as usize).min(FLOW_STEPS)]
+	}
+	fn step(&mut self, base_inc: u32, f0: f32, rd: f32) -> (i32, bool) {
+		// the first half of the period, for the frication's modulation
+		let first_half = !self.due && self.phase < 1 << 31;
 
 		// start a glottal pulse at the exact time the period ended, somewhere since the last sample
-		if self.pos_in_period == 0.0 || self.pos_in_period >= 1.0 {
+		if self.due {
 			self.calc_fant(f0, rd);
-			let ago = if self.last_inc > 0.0 {
-				((self.pos_in_period - 1.0) / self.last_inc).clamp(0.0, 0.999)
-			} else {
-				0.0
-			};
-			self.pos_in_period %= 1.0;
+			let ago = if self.inc > 0 { (self.phase as f32 / self.inc as f32).min(0.999) } else { 0.0 };
+			self.due = false;
 			// jitter stretches or shrinks this period, shimmer scales this pulse
-			self.jit_k = 1.0 / (1.0 + PERTURB_SPREAD * self.jitter / 100.0 * self.rand());
+			let jit = 1.0 / (1.0 + PERTURB_SPREAD * self.jitter / 100.0 * self.rand());
+			self.jit_q = to_q(jit, 30) as u32;
 			let amp = db_amp(PERTURB_SPREAD * self.shimmer * self.rand());
 			self.add_pulse(ago, amp);
 		}
 		let slot = self.n % PULSE_RING;
 		let impulse = self.exc[slot];
-		self.exc[slot] = 0.0;
-		// wrap at the ring size, or a growing count loses the pulse's sub-sample fraction as an f32
+		self.exc[slot] = 0;
 		self.n = (self.n + 1) % PULSE_RING;
 
 		let sample = self.tilt.step(self.glottal.step(impulse));
 
-		self.last_inc = f0_final * self.jit_k / m_sr as f32;
-		self.pos_in_period += self.last_inc;
-		(sample, nmod)
+		self.inc = ((base_inc as u64 * self.jit_q as u64) >> 30) as u32;
+		let (phase, ended) = self.phase.overflowing_add(self.inc);
+		self.phase = phase;
+		self.due |= ended;
+		(sample, first_half)
 	}
 }
 
+// the parallel branch rests after this long without input: its narrowest ring has died away by 100 dB
+const PARR_REST: u32 = m_sr / 10;
+
+// fixed-point constants: the voicing's share of the source, and the branches' makeup gains
+const VOICING_K: i32 = (0.01 * ONE as f32) as i32;
+const PARR_K: i32 = (PARR_GAIN * ONE as f32) as i32;
+// the cascade's scale down to the output's, times CASC_GAIN, as a Q16 factor
+const CASC_K: i64 = (CASC_GAIN as i64) << (16 - (CASC_BITS - SIG_BITS));
+const CLIP_Q: i64 = (CLIP_LIMIT * (1u32 << SIG_BITS) as f32) as i64;
+
 // vocal tract model - the main event
-// AV, AH, AF, A2-A10 and AB are linear gains (1 is full scale, 87 dB), as _synth.rs keeps them; BR is in dB
+// AV, AH, AF, A2-A10 and AB are linear gains (1 is full scale, 87 dB), as _synth.rs keeps them; BR is in dB.
+// they and the formants are read once a frame, and the fixed-point DSP glides to them
 pub struct vtm {
 	pub F0:   f32,
 	pub AV:   f32,
@@ -622,39 +825,52 @@ pub struct vtm {
 	B3_ADJ:   f32,
 	noisegen: noise,
 	glottal:  LfSource,
-	VR1:      resonator,
-	VR2:      resonator,
-	VR3:      resonator,
-	VR4:      resonator,
-	VR5:      resonator,
-	VR6:      resonator,
-	VR7:      resonator,
-	VR8:      resonator,
-	NPR:      resonator,
-	NZR:      resonator,
-	FR2:      resonator,
-	FR3:      resonator,
-	FR4:      resonator,
-	FR5:      resonator,
-	FR6:      resonator,
-	FR7:      resonator,
-	FR8:      resonator,
-	FR9:      resonator,
-	FR10:     resonator,
-	xp1:      f32,
-	fric_y1:  f32,		// frication noise lowpass state
+	NASAL:    fx_nasal,	// the nasal pair: NZR's zero and NPR's pole in one filter
+	VR1:      fx_res,
+	VR2:      fx_res,
+	VR3:      fx_res,
+	VR4:      fixed_res,
+	VR5:      fixed_res,
+	VR6:      fixed_res,
+	VR7:      fixed_res,
+	VR8:      fixed_res,
+	FR2:      fx_res,
+	FR3:      fx_res,
+	FR4:      fixed_res,
+	FR5:      fixed_res,
+	FR6:      fixed_res,
+	FR7:      fixed_res,
+	FR8:      fixed_res,
+	FR9:      fixed_res,
+	FR10:     fixed_res,
+	av:       Glide,		// the gains as the DSP plays them (Q28)
+	ah:       Glide,		// aspiration, with its level match
+	af:       Glide,
+	amps:     [Glide; 9],	// A2 to A10
+	ab:       Glide,
+	br:       Glide,		// breath noise
+	inc:      Glide,		// pitch, as the phase step per sample
+	pulse_f0: f32,		// the frame's pitch and Rd, for shaping the pulses
+	pulse_rd: f32,
+	frame_left: u32,	// samples until the next frame
+	xp1:      i32,		// lip radiation's past sample
+	fric_y1:  i32,		// frication noise lowpass state
 	voice:    Voice,	// voice profile
 	asp_gain: f32,		// aspiration gain, matches the table voice's loudness
 	vgain:    f32,		// the voice profile's output level, linear
 	// cascade B1/B2 floor, wider for a higher voice (its rings have less time to die)
 	min_bw:   f32,
-	fric_a:   f32,		// frication lowpass coefficient
-	lip_d:    f32,		// lip radiation coefficient at this rate
-	out_g:    f32,		// output trim, linear
-	voiced:   bool,		// AV was above 0 last sample
+	fric_a:   i32,		// frication lowpass coefficient (Q28)
+	lip_d:    i32,		// lip radiation coefficient at this rate (Q28)
+	lip_k:    i32,		// lip radiation's makeup gain (Q28)
+	out_k:    i32,		// output trim times the voice's level (Q28)
+	parr_quiet: u32,	// samples since the parallel branch last had input
+	voiced:   bool,		// the voicing gain was above 0 last sample
 }
 impl vtm {
 	pub fn new() -> vtm {
+		let lip_d = libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH));
+		let g = Glide::default();
 		let mut tract = vtm {
 			F0     : 125.0,											// fundamental frequency (Hz)
 			AV     : DB_GAIN[60],									// Amplitude of voicing (60 dB)
@@ -684,38 +900,49 @@ impl vtm {
 			B3_ADJ : 1.0,
 			noisegen : noise::new(),								// noise generator
 			glottal  : LfSource::new(),								// glottal pulse generator
-			VR1      : resonator::new(F1_INIT,  B1_INIT,  false),	// cascade resonators
-			VR2      : resonator::new(F2_INIT,  B2_INIT,  false),	//    |
-			VR3      : resonator::new(F3_INIT,  B3_INIT,  false),	//    |
-			VR4      : resonator::new(F4_INIT,  B4_INIT,  false),	//    |
-			VR5      : resonator::new(F5_INIT,  B5_INIT,  false),	//    |
-			VR6      : resonator::new(F6_INIT,  B6_INIT,  false),	//    |
-			VR7      : resonator::new(F7_INIT,  B7_INIT,  false),	//    |
-			VR8      : resonator::new(F8_INIT,  B8_INIT,  false),	//    V
-			NPR      : resonator::new(FN_INIT,  BN_INIT,  false),	// nasal pair
-			NZR      : resonator::new(FN_INIT,  BN_INIT,  true),	//    |
-			FR2      : resonator::new(F2_INIT,  B2_INIT,  false),	// parallel resonators
-			FR3      : resonator::new(F3_INIT,  B3_INIT,  false),	//    |
-			FR4      : resonator::new(F4_INIT,  B4_INIT,  false),	//    |
-			FR5      : resonator::new(F5_INIT,  B5_INIT,  false),	//    |
-			FR6      : resonator::new(F6_INIT,  B6_INIT,  false),	//    |
-			FR7      : resonator::new(F7_INIT,  B7_INIT,  false),	//    |
-			FR8      : resonator::new(F8_INIT,  B8_INIT,  false),	//    |
-			FR9      : resonator::new(F9_INIT,  B9_INIT,  false),	//    |
-			FR10     : resonator::new(F10_INIT, B10_INIT, false),	//    V
+			NASAL    : fx_nasal::new(FN_INIT, BN_INIT),				// nasal pair
+			VR1      : fx_res::new(F1_INIT,  B1_INIT),				// cascade resonators
+			VR2      : fx_res::new(F2_INIT,  B2_INIT),				//    |
+			VR3      : fx_res::new(F3_INIT,  B3_INIT),				//    |
+			VR4      : fixed_res::new(F4_INIT,  B4_INIT),				//    |
+			VR5      : fixed_res::new(F5_INIT,  B5_INIT),				//    |
+			VR6      : fixed_res::new(F6_INIT,  B6_INIT),				//    |
+			VR7      : fixed_res::new(F7_INIT,  B7_INIT),				//    |
+			VR8      : fixed_res::new(F8_INIT,  B8_INIT),				//    V
+			FR2      : fx_res::new(F2_INIT,  B2_INIT),				// parallel resonators
+			FR3      : fx_res::new(F3_INIT,  B3_INIT),				//    |
+			FR4      : fixed_res::new(F4_INIT,  B4_INIT),				//    |
+			FR5      : fixed_res::new(F5_INIT,  B5_INIT),				//    |
+			FR6      : fixed_res::new(F6_INIT,  B6_INIT),				//    |
+			FR7      : fixed_res::new(F7_INIT,  B7_INIT),				//    |
+			FR8      : fixed_res::new(F8_INIT,  B8_INIT),				//    |
+			FR9      : fixed_res::new(F9_INIT,  B9_INIT),				//    |
+			FR10     : fixed_res::new(F10_INIT, B10_INIT),				//    V
+			av: g,
+			ah: g,
+			af: g,
+			amps: [g; 9],
+			ab: g,
+			br: g,
+			inc: g,
+			pulse_f0: 125.0,
+			pulse_rd: 0.0,
+			frame_left: 0,
 
 			// past sample for lip radiation filter
-			xp1: 0.0,
+			xp1: 0,
 
-			fric_y1: 0.0,
+			fric_y1: 0,
 			voice: VOICES[0],
 			asp_gain: 1.0,
 			vgain: 1.0,
 			min_bw: CASC_MIN_BW,
 
-			fric_a:  libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32),
-			lip_d:   libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH)),
-			out_g:   db_amp(OUT_DB),
+			fric_a:  to_q(libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32), COEF_BITS),
+			lip_d:   to_q(lip_d, COEF_BITS),
+			lip_k:   to_q((1.0 - LIP_D) / (1.0 - lip_d), COEF_BITS),
+			out_k:   0,
+			parr_quiet: 0,
 			voiced:  false,
 		};
 		// set voice 0 fully: jitter and shimmer live in the glottal source, which only set_voice reaches
@@ -723,29 +950,34 @@ impl vtm {
 		tract
 	}
 	pub fn set_voice(&mut self, v: Voice) {
-		// rebuild the fixed upper formants at the voice's scale (the lower ones are scaled every sample)
+		// rebuild the fixed upper formants at the voice's scale (the lower ones follow the inputs every frame)
 		self.voice = v;
 		self.vgain = db_amp(v.db);
+		self.out_k = to_q(db_amp(OUT_DB) * self.vgain, COEF_BITS);
 		self.asp_gain = asp_level(&VOICES[0]) / asp_level(&v);
 		self.min_bw = CASC_MIN_BW * libm::sqrtf((v.f0 / 100.0).max(1.0));
 		self.glottal.jitter = v.jit;
 		self.glottal.shimmer = v.shim;
-		self.VR4  = upper_formant(&v, F4_INIT,  B4_INIT);
-		self.VR5  = upper_formant(&v, F5_INIT,  B5_INIT);
-		self.VR6  = upper_formant(&v, F6_INIT,  B6_INIT);
-		self.VR7  = upper_formant(&v, F7_INIT,  B7_INIT);
-		self.VR8  = upper_formant(&v, F8_INIT,  B8_INIT);
-		self.FR4  = upper_formant(&v, F4_INIT,  B4_INIT);
-		self.FR5  = upper_formant(&v, F5_INIT,  B5_INIT);
-		self.FR6  = upper_formant(&v, F6_INIT,  B6_INIT);
-		self.FR7  = upper_formant(&v, F7_INIT,  B7_INIT);
-		self.FR8  = upper_formant(&v, F8_INIT,  B8_INIT);
-		self.FR9  = upper_formant(&v, F9_INIT,  B9_INIT);
-		self.FR10 = upper_formant(&v, F10_INIT, B10_INIT);
+		let upper = |hz: f32, bw: f32| {
+			let (f, b) = upper_formant(&v, hz, bw);
+			fixed_res::new(f, b)
+		};
+		self.VR4  = upper(F4_INIT,  B4_INIT);
+		self.VR5  = upper(F5_INIT,  B5_INIT);
+		self.VR6  = upper(F6_INIT,  B6_INIT);
+		self.VR7  = upper(F7_INIT,  B7_INIT);
+		self.VR8  = upper(F8_INIT,  B8_INIT);
+		self.FR4  = upper(F4_INIT,  B4_INIT);
+		self.FR5  = upper(F5_INIT,  B5_INIT);
+		self.FR6  = upper(F6_INIT,  B6_INIT);
+		self.FR7  = upper(F7_INIT,  B7_INIT);
+		self.FR8  = upper(F8_INIT,  B8_INIT);
+		self.FR9  = upper(F9_INIT,  B9_INIT);
+		self.FR10 = upper(F10_INIT, B10_INIT);
 	}
 	fn apply_voice(&mut self) {
-		// scale this sample's pitch, formants and source by the voice profile
-		// like fix_bw, this relies on _synth setting them again every sample
+		// scale this frame's pitch, formants and source by the voice profile
+		// like fix_bw, this relies on _synth setting them again before every frame
 		let v = self.voice;
 		let top = F_MAX_SR * m_sr as f32;
 		if v.range != 100.0 { self.F0 = REF_HZ * libm::powf(self.F0 / REF_HZ, v.range / 100.0); }
@@ -772,10 +1004,12 @@ impl vtm {
 		// adjust bandwidths to improve sound quality
 
 		// F0-proximity bandwidth adjust
-		self.B1 += 200.0 * libm::powf((self.F0 / self.F1 - 0.5).max(0.0), 2.0);
+		let near = (self.F0 / self.F1 - 0.5).max(0.0);
+		self.B1 += 200.0 * near * near;
 
 		// glottal leakage adjust (B1, B2): an open glottis only adds loss, so it never narrows a bandwidth
-		let DB1 = (250.0 * libm::powf(self.F1 / 500.0, 2.0) * (self.glottal.ra * 100.0 - RA_REF) / 12.0).max(0.0);
+		let f1 = self.F1 / 500.0;
+		let DB1 = (250.0 * f1 * f1 * (self.glottal.ra * 100.0 - RA_REF) / 12.0).max(0.0);
 		let DB2 = DB1 * self.F1 / (2.0 * self.F2);
 		self.B1 += DB1;
 		self.B2 += DB2;
@@ -790,24 +1024,20 @@ impl vtm {
 		// a vowel's nasalized edge is in between
 		FN_INIT + k * ((self.F1 / scale) - FN_INIT)
 	}
-	fn parallel(&mut self, x: f32) -> f32 {
-		let mut yy: f32 = 0.0;
-		let bb2 = (self.B2 * self.B2_ADJ).max(MIN_BW);
-		let bb3 = (self.B3 * self.B3_ADJ).max(MIN_BW);
 
-		yy -= self.FR2.step(x, self.F2, bb2)  * self.A2.min(1.0);
-		yy += self.FR3.step(x, self.F3, bb3)  * self.A3.min(1.0);
-		yy -= self.FR4.step(x, 0.0, 0.0)      * self.A4.min(1.0);
-		yy += self.FR5.step(x, 0.0, 0.0)      * self.A5.min(1.0);
-		yy -= self.FR6.step(x, 0.0, 0.0)      * self.A6.min(1.0);
-		yy += self.FR7.step(x, 0.0, 0.0)      * self.A7.min(1.0);
-		yy -= self.FR8.step(x, 0.0, 0.0)      * self.A8.min(1.0);
-		yy += self.FR9.step(x, 0.0, 0.0)      * self.A9.min(1.0);
-		yy -= self.FR10.step(x, 0.0, 0.0)     * self.A10.min(1.0);
-		yy += self.AB.min(1.0) * x;
-		yy
+	// FRAME: read the inputs and set what the DSP glides to
+	fn frame(&mut self) {
+		self.apply_voice();
+		self.fix_bw();
+		let flutter = self.glottal.flutter(self.F0, self.voice.fl);
+		self.inc.to(phase_step(self.F0 + flutter));
+		self.pulse_f0 = self.F0;
+		self.pulse_rd = self.RD;
+		self.set_cascade();
+		self.set_parallel();
+		self.set_gains();
 	}
-	fn cascade(&mut self, x: f32) -> f32 {
+	fn set_cascade(&mut self) {
 		let bb1 = (self.B1 * self.B1_ADJ).max(self.min_bw);
 		let bb2 = (self.B2 * self.B2_ADJ).max(self.min_bw);
 		let bb3 = (self.B3 * self.B3_ADJ).max(MIN_BW);
@@ -819,66 +1049,136 @@ impl vtm {
 		let bnz = BN_INIT + k * (bb1 - BN_INIT);
 		let bnp = BN_INIT + k * (BN_MURMUR - BN_INIT);
 		let fnp = FN_INIT + k * (FN_MURMUR - FN_INIT);
+		self.NASAL.glide_to(fnz, bnz, fnp * scale, bnp);
 
-		let mut yy = self.NPR.step(self.NZR.step(x, fnz, bnz), fnp * scale, bnp);		// NASAL TRACT
-		yy = self.VR1.step(yy, self.F1, bb1);											// F1 - tongue height
-		yy = self.VR2.step(yy, self.F2, bb2);											// F2 - tongue fronting
-		yy = self.VR3.step(yy, self.F3, bb3);											// F3 - R-coloring
-		yy = self.VR4.step(yy, 0.0, 0.0);
-		yy = self.VR5.step(yy, 0.0, 0.0);
-		yy = self.VR6.step(yy, 0.0, 0.0);
-		yy = self.VR7.step(yy, 0.0, 0.0);
-		yy = self.VR8.step(yy, 0.0, 0.0);
+		self.VR1.glide_to(self.F1, bb1);			// F1 - tongue height
+		self.VR2.glide_to(self.F2, bb2);			// F2 - tongue fronting
+		self.VR3.glide_to(self.F3, bb3);			// F3 - R-coloring
+	}
+	fn set_parallel(&mut self) {
+		self.FR2.glide_to(self.F2, (self.B2 * self.B2_ADJ).max(MIN_BW));
+		self.FR3.glide_to(self.F3, (self.B3 * self.B3_ADJ).max(MIN_BW));
+	}
+	fn set_gains(&mut self) {
+		let gain = |g: f32| to_q(g.clamp(0.0, 1.0), COEF_BITS);
+		self.av.to(gain(self.AV));
+		self.ah.to(to_q(0.54 * self.asp_gain * self.AH.clamp(0.0, 1.0), COEF_BITS));
+		self.af.to(gain(self.AF));
+		let amps = [self.A2, self.A3, self.A4, self.A5, self.A6, self.A7, self.A8, self.A9, self.A10];
+		for (glide, a) in self.amps.iter_mut().zip(amps) { glide.to(gain(a)); }
+		self.ab.to(gain(self.AB));
+		self.br.to(to_q(Self::db2lin(self.BR), COEF_BITS));
+	}
+
+	// SAMPLE: the fixed-point DSP
+	fn parallel(&mut self, x: i32) -> i32 {
+		// with no input for PARR_REST samples its rings are inaudible: clear them and rest until input comes
+		if x != 0 {
+			self.parr_quiet = 0;
+		} else if self.parr_quiet < PARR_REST {
+			self.parr_quiet += 1;
+			if self.parr_quiet == PARR_REST { self.clear_parallel(); }
+		}
+		if self.parr_quiet == PARR_REST {
+			for a in self.amps.iter_mut() { a.next(); }
+			self.ab.next();
+			return 0;
+		}
+		// odd formants added, even ones taken away, so neighbouring peaks don't cancel
+		let a = &mut self.amps;
+		let mut yy: i64 = 0;
+		yy -= mul(a[0].next(), self.FR2.step(x)) as i64;
+		yy += mul(a[1].next(), self.FR3.step(x)) as i64;
+		yy -= mul(a[2].next(), self.FR4.step(x)) as i64;
+		yy += mul(a[3].next(), self.FR5.step(x)) as i64;
+		yy -= mul(a[4].next(), self.FR6.step(x)) as i64;
+		yy += mul(a[5].next(), self.FR7.step(x)) as i64;
+		yy -= mul(a[6].next(), self.FR8.step(x)) as i64;
+		yy += mul(a[7].next(), self.FR9.step(x)) as i64;
+		yy -= mul(a[8].next(), self.FR10.step(x)) as i64;
+		yy += mul(self.ab.next(), x) as i64;
+		sat(yy)
+	}
+	fn clear_parallel(&mut self) {
+		for (y1, y2) in [
+			(&mut self.FR2.y1, &mut self.FR2.y2), (&mut self.FR3.y1, &mut self.FR3.y2),
+			(&mut self.FR4.y1, &mut self.FR4.y2), (&mut self.FR5.y1, &mut self.FR5.y2),
+			(&mut self.FR6.y1, &mut self.FR6.y2), (&mut self.FR7.y1, &mut self.FR7.y2),
+			(&mut self.FR8.y1, &mut self.FR8.y2), (&mut self.FR9.y1, &mut self.FR9.y2),
+			(&mut self.FR10.y1, &mut self.FR10.y2),
+		] {
+			*y1 = 0;
+			*y2 = 0;
+		}
+	}
+	fn cascade(&mut self, x: i32) -> i32 {
+		let mut yy = self.NASAL.step(x);			// NASAL TRACT
+		yy = self.VR1.step(yy);
+		yy = self.VR2.step(yy);
+		yy = self.VR3.step(yy);
+		yy = self.VR4.step(yy);
+		yy = self.VR5.step(yy);
+		yy = self.VR6.step(yy);
+		yy = self.VR7.step(yy);
+		yy = self.VR8.step(yy);
 		yy
 	}
-	fn softclip(x: f32) -> f32 {
-		let a = x.abs();
-		if a <= CLIP_LIMIT { return x; }
-		let excess: f32 = a - CLIP_LIMIT;
-		x.signum() * (CLIP_LIMIT + (1.0 - CLIP_LIMIT) * excess / (excess + 1.0))
+	fn softclip(x: i32) -> i32 {
+		let a = (x as i64).abs();
+		if a <= CLIP_Q { return x; }
+		let one = 1i64 << SIG_BITS;
+		let excess = a - CLIP_Q;
+		let y = CLIP_Q + (one - CLIP_Q) * excess / (excess + one);
+		if x < 0 { -y as i32 } else { y as i32 }
 	}
-	fn radiate(&mut self, x: f32) -> f32 {
+	fn radiate(&mut self, x: i32) -> i32 {
 		// lip radiation, coefficient pulled toward the tuned rate's response, same low-frequency gain
 		let d = self.lip_d;
-		self.lip(x, d) * (1.0 - LIP_D) / (1.0 - d)
+		mul(self.lip_k, self.lip(x, d))
 	}
-	fn lip(&mut self, x: f32, d: f32) -> f32 {
-		let xx = x - d * self.xp1;
+	fn lip(&mut self, x: i32, d: i32) -> i32 {
+		let xx = x.saturating_sub(mul(d, self.xp1));
 		self.xp1 = x;
 		xx
 	}
+	// the next step reads the inputs
+	pub fn wants_frame(&self) -> bool { self.frame_left == 0 }
 	pub fn step(&mut self) -> f32 {
-		// apply voice profile and sample from the sound generators
-		self.apply_voice();
+		if self.frame_left == 0 {
+			self.frame();
+			self.frame_left = FRAME;
+		}
+		self.frame_left -= 1;
+		let av = self.av.next();
 		let white = self.noisegen.step();
+
 		// voicing starts with a pulse, not wherever the free-running period happens to be
-		if self.AV > 0.0 && !self.voiced { self.glottal.pos_in_period = 0.0; }
-		self.voiced = self.AV > 0.0;
+		if av > 0 && !self.voiced { self.glottal.restart(); }
+		self.voiced = av > 0;
 		let open = self.glottal.openness();
-		let (mut voicing, nmod) = self.glottal.step(self.F0, self.RD, self.voice.fl);
-		voicing *= 0.01;
+		let (pulse, first_half) = self.glottal.step(self.inc.next() as u32, self.pulse_f0, self.pulse_rd);
 
-		// adjust bandwidths if formants are close together
-		self.fix_bw();
+		// breath follows the flow while voicing, at the same average power as unmodulated noise
+		let br = self.br.next();
+		let br = if av > 0 { mul(br, open * self.glottal.breath_k) } else { br };
+		let voicing = mul(VOICING_K, pulse) + mul(br, white);
 
-		// noise modulation
-		let modulate = |m: f32| if self.AV > 0.0 { 1.0 - m * (1.0 - nmod) } else { 1.0 };
-		let af_mod = modulate(FRIC_MOD);
-		let br_mod = if self.AV > 0.0 { open * BREATH_FLOW_GAIN / libm::sqrtf(self.glottal.oq) } else { 1.0 };
+		// cascade input: voicing with breath, and aspiration, up to the cascade's scale
+		let ah = self.ah.next();
+		let to_casc = COEF_BITS - (CASC_BITS - SIG_BITS);
+		let casc_in = sat((voicing as i64 * av as i64 + white as i64 * ah as i64) >> to_casc);
 
-		// cascade input: voicing with breath, and aspiration
-		voicing += white * Self::db2lin(self.BR) * br_mod;
-		let casc_in: f32 = voicing * self.AV.min(1.0) + (white * 0.54 * self.asp_gain) * self.AH.min(1.0);
+		// parallel input: frication, broadband noise rolled off above FRIC_LP_HZ, at half level in the second
+		// half of each voiced period
+		self.fric_y1 = mul(ONE - self.fric_a, white) + mul(self.fric_a, self.fric_y1);
+		let mut parr_in = mul(self.af.next(), self.fric_y1);
+		if av > 0 && !first_half { parr_in /= 2; }
 
-		// parallel input: frication, broadband noise rolled off above FRIC_LP_HZ
-		self.fric_y1 = (1.0 - self.fric_a) * white + self.fric_a * self.fric_y1;
-		let parr_in: f32 = self.fric_y1 * self.AF.min(1.0) * af_mod;
+		let casc_out = sat((self.cascade(casc_in) as i64 * CASC_K) >> 16);
+		let parr_out = mul(PARR_K, self.parallel(parr_in));
 
-		let casc_out: f32 = self.cascade(casc_in) * CASC_GAIN;
-		let parr_out: f32 = self.parallel(parr_in) * PARR_GAIN;
-
-		let out = self.radiate(casc_out + parr_out) * self.out_g * self.vgain;
-		Self::softclip(out)
+		let out = mul(self.out_k, self.radiate(casc_out.saturating_add(parr_out)));
+		Self::softclip(out) as f32 * OUT_SCALE
 	}
 }
 
@@ -1011,8 +1311,8 @@ mod tests {
 			}
 			20.0 * peak.log10()
 		};
-		let raw = |v: &mut vtm, x: f32| v.lip(x, LIP_D);
-		let ours = |v: &mut vtm, x: f32| v.radiate(x);
+		let raw = |v: &mut vtm, x: f32| v.lip(to_q(x, SIG_BITS), to_q(LIP_D, COEF_BITS)) as f32 * OUT_SCALE;
+		let ours = |v: &mut vtm, x: f32| v.radiate(to_q(x, SIG_BITS)) as f32 * OUT_SCALE;
 		assert!((gain(100.0, &ours) - gain(100.0, &raw)).abs() < 0.2, "low end moved");
 		let cut = gain(4000.0, &raw) - gain(4000.0, &ours);
 		assert!(cut > 0.5 && cut < 2.5, "4 kHz trimmed {} dB", cut);
@@ -1039,11 +1339,14 @@ mod tests {
 		10.0 * (h / r).log10() as f32
 	}
 
+	// one sample of the source at a steady pitch, as a float
+	fn source(g: &mut LfSource, f0: f32, rd: f32) -> f32 { g.step(phase_step(f0) as u32, f0, rd).0 as f32 * OUT_SCALE }
+
 	#[test]
 	fn glottal_pulses_keep_exact_time() {
 		// at a period that is no whole number of samples, the voice's highs are still harmonic
 		let mut g = LfSource::new();
-		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| g.step(120.0, 0.6, 0.0).0).collect();
+		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| source(&mut g, 120.0, 0.6)).collect();
 		let tail = &x[x.len() - 8192..];
 		let h = hnr(tail, 120.0, 2000.0, 4000.0);
 		assert!(h > 40.0, "2-4 kHz harmonics only {} dB over the rest", h);
@@ -1054,12 +1357,14 @@ mod tests {
 		// after a silence of any length, a pulse fires on the first voiced sample
 		for silent in [100, 160, 230, 300] {
 			let mut v = vtm::new();
-			for i in 0..=silent {
+			for i in 0..silent + 2 * FRAME as usize {
 				v.F0 = 120.0;
 				v.AV = if i < silent { 0.0 } else { DB_GAIN[60] };
 				v.step();
+				if v.voiced { break; }
 			}
-			let since_pulse = v.glottal.pos_in_period / v.glottal.last_inc;
+			assert!(v.voiced, "after {} silent samples the voice never started", silent);
+			let since_pulse = v.glottal.phase as f32 / v.glottal.inc as f32;
 			assert!(since_pulse < 1.01, "after {} silent samples the last pulse was {} samples ago", silent, since_pulse);
 		}
 	}
@@ -1070,10 +1375,10 @@ mod tests {
 		let mut g = LfSource::new();
 		let (mut closed, mut power, n) = (0, 0.0f32, 20000);
 		for _ in 0..n {
-			let open = g.openness();
+			let open = g.openness() as f32 / 16384.0;
 			if open == 0.0 { closed += 1; }
 			power += open * open;
-			g.step(120.0, 0.9, 0.0);
+			source(&mut g, 120.0, 0.9);
 		}
 		let closed_share = closed as f32 / n as f32;
 		assert!((closed_share - (1.0 - g.oq)).abs() < 0.02, "closed {} of the time, oq {}", closed_share, g.oq);
@@ -1088,7 +1393,7 @@ mod tests {
 		g.add_pulse(0.3, 1.0);
 		let (mut sum, mut at) = (0.0f32, 0.0f32);
 		for j in 96..96 + PULSE_RING {
-			let w = g.exc[j % PULSE_RING];
+			let w = g.exc[j % PULSE_RING] as f32 * OUT_SCALE;
 			sum += w;
 			at += w * j as f32;
 		}
@@ -1115,34 +1420,34 @@ mod tests {
 		// and the pulses feel it: 1% jitter blurs the 2-4 kHz harmonics that stay clean without it
 		let mut g = LfSource::new();
 		g.jitter = 1.0;
-		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| g.step(120.0, 0.6, 0.0).0).collect();
+		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| source(&mut g, 120.0, 0.6)).collect();
 		let h = hnr(&x[x.len() - 8192..], 120.0, 2000.0, 4000.0);
 		assert!(h < 30.0, "2-4 kHz harmonics {} dB over the rest with jitter", h);
 	}
 
 	#[test]
 	fn flutter_is_centred_and_seamless() {
+		// one value a frame for 12 s, across the clock's 10 s wrap
+		let frames = (12 * m_sr / FRAME) as usize;
 		let mut g = LfSource::new();
-		let f: Vec<f32> = (0..12 * m_sr).map(|_| g.calc_flutter(120.0, 75.0)).collect();
+		let f: Vec<f32> = (0..frames).map(|_| g.flutter(120.0, 75.0)).collect();
 		let mean = f.iter().sum::<f32>() / f.len() as f32;
 		assert!(mean.abs() < 0.1, "flutter offsets F0 by {} Hz", mean);
-		let jump = f.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max);
-		assert!(jump < 0.05, "flutter jumps {} Hz", jump);
+		// the pitch glides from one frame's value to the next, so what a sample hears is a frame's change spread
+		// over FRAME samples
+		let jump = f.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max) / FRAME as f32;
+		assert!(jump < 0.05, "flutter jumps {} Hz in a sample", jump);
 		let mut g = LfSource::new();
-		let hi: Vec<f32> = (0..2 * m_sr).map(|_| g.calc_flutter(240.0, 75.0)).collect();
+		let hi: Vec<f32> = (0..frames / 6).map(|_| g.flutter(240.0, 75.0)).collect();
 		let rms = |v: &[f32]| (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt();
-		let ratio = rms(&hi) / rms(&f[..2 * m_sr as usize]);
+		let ratio = rms(&hi) / rms(&f[..frames / 6]);
 		assert!((ratio - 2.0).abs() < 0.05, "flutter at 240 Hz is {}x that at 120", ratio);
-		// the straight lines between milliseconds stay on the sines, across the 10 s wrap too
-		let exact = |c: u32| LfSource::flutter_sines(c % (10 * m_sr)) * (75.0 / 50.0) * (120.0 / 100.0);
-		let worst = f.iter().enumerate().map(|(c, &x)| (x - exact(c as u32)).abs()).fold(0.0, f32::max);
-		assert!(worst < 0.01, "flutter strays {} Hz from its sines", worst);
 	}
 
 	#[test]
 	fn noise_does_not_repeat_within_seconds() {
 		let mut n = noise::new();
-		let x: Vec<f32> = (0..4 * m_sr).map(|_| n.step()).collect();
+		let x: Vec<i32> = (0..4 * m_sr).map(|_| n.step()).collect();
 		let head = &x[..64];
 		assert!(!x[1..].windows(64).any(|w| w == head), "noise repeats within 4 s");
 	}

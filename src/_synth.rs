@@ -451,7 +451,8 @@ pub struct engine {
 	f1_speed: f32,			// how much faster F1 moves than the shared interpolator
 	carry: [f32; 7],		// RD, F1-F3, B1-B3 change per sample when the last move started (a cut-off move's speed)
 	carry_n: i32,			// samples since then
-	last: [f32; 7],			// those registers one sample ago
+	prev_interp: f32,		// the interpolator and carry_n one sample ago
+	prev_carry_n: i32,
 	after_stop_next: bool,
 	asp_db: f32,			// aspiration level carried over from a voiceless stop (0: none)
 	asp_start: i32,
@@ -608,7 +609,8 @@ impl engine {
 			f1_speed: 1.0,
 			carry: [0.0; 7],
 			carry_n: 0,
-			last: [0.0; 7],
+			prev_interp: 0.0,
+			prev_carry_n: 0,
 			after_stop_next: false,
 			asp_db: 0.0,
 			asp_start: 0,
@@ -1093,25 +1095,35 @@ impl engine {
 		self.AV_reg_src  = 0.0;
 		self.set_targets_to_a();
 	}
-	fn regs(&self) -> [f32; 7] {
-		[self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg]
-	}
 	fn start_move(&mut self) {
 		// keep the registers' speed going into the new move
-		let now = self.regs();
-		for k in 0..7 { self.carry[k] = now[k] - self.last[k]; }
+		let now = self.regs_at(self.interp, self.carry_n);
+		let last = self.regs_at(self.prev_interp, self.prev_carry_n);
+		for k in 0..7 { self.carry[k] = now[k] - last[k]; }
 		self.carry_n = 0;
 		self.interp = 0.0;
 	}
-	fn update_registers(&mut self) {
+	fn advance_move(&mut self) {
+		// one sample on: the interpolator and the carried speed's clock
+		self.prev_interp = self.interp;
+		self.prev_carry_n = self.carry_n;
 		if self.interp < 1.0 { self.interp = (self.interp + self.slope).min(1.0); }
-
+		self.carry_n = (self.carry_n + 1).min(samples(CARRY_MS));
+	}
+	// work out the registers for where the phone is now: the amps from the counter, the formants from the move
+	fn refresh(&mut self) {
+		self.update_amp_registers();
+		self.update_registers();
+	}
+	fn update_registers(&mut self) {
+		[self.RD_reg, self.F1_reg, self.F2_reg, self.F3_reg, self.B1_reg, self.B2_reg, self.B3_reg] =
+			self.regs_at(self.interp, self.carry_n);
+	}
+	// RD, F1-F3 and B1-B3 at this point of the move
+	fn regs_at(&self, interp: f32, carry_n: i32) -> [f32; 7] {
 		// the carried speed fades to nothing over CARRY_MS: n (1 - n/N)^2 starts at that speed and ends at rest
-		let len = samples(CARRY_MS);
-		self.carry_n = (self.carry_n + 1).min(len);
-		let n = self.carry_n as f32 / len as f32;
-		let carry_k = self.carry_n as f32 * (1.0 - n) * (1.0 - n);
-		self.last = self.regs();
+		let n = carry_n as f32 / samples(CARRY_MS) as f32;
+		let carry_k = carry_n as f32 * (1.0 - n) * (1.0 - n);
 
 		// formants move in straight lines with rounded ends (the amps, done elsewhere, ease in and out)
 		let track = |x: f32| {
@@ -1124,24 +1136,18 @@ impl engine {
 				v * (x - e / 2.0)
 			}
 		};
-		let y  = track(self.interp);
-		let y1 = track((self.interp * self.f1_speed).min(1.0));
-
-		self.RD_reg  = self.RD_reg_src  * (1.0 - y) + self.RD_reg_trg  * y;
-		self.F1_reg  = self.F1_reg_src  * (1.0 - y1) + self.F1_reg_trg  * y1;
-		self.F2_reg  = self.F2_reg_src  * (1.0 - y) + self.F2_reg_trg  * y;
-		self.F3_reg  = self.F3_reg_src  * (1.0 - y) + self.F3_reg_trg  * y;
-		self.B1_reg  = self.B1_reg_src  * (1.0 - y) + self.B1_reg_trg  * y;
-		self.B2_reg  = self.B2_reg_src  * (1.0 - y) + self.B2_reg_trg  * y;
-		self.B3_reg  = self.B3_reg_src  * (1.0 - y) + self.B3_reg_trg  * y;
-
-		self.RD_reg += self.carry[0] * carry_k;
-		self.F1_reg += self.carry[1] * carry_k;
-		self.F2_reg += self.carry[2] * carry_k;
-		self.F3_reg += self.carry[3] * carry_k;
-		self.B1_reg += self.carry[4] * carry_k;
-		self.B2_reg += self.carry[5] * carry_k;
-		self.B3_reg += self.carry[6] * carry_k;
+		let y  = track(interp);
+		let y1 = track((interp * self.f1_speed).min(1.0));
+		let lerp = |src: f32, trg: f32, y: f32, k: usize| src * (1.0 - y) + trg * y + self.carry[k] * carry_k;
+		[
+			lerp(self.RD_reg_src, self.RD_reg_trg, y, 0),
+			lerp(self.F1_reg_src, self.F1_reg_trg, y1, 1),
+			lerp(self.F2_reg_src, self.F2_reg_trg, y, 2),
+			lerp(self.F3_reg_src, self.F3_reg_trg, y, 3),
+			lerp(self.B1_reg_src, self.B1_reg_trg, y, 4),
+			lerp(self.B2_reg_src, self.B2_reg_trg, y, 5),
+			lerp(self.B3_reg_src, self.B3_reg_trg, y, 6),
+		]
 	}
 	fn update_amp_registers(&mut self) {
 		let now = self.counter;
@@ -1348,6 +1354,8 @@ impl engine {
 	}
 	pub fn load(&mut self, phone: u8, dur_ms: i32, stressed: bool, seg: usize, word_start: bool) -> bool {
 		// seg: the segment's stream index, reported back by position()
+		// the registers as the last phone left them, for what reads them below
+		self.refresh();
 		self.advance(phone, dur_ms, stressed, seg, word_start);
 		if self.is_ready() {
 			self.reset_phone_state();
@@ -1659,6 +1667,10 @@ impl engine {
 			}
 		}
 	}
+	pub fn segment(&self) -> usize {
+		// the aspiration still belongs to the stop
+		if self.asp_db > 0.0 && self.counter < 0 { self.asp_seg } else { self.seg_c }
+	}
 	pub fn position(&self) -> (usize, f32) {
 		// the playing segment and how far through it we are (0..1)
 		// the aspiration still belongs to the stop
@@ -1667,11 +1679,13 @@ impl engine {
 		let frac = if len > 0 { (self.counter - self.seg_start) as f32 / len as f32 } else { 1.0 };
 		(self.seg_c, frac.clamp(0.0, 1.0))
 	}
-	fn step(&mut self) {
+	fn step(&mut self, frame: bool) {
+		// the registers are only worked out for a frame, or for an event that reads them
 		self.counter += 1;
-		self.update_amp_registers();
+		if frame { self.update_amp_registers(); }
 		if self.counter == self.ab_at {
 			// the move to the B targets: at marker A, or earlier for a consonant
+			self.update_registers();
 			self.update_A_to_B();
 		}
 		if self.counter >= 0 && self.counter < self.marker_A {
@@ -1694,21 +1708,30 @@ impl engine {
 				self.master_fade = (self.master_fade + optime).min(1.0);
 			}
 		}
-		self.update_registers()
+		self.advance_move();
+		if frame { self.update_registers(); }
 	}
+	pub fn wants_frame(&self) -> bool { self.vtm_eng.wants_frame() }
 	pub fn sample(&mut self, f0: f32) -> f32 {
-		self.step();
-
+		let frame = self.vtm_eng.wants_frame();
+		self.step(frame);
+		self.update_lip_hold();
+		if frame { self.set_vtm_inputs(f0); }
+		self.vtm_eng.step()
+	}
+	fn update_lip_hold(&mut self) {
+		// a lip release: low and falling whatever the vowel
+		let ramp = samples(LIP_RAMP_MS);
+		let lips = self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A - ramp;
+		if !lips && self.lip_hold == 0.0 { return; }
+		let dir = if lips { 1.0 } else { -1.0 };
+		self.lip_hold = (self.lip_hold + dir / ramp as f32).clamp(0.0, 1.0);
+	}
+	fn set_vtm_inputs(&mut self, f0: f32) {
 		// aspiration: the open glottis damps F1 and F2, less so as voicing takes over
 		let damp = if self.asp_db <= 0.0 { 0.0 } else if self.counter < 0 { 1.0 } else {
 			(1.0 - self.counter as f32 / self.asp_fade.max(1) as f32).max(0.0)
 		};
-
-		// a lip release: low and falling whatever the vowel
-		let ramp = samples(LIP_RAMP_MS);
-		let lips = self.stop_on && self.stop_labial && self.burst_len > 0 && self.counter >= self.marker_A - ramp;
-		let dir = if lips { 1.0 } else { -1.0 };
-		self.lip_hold = (self.lip_hold + dir / ramp as f32).clamp(0.0, 1.0);
 
 		// as the voice dies away at a phrase end it gets breathier and laxer
 		let breath = if matches!(self.phn_c, AXP | IXP) {
@@ -1741,7 +1764,6 @@ impl engine {
 		self.vtm_eng.AF  = self.AF_reg;
 		self.vtm_eng.AH  = self.AH_reg;
 		self.vtm_eng.AV  = fade(self.AV_reg, self.GL_V);
-		self.vtm_eng.step()
 	}
 }
 
@@ -1753,12 +1775,24 @@ mod tests {
 	// convert a register's gain back to dB for the checks
 	fn db(g: f32) -> f32 { if g <= 0.0 { 0.0 } else { G_MAX + DB_PER_HALF * g.log2() } }
 
+	// one sample at 120 Hz, then the registers and the synthesizer's inputs worked out for it, for the checks to
+	// read (the engine only works them out once a frame)
+	fn play(e: &mut engine) -> f32 {
+		let y = e.sample(120.0);
+		e.refresh();
+		e.set_vtm_inputs(120.0);
+		y
+	}
+
 	// render phones (id, ms, stressed) as segments 0, 1, ... and pass the engine and each sample to `each`
 	fn drive(phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
 		let mut e = engine::new();
 		for (seg, &(p, d, st)) in phones.iter().enumerate() {
 			if e.load(p, d, st, seg, true) {
-				while e.is_running() { let y = e.sample(120.0); each(&e, y); }
+				while e.is_running() {
+					let y = play(&mut e);
+					each(&e, y);
+				}
 			}
 		}
 	}
@@ -1769,7 +1803,7 @@ mod tests {
 		for &(p, d, st) in phones {
 			if e.load(p, d, st, 0, true) {
 				if e.phn_c == at { break; }
-				while e.is_running() { e.sample(120.0); }
+				while e.is_running() { play(&mut e); }
 			}
 		}
 		e
@@ -1781,7 +1815,7 @@ mod tests {
 		let mut out: Vec<f32> = Vec::new();
 		for &(p, d) in phones {
 			if e.load(p, d, true, 0, true) {
-				while e.is_running() { out.push(e.sample(120.0)); }
+				while e.is_running() { out.push(play(&mut e)); }
 			}
 		}
 		let mut first = true;
@@ -1793,7 +1827,7 @@ mod tests {
 				e.load(0, 50, false, 0, true)
 			};
 			if ready {
-				while e.is_running() { out.push(e.sample(120.0)); }
+				while e.is_running() { out.push(play(&mut e)); }
 			}
 		}
 		out
@@ -1836,7 +1870,7 @@ mod tests {
 		for &(p, d, seg) in &[(1u8, 150, 7usize), (21, 150, 8), (1, 150, 9), (48, 100, 10), (0, 50, 11)] {
 			if e.load(p, d, false, seg, true) {
 				while e.is_running() {
-					e.sample(120.0);
+					play(&mut e);
 					seen.push(e.position());
 				}
 			}
@@ -2013,7 +2047,7 @@ mod tests {
 				marks.push((e.marker_A, e.marker_B, e.AF_src));
 				while e.is_running() {
 					let pos = e.position();
-					e.sample(120.0);
+					play(&mut e);
 					out.push((e.phn_c, e.counter, db(e.AF_reg), db(e.AH_reg), db(e.AV_reg), pos));
 				}
 			}
@@ -2180,7 +2214,7 @@ mod tests {
 				(1, 150, true, false), (48, 100, true, true), (0, 50, true, true)] {
 				if e.load(p, d, st, 0, w) {
 					while e.is_running() {
-						e.sample(120.0);
+						play(&mut e);
 						if e.phn_c == 27 && e.counter == ms(50.0) { v = db(e.AV_reg); }
 					}
 				}
@@ -2297,7 +2331,7 @@ mod tests {
 				(1, 150, false), (48, 100, true), (0, 50, true)] {
 				if e.load(p, d, true, 0, w) {
 					while e.is_running() {
-						e.sample(120.0);
+						play(&mut e);
 						if e.phn_c == 43 && e.counter == ms(55.0) { v = db(e.AV_reg); }
 					}
 				}
@@ -2921,7 +2955,7 @@ mod tests {
 				(15, 150, false), (PAU, 50, true)] {
 				if e.load(p, d, true, 0, w) {
 					while e.is_running() {
-						e.sample(120.0);
+						play(&mut e);
 						if e.phn_c == 24 && e.counter >= 0 { out.push(db(e.AV_reg)); }
 					}
 				}
@@ -3248,7 +3282,7 @@ mod tests {
 		for (seg, &(p, d)) in [(PAU, 50), (16, 102), (1, 139), (25, 104), (29, 106),
 			(41, 53), (7, 114), (48, 80), (PAU, 50)].iter().enumerate() {
 			if e.load(p, d, p == 1, seg, seg == 1) {
-				while e.is_running() { e.sample(120.0); f.push([e.F1_reg, e.F2_reg, e.F3_reg]); }
+				while e.is_running() { play(&mut e); f.push([e.F1_reg, e.F2_reg, e.F3_reg]); }
 			}
 		}
 		let jump = |w: &[[f32; 3]], k: usize| (w[2][k] - 2.0 * w[1][k] + w[0][k]).abs();

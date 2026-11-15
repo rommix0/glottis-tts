@@ -149,6 +149,7 @@ pub struct Speaker {
 	next_seg:  usize,		// stream index for the next segment
 	started:   bool,
 	last_phone: u8,
+	f0:        f32,			// the pitch the synthesizer read at its last frame
 }
 
 impl Speaker {
@@ -161,6 +162,7 @@ impl Speaker {
 			next_seg: 0,
 			started:  false,
 			last_phone: SIL,
+			f0:        _f0::REF_HZ,
 		}
 	}
 
@@ -171,9 +173,13 @@ impl Speaker {
 		self.last_phone = phone;
 		if self.synth.load(phone, libm::roundf(dur_ms) as i32, stressed, seg, word_start) {
 			while self.synth.is_running() {
-				let (s, f) = self.synth.position();
-				let f0 = self.contour.hz_at(s, f);
-				out.sample(self.synth.sample(f0), s).await?;
+				// the pitch is read once a frame, when the synthesizer reads it
+				if self.synth.wants_frame() {
+					let (s, f) = self.synth.position();
+					self.f0 = self.contour.hz_at(s, f);
+				}
+				let seg = self.synth.segment();
+				out.sample(self.synth.sample(self.f0), seg).await?;
 			}
 		}
 		Ok(())
