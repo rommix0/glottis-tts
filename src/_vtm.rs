@@ -91,9 +91,11 @@ fn upper_formant(v: &Voice, hz: f32, bw: f32) -> resonator {
 	resonator::new((hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32), bw * (v.fhi / 100.0), false)
 }
 
-// how much voicing modulates breath noise and frication (1 is half-level noise in every other half period, 2 is none)
-const BREATH_MOD: f32 = 0.3;
+// how much voicing modulates frication (1 is half-level noise in every other half period, 2 is none)
 const FRIC_MOD: f32 = 1.0;
+// breath noise follows the glottal flow, whose power over a period is oq/2 of steady noise's:
+// this times 1/sqrt(oq) keeps the average breath level
+const BREATH_FLOW_GAIN: f32 = core::f32::consts::SQRT_2;
 
 // makeup gain for the parallel branch (frication)
 const PARR_GAIN: f32 = 7.5;
@@ -452,6 +454,7 @@ struct LfSource {
 	flut_from: f32,				// the flutter sines at the start of this millisecond
 	flut_to:   f32,				// and at its end
 	ra: f32,
+	oq: f32,					// open quotient: share of the period the glottis is open
 	jitter: f32,				// average period change between pulses, in %
 	shimmer: f32,				// average level change between pulses, in dB
 	rng: noise,					// for jitter and shimmer
@@ -470,6 +473,7 @@ impl LfSource {
 			flut_from: 0.0,
 			flut_to: 0.0,
 			ra: 0.0,
+			oq: 0.5,
 			jitter: 0.0,
 			shimmer: 0.0,
 			rng: noise { nxt: 0x6C8E9CF5 },
@@ -509,6 +513,7 @@ impl LfSource {
 
 		// open quotient (pulse width of glottal basically)
 		let oq = (1.0 + rk) / (2.0 * rg);
+		self.oq = oq.clamp(0.05, 1.0);
 
 		// glottal frequency and bandwidth calculations
 		let fg = 1.0 / (2.0 * oq * t0);
@@ -546,6 +551,10 @@ impl LfSource {
 		// 10 s holds a whole number of cycles of all three, so the wrap is seamless
 		self.flut_clock = (self.flut_clock + 1) % (10 * m_sr);
 		a * (flutter / 50.0) * (f0 / 100.0)
+	}
+	fn openness(&self) -> f32 {
+		// glottal flow shape: a half sine over the open phase, closed after it
+		if self.pos_in_period < self.oq { libm::sinf(PI * self.pos_in_period / self.oq) } else { 0.0 }
 	}
 	fn step(&mut self, f0: f32, rd: f32, flutter: f32) -> (f32, f32) {
 		// slow F0 flutter on top of the asked pitch
@@ -845,6 +854,7 @@ impl vtm {
 		// voicing starts with a pulse, not wherever the free-running period happens to be
 		if self.AV > 0.0 && !self.voiced { self.glottal.pos_in_period = 0.0; }
 		self.voiced = self.AV > 0.0;
+		let open = self.glottal.openness();
 		let (mut voicing, nmod) = self.glottal.step(self.F0, self.RD, self.voice.fl);
 		voicing *= 0.01;
 
@@ -853,7 +863,8 @@ impl vtm {
 
 		// noise modulation
 		let modulate = |m: f32| if self.AV > 0.0 { 1.0 - m * (1.0 - nmod) } else { 1.0 };
-		let (br_mod, af_mod) = (modulate(BREATH_MOD), modulate(FRIC_MOD));
+		let af_mod = modulate(FRIC_MOD);
+		let br_mod = if self.AV > 0.0 { open * BREATH_FLOW_GAIN / libm::sqrtf(self.glottal.oq) } else { 1.0 };
 
 		// cascade input: voicing with breath, and aspiration
 		voicing += white * Self::db2lin(self.BR) * br_mod;
@@ -1051,6 +1062,23 @@ mod tests {
 			let since_pulse = v.glottal.pos_in_period / v.glottal.last_inc;
 			assert!(since_pulse < 1.01, "after {} silent samples the last pulse was {} samples ago", silent, since_pulse);
 		}
+	}
+
+	#[test]
+	fn breath_follows_the_glottal_flow() {
+		// silent while the glottis is closed, and oq/2 of steady noise's power over a period (what the gain undoes)
+		let mut g = LfSource::new();
+		let (mut closed, mut power, n) = (0, 0.0f32, 20000);
+		for _ in 0..n {
+			let open = g.openness();
+			if open == 0.0 { closed += 1; }
+			power += open * open;
+			g.step(120.0, 0.9, 0.0);
+		}
+		let closed_share = closed as f32 / n as f32;
+		assert!((closed_share - (1.0 - g.oq)).abs() < 0.02, "closed {} of the time, oq {}", closed_share, g.oq);
+		let ratio = power / n as f32 / (g.oq / 2.0);
+		assert!((ratio - 1.0).abs() < 0.05, "breath power {} of the expected", ratio);
 	}
 
 	#[test]
