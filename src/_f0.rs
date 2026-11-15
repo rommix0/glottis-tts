@@ -221,7 +221,7 @@ impl Contour {
 // merge targets closer than MERGE_MS, keeping the later one
 // (only within a phrase: utterance time leaves out the pause between phrases)
 fn merge_close(mut placed: Vec<(usize, f32, Target)>) -> Vec<(usize, f32, Target)> {
-	placed.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
+	placed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
 	let mut kept: Vec<(usize, f32, Target)> = Vec::new();
 	for (ph, t, tg) in placed {
 		if let Some(&(pph, pt, _)) = kept.last() && pph == ph && t - pt < MERGE_MS {

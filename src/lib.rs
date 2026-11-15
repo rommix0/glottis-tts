@@ -217,8 +217,7 @@ impl Speaker {
 		let (stream, ends) = self.stream_indices(&utt);
 		self.contour.add_utterance(&utt, &stream);
 
-		let mut ends = ends.into_iter();
-		for ph in &utt.phrases {
+		for (ph, &(release, pause)) in utt.phrases.iter().zip(&ends) {
 			let segs = utt.words[ph.words.start].segs.start..utt.words[ph.words.end - 1].segs.end;
 			for i in segs.clone() {
 				let s = &utt.segs[i];
@@ -228,8 +227,7 @@ impl Speaker {
 				self.play(out, s.phone, s.dur_ms, s.stress != 0, stream[i], utt.words[s.word].segs.start == i).await?;
 			}
 			// phrase-end release, then the pause
-			let (r, p) = ends.next().unwrap();
-			self.play_phrase_end(utt.segs[segs.end - 1].phone, ph.end, (r, p), out).await?;
+			self.play_phrase_end(utt.segs[segs.end - 1].phone, ph.end, (release, pause), out).await?;
 		}
 		Ok(())
 	}

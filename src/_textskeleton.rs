@@ -127,7 +127,8 @@ impl engine {
 				}
 			}
 		} else if x < 1_000_000_000_000_000_000 {
-			let &(unit, name) = SCALES.iter().find(|s| x >= s.0).unwrap();
+			// x >= 100 here, so the last scale, hundred, always fits
+			let &(unit, name) = SCALES.iter().find(|s| x >= s.0).unwrap_or(&SCALES[SCALES.len() - 1]);
 			let unders = x % unit;
 			self.process_number(x / unit, false, false);
 			self.scratch_pad.write_text(name);
