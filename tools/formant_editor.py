@@ -742,17 +742,16 @@ class Editor(tk.Tk):
         threading.Thread(target=self.render_worker, args=(text, label), daemon=True).start()
 
     def render_worker(self, text, label):
-        cmd = ['cargo', 'run', '--release', '--quiet', '--example', 'tts_demo', '--', '--16bit', text]
+        os.makedirs(RENDERS, exist_ok=True)
+        path = os.path.join(RENDERS, label + '.wav')
+        cmd = ['cargo', 'run', '--release', '--quiet', '--example', 'tts_demo', '--', '--16bit', '--wav', path, text]
         try:
             p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
             ok, log = p.returncode == 0, p.stderr + p.stdout
         except OSError as e:
             ok, log = False, str(e)
-        path = None
-        if ok:
-            os.makedirs(RENDERS, exist_ok=True)
-            path = os.path.join(RENDERS, label + '.wav')
-            shutil.copyfile(os.path.join(ROOT, 'tts_demo.wav'), path)
+        if not ok:
+            path = None
         self.after(0, self.render_done, ok, log, path)
 
     def render_done(self, ok, log, path):
@@ -806,16 +805,16 @@ class Editor(tk.Tk):
         try:
             if not os.path.exists(SYNTH):
                 subprocess.run(['cargo', 'build', '--release', '--quiet', '--example', 'tts_demo'], cwd=ROOT, capture_output=True)
-            # run in the temp folder so its tts_demo.wav doesn't touch the project's
-            p = subprocess.run([SYNTH, '--16bit', '--table', table] + say, cwd=d, capture_output=True, text=True)
+            # a new name each time: the sound playing now may hold the last file open
+            path = os.path.join(d, f'live{n}.wav')
+            cmd = [SYNTH, '--16bit', '--table', table, '--wav', path] + say
+            p = subprocess.run(cmd, capture_output=True, text=True)
             ok, log = p.returncode == 0, p.stderr + p.stdout
         except OSError as e:
             ok, log = False, str(e)
-        path = None
-        if ok:
-            # a new name each time: the sound playing now may hold the last file open
-            path = os.path.join(d, f'live{n}.wav')
-            os.replace(os.path.join(d, 'tts_demo.wav'), path)
+        if not ok:
+            path = None
+        else:
             try:
                 os.remove(os.path.join(d, f'live{n - 2}.wav'))
             except OSError:

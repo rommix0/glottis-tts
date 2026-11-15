@@ -180,14 +180,15 @@ Pentium, a Cortex-M4F, an ESP32) runs it well, one without one will be slow.
 
 8. TRYING IT BY HAND
 --------------------
-tts_demo writes tts_demo.wav in the current folder:
+tts_demo speaks the text on the default output device (on Windows):
 
     cargo run --release --example tts_demo -- "this is an example sentence."
 
 Options:
+    --wav FILE        save the speech to a WAV file instead of playing it
     --voice N         voice 0 to 7
     --rate R          speaking rate, 0.5 to 2.0
-    --16bit           16-bit samples instead of 32-bit float
+    --16bit           with --wav, 16-bit samples instead of 32-bit float
     --text            print the normalized text instead of speaking
     --trace           print each word's and segment's plan
     --seg-dump FILE   write the segment index of every sample (32-bit)

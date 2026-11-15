@@ -41,13 +41,14 @@ let mut out = Samples(Vec::new());
 synthesize("Hello, world.".to_string(), &mut out).await?;
 ```
 
-Try it from the command line (writes `tts_demo.wav`):
+Try it from the command line (speaks on the default output device):
 
 ```bash
 cargo run --release --example tts_demo -- "this is an example sentence."
 ```
 
-Options include `--voice N`, `--rate R`, `--16bit`, `--text`, `--trace` and `--phone N`.
+Options include `--wav FILE` to save to a WAV file instead, `--voice N`, `--rate R`, `--16bit`, `--text`, `--trace`
+and `--phone N`.
 
 See [how to use.txt](how%20to%20use.txt) for the full guide: voices, rate, float samples and timing, phone input, and running without `std`.
 

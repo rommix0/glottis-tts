@@ -1,9 +1,9 @@
-// command line demo for trying the synthesizer by hand: reads the options, writes tts_demo.wav
+// command line demo for trying the synthesizer by hand: reads the options, plays the speech or saves it as a WAV
 //   cargo run --release --example tts_demo -- "text to speak."
 use std::env;
 use std::fs::File;
 use std::future::Future;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Cursor, Seek, Write};
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 use tts_synth::{_vtm, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
@@ -24,6 +24,7 @@ struct Opts {
 	text_only: bool,	// print the normalized text instead of speaking
 	seg_dump: Option<String>,	// file for the playing segment index of every sample
 	pcm16: bool,	// write 16-bit integer samples instead of 32-bit float
+	wav:   Option<String>,	// file to save the speech to instead of playing it
 	voice: usize,	// voice profile number
 	phone: Option<u8>,	// token of a single phone to say instead of the text
 	table: Option<String>,	// formant table file to use instead of the built-in one
@@ -31,8 +32,8 @@ struct Opts {
 
 fn parse_args() -> Result<Opts, String> {
 	let mut opts = Opts {
-		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, voice: 0,
-		phone: None, table: None
+		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, wav: None,
+		voice: 0, phone: None, table: None
 	};
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
@@ -43,6 +44,8 @@ fn parse_args() -> Result<Opts, String> {
 			opts.pcm16 = true;
 		} else if arg == "--text" {
 			opts.text_only = true;
+		} else if arg == "--wav" {
+			opts.wav = Some(args.next().ok_or("--wav needs a file name")?);
 		} else if arg == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
 		} else if arg == "--table" {
@@ -69,13 +72,13 @@ fn parse_args() -> Result<Opts, String> {
 	Ok(opts)
 }
 
-// writes the WAV file and the segment dump, prints the trace
-struct WavOut {
-	writer: hound::WavWriter<BufWriter<File>>,
+// writes the WAV and the segment dump, prints the trace
+struct WavOut<W: Write + Seek> {
+	writer: hound::WavWriter<W>,
 	dump:   Option<BufWriter<File>>,	// the playing segment index of every sample
 }
 
-impl SpeechSink for WavOut {
+impl<W: Write + Seek> SpeechSink for WavOut<W> {
 	type Error = hound::Error;
 
 	async fn sample(&mut self, x: f32, seg: usize) -> Result<(), hound::Error> {
@@ -109,22 +112,9 @@ fn read_table(path: &str) -> Result<&'static [u16; TABLE_LEN], String> {
 	Ok(Box::leak(Box::new(tbl)))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-
-	let opts = match parse_args() {
-		Ok(o) => o,
-		Err(e) => {
-			println!("{}", e);
-			std::process::exit(1);
-		}
-	};
-
-	if opts.text_only {
-		println!("{}", normalize(&opts.text));
-		return Ok(());
-	}
-
-	let mut out = WavOut { writer: hound::WavWriter::create("tts_demo.wav", wav_spec(opts.pcm16))?, dump: None };
+// say the text or phone into a WAV writer
+fn render<W: Write + Seek>(opts: &Opts, writer: hound::WavWriter<W>) -> Result<(), Box<dyn std::error::Error>> {
+	let mut out = WavOut { writer, dump: None };
 	if let Some(path) = &opts.seg_dump { out.dump = Some(BufWriter::new(File::create(path)?)); }
 
 	let mut sp = Speaker::new();
@@ -144,6 +134,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	})?;
 
 	out.writer.finalize()?;
+	Ok(())
+}
+
+// play a WAV held in memory on the default output device, returning when it ends
+#[cfg(windows)]
+fn play(wav: &[u8]) -> Result<(), String> {
+	#[link(name = "winmm")]
+	unsafe extern "system" {
+		fn PlaySoundW(sound: *const u16, module: *mut std::ffi::c_void, flags: u32) -> i32;
+	}
+	const SND_NODEFAULT: u32 = 0x0002;	// stay quiet rather than beep if the sound can't play
+	const SND_MEMORY: u32 = 0x0004;	// the sound is the WAV in memory, not a file name
+	// without SND_ASYNC the call returns once the sound has played
+	let played = unsafe { PlaySoundW(wav.as_ptr().cast(), std::ptr::null_mut(), SND_MEMORY | SND_NODEFAULT) };
+	if played == 0 { return Err("can't play on the output device; use --wav FILE to save the speech".to_string()); }
+	Ok(())
+}
+
+#[cfg(not(windows))]
+fn play(_wav: &[u8]) -> Result<(), String> {
+	Err("playing on the speaker needs Windows; use --wav FILE to save the speech".to_string())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+	let opts = match parse_args() {
+		Ok(o) => o,
+		Err(e) => {
+			println!("{}", e);
+			std::process::exit(1);
+		}
+	};
+
+	if opts.text_only {
+		println!("{}", normalize(&opts.text));
+		return Ok(());
+	}
+
+	if let Some(path) = &opts.wav {
+		render(&opts, hound::WavWriter::create(path, wav_spec(opts.pcm16))?)?;
+	} else {
+		// 16-bit for the speaker: every output device plays it
+		let mut wav = Cursor::new(Vec::new());
+		render(&opts, hound::WavWriter::new(&mut wav, wav_spec(true))?)?;
+		play(wav.get_ref())?;
+	}
 
 	Ok(())
 }
