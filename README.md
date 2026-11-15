@@ -11,6 +11,14 @@ text -> normalizer -> dictionary / suffix matching / letter-to-sound
      -> utterance -> durations and pitch -> formant synthesizer -> samples
 ```
 
+## Listen
+
+- [Tour](samples/tour.mp3) (35 s): the standard voice reading numbers, dates and money, questions and a long sentence
+- [Voices](samples/voices.mp3) (48 s): voices 1 to 7
+- [Speaking rate](samples/rate.mp3) (9 s): fast, slow and normal
+
+`python tools/build_samples.py` renders them again.
+
 ## Features
 
 - Text normalizer for numbers, money, times, abbreviations and symbols
