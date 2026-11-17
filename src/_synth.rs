@@ -51,7 +51,7 @@ const TRACK_EASE: f32 = 0.1;
 // a move cut off by the next one carries its speed on, fading it over this long so it doesn't stop dead
 const CARRY_MS: f32 = 10.0;
 
-// cut a burst into a vowel or sonorant duller than an open vowel by this share of 40 log10(F1 * F2 / RELEASE_REF)
+// cut a burst into an l, r, w or y duller than an open vowel by this share of 40 log10(F1 * F2 / RELEASE_REF)
 const RELEASE_FOLLOW: f32 = 0.5;
 const RELEASE_REF: f32 = 600.0 * 1500.0;
 
@@ -989,8 +989,9 @@ impl engine {
 		[0, 1, 2].map(|i| { let n = self.tbl[ax_row + 5 + i] as f32; n + (f[i] - n) * k })
 	}
 	fn quiet_next_db(&self) -> f32 {
-		// how much quieter above F2 the next vowel or sonorant is than an open vowel (dB; 0 if none or louder)
-		if self.pft_r1 & VOWEL == 0 && self.pft_r1 & APPROXIMANT == 0 { return 0.0; }
+		// how much quieter above F2 the next l, r, w or y is than an open vowel (dB; 0 if none or louder).
+		// a vowel gets none: its own formants already quieten the release through the cascade
+		if self.pft_r1 & APPROXIMANT == 0 { return 0.0; }
 		let [f1, f2, _] = self.next_vowel_formants();
 		(-40.0 * libm::log10f(f1 * f2 / RELEASE_REF)).max(0.0)
 	}
@@ -2848,12 +2849,17 @@ mod tests {
 		assert!(((asp_before(1) - asp_before(21)) - want).abs() < 0.3,
 			"cut {} before iy, want {}", asp_before(1) - asp_before(21), want);
 		assert_eq!(asp_before(1), ASP_DB, "aspiration before aa changed");
-		// and before a vowel quiet above F2, by ASP_FOLLOW of how much quieter it is than an open vowel
-		let f = |v: u8, i: usize| formant_tbl[v as usize * ROW_LEN + i] as f32;
-		let want = ASP_FOLLOW * -40.0 * (f(39, 5) * f(39, 6) / RELEASE_REF).log10();
-		assert!(want > 3.0);
-		assert!(((asp_before(1) - asp_before(39)) - want).abs() < 0.3,
-			"cut {} before uw, want {}", asp_before(1) - asp_before(39), want);
+	}
+
+	#[test]
+	fn a_release_keeps_its_level_before_a_back_vowel() {
+		// the vowel's own formants already quieten the release through the cascade ("two", "coo")
+		for &c in &[T, K, P] {
+			let at = |v: u8| loaded(&[(PAU, 50, true), (AX, 100, true), (c, 101, true), (v, 1000, true)], c);
+			let (aa, uw) = (at(AA), at(UW));
+			assert_eq!(uw.asp_db_next, aa.asp_db_next, "phone {}: aspiration before uw", c);
+			assert_eq!(uw.burst_gain, aa.burst_gain, "phone {}: burst before uw", c);
+		}
 	}
 
 	// (F1 at A, F2 at A, F2 at B) of stressed vowel v between consonants c1 and c2
