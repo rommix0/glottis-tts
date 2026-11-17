@@ -11,11 +11,12 @@ so only the stretchable part above the minimum is scaled.
 */
 use crate::_utt::{Utterance, Boundary, is_vowel, is_voiced, is_obstruent};
 use crate::_phone::*;
+use alloc::vec;
 use alloc::vec::Vec;
 
 pub struct PhoneDur { pub inherent: f32, pub min: f32 }
 
-const TEMPO: f32 = 1.12;					// the pace at rate 1
+const TEMPO: f32 = 1.165;					// the pace at rate 1
 pub const START_PAUSE_MS: f32 = 50.0;		// silence before the first phone of the input
 pub const RELEASE_MS:     f32 = 80.0;		// phrase-end release phone (AXP/IXP)
 const COMMA_PAUSE_MS:     f32 = 160.0;
@@ -39,6 +40,7 @@ const TENSE_VOWEL:            f32 = 1.4;		// long (tense) vowels and diphthongs:
 const SYLLABIC_L_SCHWA:       f32 = 0.5;		// the schwa of a syllabic (dark) l ("example") is mostly the l
 const GLIDE_THROUGH:          f32 = 0.3;		// a w or y a vowel glides through into the next one ("follower")
 const BEFORE_DENTAL:          f32 = 0.5;		// an s, z, f or v runs into a th or dh after it ("sixths", "twelfth")
+const ACCENTED_VOWEL:         f32 = 1.25;		// the vowel that carries a pitch accent
 
 pub fn phone_dur(p: u8) -> PhoneDur {
 	match p {
@@ -105,8 +107,12 @@ pub fn pause_after(end: Boundary, rate: f32) -> f32 {
 fn tempo(rate: f32) -> f32 { if rate.is_nan() { TEMPO } else { rate.clamp(0.5, 2.0) * TEMPO } }
 
 pub fn assign(utt: &mut Utterance, rate: f32) {
+	let mut accented = vec![false; utt.segs.len()];
+	for k in 0..utt.phrases.len() {
+		for n in utt.accented_vowels(k) { accented[n] = true; }
+	}
 	for i in 0..utt.segs.len() {
-		let (factor, rules) = rule_factor(utt, i);
+		let (factor, rules) = rule_factor(utt, i, accented[i]);
 		let pd = phone_dur(utt.segs[i].phone);
 		utt.segs[i].dur_ms = pd.min + (pd.inherent - pd.min) * factor / tempo(rate);
 		utt.segs[i].rules = rules;
@@ -114,7 +120,7 @@ pub fn assign(utt: &mut Utterance, rate: f32) {
 }
 
 // multiply the rule factors for segment i, and list the rules that fired
-fn rule_factor(utt: &Utterance, i: usize) -> (f32, Vec<&'static str>) {
+fn rule_factor(utt: &Utterance, i: usize, accented: bool) -> (f32, Vec<&'static str>) {
 	let p = utt.segs[i].phone;
 	let vowel = is_vowel(p);
 	let w = utt.segs[i].word;
@@ -144,6 +150,7 @@ fn rule_factor(utt: &Utterance, i: usize) -> (f32, Vec<&'static str>) {
 			2 => apply("secondary", SECONDARY_VOWEL),
 			_ => {},
 		}
+		if accented { apply("accent", ACCENTED_VOWEL); }
 		if matches!(p, AA | AE | AO | AW | AY | ER | EY | IY | OW | OY | UW) { apply("tense", TENSE_VOWEL); }
 		let n = word.syls.len();
 		if n >= 2 { apply("polysyllabic", libm::powf(POLYSYLLABIC, (n - 1) as f32).max(POLYSYLLABIC_FLOOR)); }
@@ -186,6 +193,12 @@ mod tests {
 	fn stretch(u: &Utterance, i: usize) -> f32 {
 		let pd = phone_dur(u.segs[i].phone);
 		u.segs[i].dur_ms - pd.min
+	}
+	// segment i's stretch over its stretchable range, the accent left out, so only the other rules show
+	fn unaccented_factor(u: &Utterance, i: usize) -> f32 {
+		let pd = phone_dur(u.segs[i].phone);
+		let accent = if u.segs[i].rules.contains(&"accent") { ACCENTED_VOWEL } else { 1.0 };
+		stretch(u, i) / (pd.inherent - pd.min) / accent
 	}
 
 	#[test]
@@ -248,7 +261,7 @@ mod tests {
 		// p 'aa p  p aa p  b 'iy .
 		let mut u = build(&[CW, 68, 15, 68, CW, 68, 32, 68, CW, 39, 26, PERIOD]);
 		assign(&mut u, 1.0);
-		let ratio = stretch(&u, 4) / stretch(&u, 1);
+		let ratio = unaccented_factor(&u, 4) / unaccented_factor(&u, 1);
 		assert!((ratio - 0.7).abs() < 0.01, "ratio {}", ratio);
 	}
 
@@ -257,9 +270,7 @@ mod tests {
 		// b 'iy t  b 'ih t  b 'iy .
 		let mut u = build(&[CW, 39, 26, 76, CW, 39, 25, 76, CW, 39, 26, PERIOD]);
 		assign(&mut u, 1.0);
-		// each against its own stretchable range, so only the rule factors are compared
-		let k = |i: usize| { let pd = phone_dur(u.segs[i].phone); stretch(&u, i) / (pd.inherent - pd.min) };
-		let ratio = k(1) / k(4);
+		let ratio = unaccented_factor(&u, 1) / unaccented_factor(&u, 4);
 		assert!((ratio - TENSE_VOWEL).abs() < 0.01, "ratio {}", ratio);
 	}
 
@@ -268,8 +279,18 @@ mod tests {
 		// b 'ah z  b 'ah s  b 'iy .
 		let mut u = build(&[CW, 39, 17, 87, CW, 39, 17, 72, CW, 39, 26, PERIOD]);
 		assign(&mut u, 1.0);
+		let ratio = unaccented_factor(&u, 1) / unaccented_factor(&u, 4);
+		assert!((ratio - BEFORE_VOICED_OBS / BEFORE_VOICELESS_OBS).abs() < 0.01, "ratio {}", ratio);
+	}
+
+	#[test]
+	fn an_accented_vowel_is_longer_than_a_deaccented_one() {
+		// k 'ae t  k 'ae t  k 'ae t .  the middle word follows an accented one and isn't last, so goes without
+		let mut u = build(&[CW, 56, 16, 76, CW, 56, 16, 76, CW, 56, 16, 76, PERIOD]);
+		assign(&mut u, 1.0);
 		let ratio = stretch(&u, 1) / stretch(&u, 4);
-		assert!((ratio - 1.15 / 0.9).abs() < 0.01, "ratio {}", ratio);
+		assert!((ratio - ACCENTED_VOWEL).abs() < 0.01, "ratio {}", ratio);
+		assert!((stretch(&u, 0) - stretch(&u, 3)).abs() < 0.01, "the consonants keep their length");
 	}
 
 	#[test]
