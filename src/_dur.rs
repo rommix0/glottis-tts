@@ -34,6 +34,8 @@ const POLYSYLLABIC:           f32 = 0.9;
 const POLYSYLLABIC_FLOOR:     f32 = 0.7;
 const BEFORE_VOICED_OBS:      f32 = 1.15;
 const BEFORE_VOICELESS_OBS:   f32 = 0.9;
+const FINAL_BEFORE_VOICED:    f32 = 1.4;		// the same at a phrase end, where the voicing cue is strongest
+const FINAL_BEFORE_VOICELESS: f32 = 0.8;
 const CLUSTER_CONSONANT:      f32 = 0.8;
 const WORD_INITIAL_CONSONANT: f32 = 1.1;
 const TENSE_VOWEL:            f32 = 1.4;		// long (tense) vowels and diphthongs: aa ae ao aw ay er ey iy ow oy uw
@@ -158,10 +160,11 @@ fn rule_factor(utt: &Utterance, i: usize, accented: bool) -> (f32, Vec<&'static 
 			apply("syllabic-l", SYLLABIC_L_SCHWA);
 		}
 		if same_word(i + 1) && is_obstruent(utt.segs[i + 1].phone) {
+			let final_syl = utt.is_last_syl_of_phrase(syl);
 			if is_voiced(utt.segs[i + 1].phone) {
-				apply("before-voiced", BEFORE_VOICED_OBS);
+				apply("before-voiced", if final_syl { FINAL_BEFORE_VOICED } else { BEFORE_VOICED_OBS });
 			} else {
-				apply("before-voiceless", BEFORE_VOICELESS_OBS);
+				apply("before-voiceless", if final_syl { FINAL_BEFORE_VOICELESS } else { BEFORE_VOICELESS_OBS });
 			}
 		}
 	} else {
@@ -242,7 +245,8 @@ mod tests {
 		let mut u = build(&[CW, 56, 16, 76, CW, 56, 16, 76, PERIOD]);
 		assign(&mut u, 1.0);
 		let ratio = stretch(&u, 4) / stretch(&u, 1);
-		assert!((ratio - PHRASE_FINAL_VOWEL * SENTENCE_FINAL).abs() < 0.01, "ratio {}", ratio);
+		let voicing = FINAL_BEFORE_VOICELESS / BEFORE_VOICELESS_OBS;
+		assert!((ratio - PHRASE_FINAL_VOWEL * SENTENCE_FINAL * voicing).abs() < 0.01, "ratio {}", ratio);
 	}
 
 	#[test]
@@ -281,6 +285,17 @@ mod tests {
 		assign(&mut u, 1.0);
 		let ratio = unaccented_factor(&u, 1) / unaccented_factor(&u, 4);
 		assert!((ratio - BEFORE_VOICED_OBS / BEFORE_VOICELESS_OBS).abs() < 0.01, "ratio {}", ratio);
+	}
+
+	#[test]
+	fn the_voicing_cue_is_stronger_at_a_phrase_end() {
+		// b 'ah z .  against  b 'ah s .
+		let mut z = build(&[CW, 39, 17, 87, PERIOD]);
+		let mut s = build(&[CW, 39, 17, 72, PERIOD]);
+		assign(&mut z, 1.0);
+		assign(&mut s, 1.0);
+		let ratio = stretch(&z, 1) / stretch(&s, 1);
+		assert!((ratio - FINAL_BEFORE_VOICED / FINAL_BEFORE_VOICELESS).abs() < 0.01, "ratio {}", ratio);
 	}
 
 	#[test]
