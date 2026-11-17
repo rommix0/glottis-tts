@@ -334,6 +334,30 @@ impl Utterance {
 	pub fn phrase_of_seg(&self, seg: usize) -> usize {
 		self.words[self.segs[seg].word].phrase
 	}
+
+	// the vowel a content word's accent would fall on: its primary stress, else its secondary
+	pub fn accent_of(&self, w: usize) -> Option<usize> {
+		let word = &self.words[w];
+		if word.function { return None; }
+		let syls = &self.syls[word.syls.clone()];
+		syls.iter().find(|s| s.stress == 1).or_else(|| syls.iter().find(|s| s.stress == 2)).and_then(|s| s.nucleus)
+	}
+
+	// the accented vowels of phrase k: every content word's, but a content word right after an accented one
+	// goes without, unless it is the phrase's last
+	pub fn accented_vowels(&self, k: usize) -> Vec<usize> {
+		let words = self.phrases[k].words.clone();
+		let last_content = words.clone().rev().find(|&w| self.accent_of(w).is_some());
+		let mut accented: Vec<usize> = Vec::new();
+		let mut prev_word: Option<usize> = None;
+		for w in words {
+			let Some(n) = self.accent_of(w) else { continue; };
+			if prev_word.is_some_and(|a| a + 1 == w) && Some(w) != last_content { continue; }
+			prev_word = Some(w);
+			accented.push(n);
+		}
+		accented
+	}
 }
 
 #[cfg(test)]
