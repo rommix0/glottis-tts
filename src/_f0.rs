@@ -257,14 +257,6 @@ impl<'a> Layout<'a> {
 
 	fn time(&self, i: usize, frac: f32) -> f32 { self.t0[i] + frac * self.utt.segs[i].dur_ms }
 
-	// find the accented syllable nucleus of a content word
-	fn accent_of(&self, w: usize) -> Option<usize> {
-		let word = &self.utt.words[w];
-		if word.function { return None; }
-		let syls = &self.utt.syls[word.syls.clone()];
-		syls.iter().find(|s| s.stress == 1).or_else(|| syls.iter().find(|s| s.stress == 2)).and_then(|s| s.nucleus)
-	}
-
 	fn push(&mut self, i: usize, frac: f32, st: f32, base: f32, kind: TargetKind) {
 		self.placed.push((
 			self.utt.phrase_of_seg(i),
@@ -288,7 +280,7 @@ impl<'a> Layout<'a> {
 
 	fn place_phrases(&mut self) {
 		let mut first_height = ACCENT_ST;
-		let last_accent_seg = (0..self.utt.words.len()).rev().find_map(|w| self.accent_of(w));
+		let last_accent_seg = (0..self.utt.words.len()).rev().find_map(|w| self.utt.accent_of(w));
 		for k in 0..self.utt.phrases.len() {
 			self.place_phrase(k, &mut first_height, last_accent_seg);
 		}
@@ -325,17 +317,11 @@ impl<'a> Layout<'a> {
 
 	fn place_accents(&mut self, k: usize, first_height: f32, last_accent_seg: Option<usize>) {
 		let utt = self.utt;
-		let ph = &utt.phrases[k];
 		let last_phrase = utt.phrases.len() - 1;
 		let mut h = first_height;
 		let mut n_acc = 0;
 		let mut prev_peak: Option<(usize, f32, f32)> = None;
-		let last_content = ph.words.clone().rev().find(|&w| self.accent_of(w).is_some());
-		let mut accented: Option<usize> = None;
-		for w in ph.words.clone() {
-			let Some(n) = self.accent_of(w) else { continue; };
-			if accented.is_some_and(|a| a + 1 == w) && Some(w) != last_content { continue; }
-			accented = Some(w);
+		for n in utt.accented_vowels(k) {
 			if n_acc > 0 { h = (h * DOWNSTEP).max(ACCENT_FLOOR_ST); }
 			n_acc += 1;
 			let is_last = Some(n) == last_accent_seg && k == last_phrase;

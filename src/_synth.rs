@@ -144,7 +144,8 @@ const F1_FOLLOW: f32 = 0.5;
 const F1_FOLLOW_REF: f32 = 500.0;
 const F1_FOLLOW_MIN: f32 = 180.0;
 
-// front vowels raise an alveolar's F2 locus but back vowels don't lower it: a vowel F2 under this counts as this
+// front vowels raise s's and n's F2 but back vowels don't lower it (n stays clear of ng):
+// a vowel F2 under this counts as this
 const ALVEOLAR_F2_FLOOR: f32 = 1500.0;
 
 // a fricative's voicing switches within this long at a vowel or sonorant, though its noise crossfades longer
@@ -230,7 +231,8 @@ fn locus(x: u8) -> Option<(f32, f32, f32)> {
 		F | V                   => Some((0.8, 300.0, 0.0)),					// labiodental
 		TH                      => Some((0.4, 900.0, 0.0)),					// dental
 		DH                      => Some((0.5, 700.0, 0.0)),					// lower: pulls F2 down by front vowels
-		D | T | N | DX          => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),	// alveolar
+		D | T | DX              => Some((0.6, 800.0, 0.0)),					// alveolar
+		N                       => Some((0.6, 800.0, ALVEOLAR_F2_FLOOR)),
 		S                       => Some((0.5, 850.0, ALVEOLAR_F2_FLOOR)),	// lower: pulls F2 down by front vowels
 		Z                       => Some((0.5, 750.0, 0.0)),					// lower and flatter than s
 		SH | ZH | CH | JH       => Some((0.3, 1500.0, 0.0)),				// postalveolar
@@ -2497,9 +2499,9 @@ mod tests {
 	#[test]
 	fn consonant_f2_follows_the_vowel() {
 		// a consonant's F2 on each side follows the neighbouring vowel's F2 by its place's slope;
-		// an alveolar takes a back vowel's F2 as ALVEOLAR_F2_FLOOR
+		// s and n take a back vowel's F2 as ALVEOLAR_F2_FLOOR
 		for &c in &[9u8, 11, 17, 26, 27, 34] {
-			let alveolar = matches!(c, 11 | 27 | 34);
+			let alveolar = c == S || c == N;
 			let f2 = |v: u8| {
 				let x = formant_tbl[v as usize * ROW_LEN + 6] as f32;
 				if alveolar { x.max(ALVEOLAR_F2_FLOOR) } else { x }
