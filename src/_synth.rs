@@ -141,6 +141,9 @@ const APPROX_RELEASE_MS: f32 = 80.0;
 // out of a vowel an l takes at least this long to reach its formants ("ball", "feel")
 const L_ONSET_MS: f32 = 60.0;
 
+// a diphthong's glide from its first target to its second takes at least this share of it ("time", "out", "boy")
+const DIPHTHONG_GLIDE_SHARE: f32 = 0.5;
+
 // while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
 
@@ -1600,6 +1603,12 @@ impl engine {
 			|| (self.F2_B_src - self.F2_A_src).abs() >= GLIDE_HZ;
 		if self.f1_len > 0 && glides {
 			self.ab_at = self.marker_A.min(fifty_ms);
+		}
+		if self.pft_c & VOWEL != 0 && glides && self.pft_l1 & APPROXIMANT == 0 {
+			// a diphthong glides over at least this share of itself, cutting short the move into its start if it must;
+			// out of l, r, w or y that move is the cue, so it keeps it
+			let glide = (DIPHTHONG_GLIDE_SHARE * self.pdr_c as f32) as i32;
+			self.ab_at = self.ab_at.min(self.marker_B - glide).max(0);
 		}
 		if self.pft_c & RHOTIC != 0 && self.pft_l1 & VOWEL != 0 {
 			// out of a vowel the move into an r ends inside it (R_ENTRY_MS): its own move waits for that one to land
@@ -3321,6 +3330,23 @@ mod tests {
 				}
 				assert!(move_ms >= 45.0, "{} into {}: {} ms", v, c, move_ms);
 			}
+		}
+	}
+
+	#[test]
+	fn a_short_diphthong_glides_over_half_its_length() {
+		// "time", "out", "boy" at speaking length: the glide to the second target is the vowel, not a flick at its end
+		for v in [AW, AY, OY, OW] {
+			let mut e = on_table();
+			let mut glide_ms = 0.0;
+			for (seg, &(p, d)) in [(PAU, 80), (B, 70), (v, 120), (D, 90), (AX, 80), (PAU, 100)].iter().enumerate() {
+				if e.load(p, d, true, seg, seg == 1) {
+					// load sets up the phone before the one it is given
+					if e.phn_c == v { glide_ms = (e.marker_B - e.ab_at) as f32 * 1000.0 / m_sr as f32; }
+					while e.is_running() { play(&mut e); }
+				}
+			}
+			assert!(glide_ms >= 55.0, "{} glides over {} ms of 120", v, glide_ms);
 		}
 	}
 
