@@ -2823,15 +2823,30 @@ mod tests {
 
 	#[test]
 	fn velar_burst_follows_the_vowel() {
-		// the burst peaks near the velar F2: high before iy, mid before aa
-		let peak = |x: &[f32]| (20..=70)
-			.map(|k| k as f32 * 50.0)
-			.max_by(|&a, &b| band_db(x, a).partial_cmp(&band_db(x, b)).unwrap())
-			.unwrap();
+		// the burst's energy sits near the velar F2: high before iy, mid before aa. one burst is a few ms of noise
+		// whose peaks wander by 500 Hz, so take the centre of its spectrum averaged over 8 takes, each starting the
+		// noise somewhere else
+		let centre = |c: u8, v: u8| {
+			let takes: Vec<Vec<f32>> = (5..13).map(|pause| {
+				let mut x = Vec::new();
+				drive(&[(PAU, pause * 10, true), (c, 100, true), (v, 200, true), (48, 100, true), (0, 50, true)], |e, y| {
+					if e.phn_c == c && e.counter >= e.marker_A { x.push(y); }
+				});
+				x
+			}).collect();
+			let (mut weighted, mut total) = (0.0, 0.0);
+			for k in 20..=70 {
+				let hz = k as f32 * 50.0;
+				let power: f32 = takes.iter().map(|x| libm::powf(10.0, band_db(x, hz) / 10.0)).sum();
+				weighted += power * hz;
+				total += power;
+			}
+			weighted / total
+		};
 		for &c in &[23u8, 17] {
-			let (front, back) = (peak(&burst_of(c, 21).0), peak(&burst_of(c, 1).0));
-			assert!(front > 2200.0 && back < 2000.0 && front > back + 500.0,
-				"{} peaks at {} Hz before iy, {} before aa", c, front, back);
+			let (front, back) = (centre(c, 21), centre(c, 1));
+			assert!(front > 2200.0 && back < 2100.0 && front > back + 300.0,
+				"{} centred at {} Hz before iy, {} before aa", c, front, back);
 		}
 	}
 

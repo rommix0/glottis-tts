@@ -7,6 +7,10 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 libm = "0.2.16"
 
+[features]
+# build at 44100 Hz instead of 22050 Hz, for music hosts: twice the DSP work
+rate-44100 = []
+
 [dev-dependencies]
 # WAV output for the tts_demo example
 hound = "3.5.1"

@@ -14,8 +14,8 @@ use crate::_f0::REF_HZ;
 use crate::_phone::IXP;
 use crate::_vtbl::{formant_tbl, ROW_LEN};
 
-// master sample rate
-pub const m_sr: u32 = 22050;
+// master sample rate: 22050 Hz, or 44100 Hz with the rate-44100 feature
+pub const m_sr: u32 = if cfg!(feature = "rate-44100") { 44100 } else { 22050 };
 
 // soft clip default
 const CLIP_LIMIT: f32 = 0.85;
@@ -25,6 +25,8 @@ const CLIP_LIMIT: f32 = 0.85;
 const LIP_D: f32 = 0.5;
 const LIP_TUNED_SR: f32 = 32000.0;
 const LIP_MATCH: f32 = 0.5;
+// at 44100 Hz the coefficient whose tilt best fits the 22050 Hz filter's up to 10 kHz (within 0.71 dB)
+const LIP_D_44100: f32 = 0.6;
 
 // jitter and shimmer draw uniformly up to this many times their average pulse-to-pulse change,
 // so the voice profile's numbers are averages (the average is 2/3 of the largest draw)
@@ -38,6 +40,8 @@ const CASC_GAIN: f32 = 2328.0;
 
 // frication noise: rolled off above this, so consonants are not too bright
 const FRIC_LP_HZ: f32 = 4500.0;
+// at 44100 Hz the corner whose roll-off best fits the 22050 Hz one up to 10 kHz (within 0.5 dB)
+const FRIC_LP_HZ_44100: f32 = 5700.0;
 
 // narrowest F1/F2 bandwidth (Hz) the cascade uses
 const CASC_MIN_BW: f32 = 60.0;
@@ -94,7 +98,7 @@ fn bw_widen3(f1: f32, f2: f32, f3: f32, f4: f32) -> [f32; 3] {
 }
 // a fixed upper formant (F4 and up) at the voice's scale: its frequency and bandwidth
 fn upper_formant(v: &Voice, hz: f32, bw: f32) -> (f32, f32) {
-	((hz * (v.fhi / 100.0)).min(F_MAX_SR * m_sr as f32), bw * (v.fhi / 100.0))
+	((hz * (v.fhi / 100.0)).min(F_MAX_SR * RES_SR), bw * (v.fhi / 100.0))
 }
 
 // breath noise follows the glottal flow, whose power over a period is oq/2 of steady noise's:
@@ -134,6 +138,16 @@ const FN_MURMUR: f32 = 320.0;
 
 // highest frequency a scaled formant may reach, as a share of the sample rate
 const F_MAX_SR: f32 = 0.45;
+
+// the resonators and the glottal filters at 44100 Hz feed back every second sample, so below 11 kHz they answer
+// exactly as at 22050 Hz, where they lift the top of the band (a brightness the voice was tuned with); a low-pass at
+// OUT_LP_HZ on the output takes away the mirror image this makes above 11 kHz, and any hiss the voice never had.
+// the noise goes through the same low-pass before the resonators, which would fold its top into 11-14 kHz
+const RES_STRIDE: usize = (m_sr / 22050) as usize;
+const RES_SR: f32 = 22050.0;
+const OUT_LP_HZ: f32 = 11000.0;
+// the low-pass is 6th order: three sections at these Q
+const OUT_LP_Q: [f32; 3] = [0.5176, 0.7071, 1.9319];
 
 // a voice profile: scales in percent of the formant table's voice (100 leaves it alone), plus source changes
 #[derive(Clone, Copy)]
@@ -300,6 +314,8 @@ const COS_TABLE: [f32; COS_STEPS + 1] = [
 // cos(2 pi hz / m_sr) from COS_TABLE, interpolated linearly.
 // within 0.4 Hz from 150 Hz up to F_MAX_SR, about 1 Hz off at 50 Hz where the cosine is flattest
 fn cos_hz(hz: f32) -> f32 {
+	// at 44100 Hz the table's steps are twice as wide in Hz and F1 lands off: a desktop build works it out exactly
+	if cfg!(feature = "rate-44100") { return libm::cosf(2.0 * PI * hz / m_sr as f32); }
 	let n = COS_STEPS as f32;
 	let mut t = (hz * (2.0 * n / m_sr as f32)).max(0.0);
 	// above half the sample rate the cosine comes back down
@@ -387,7 +403,8 @@ impl resonator {
 // FIXED POINT
 // the DSP runs on 32-bit integers, so a chip without a floating-point unit keeps up. every FRAME samples the
 // inputs are read and turned into coefficients and gains (in float), and the DSP glides to them sample by sample
-pub const FRAME: u32 = 32;
+// 32 samples at 22050 Hz; it keeps that time (1.45 ms) at a higher rate
+pub const FRAME: u32 = 32 * m_sr / 22050;
 // coefficients and gains are Q28 (-8 to 8); the source, the parallel branch and the output are Q27 (-16 to 16);
 // the cascade's signals are only a few thousandths, so they carry CASC_BITS fraction bits
 const COEF_BITS: u32 = 28;
@@ -441,22 +458,30 @@ struct fx_res {
 	c:      Glide,
 	y1:     i32,
 	y2:     i32,
+	y3:     i32,		// further back, for a stride of 2
+	y4:     i32,
+	stride: usize,		// samples between the outputs it feeds back: RES_STRIDE
 	shrink: i32,		// per-sample scale of the ring while the frequency falls (Q28)
 	bf:     f32,		// frequency it glides to, Hz
 }
 impl fx_res {
-	fn new(bf: f32, bw: f32) -> fx_res {
-		let [a, b, c] = res_coeffs(bf, bw);
+	fn new(bf: f32, bw: f32, stride: usize) -> fx_res {
+		let s = stride as f32;
+		let [a, b, c] = res_coeffs(bf * s, bw * s);
 		let g = Glide::default();
-		let mut r = fx_res { a: g, b: g, c: g, y1: 0, y2: 0, shrink: ONE, bf };
+		let mut r = fx_res { a: g, b: g, c: g, y1: 0, y2: 0, y3: 0, y4: 0, stride, shrink: ONE, bf };
 		r.a.set(to_q(a, COEF_BITS));
 		r.b.set(to_q(b, COEF_BITS));
 		r.c.set(to_q(c, COEF_BITS));
 		r
 	}
+	fn clear(&mut self) {
+		(self.y1, self.y2, self.y3, self.y4) = (0, 0, 0, 0);
+	}
 	fn glide_to(&mut self, bf: f32, bw: f32) {
 		self.shrink = shrink_per_sample(bf, self.bf);
-		let [a, b, c] = res_coeffs(bf, bw);
+		let s = self.stride as f32;
+		let [a, b, c] = res_coeffs(bf * s, bw * s);
 		self.a.to(to_q(a, COEF_BITS));
 		self.b.to(to_q(b, COEF_BITS));
 		self.c.to(to_q(c, COEF_BITS));
@@ -466,9 +491,18 @@ impl fx_res {
 		if self.shrink != ONE {
 			self.y1 = mul(self.shrink, self.y1);
 			self.y2 = mul(self.shrink, self.y2);
+			if self.stride > 1 {
+				self.y3 = mul(self.shrink, self.y3);
+				self.y4 = mul(self.shrink, self.y4);
+			}
 		}
 		let (a, b, c) = (self.a.next() as i64, self.b.next() as i64, self.c.next() as i64);
-		let y = sat((a * x as i64 + b * self.y1 as i64 + c * self.y2 as i64) >> COEF_BITS);
+		let (back1, back2) = if self.stride > 1 { (self.y2, self.y4) } else { (self.y1, self.y2) };
+		let y = sat((a * x as i64 + b * back1 as i64 + c * back2 as i64) >> COEF_BITS);
+		if self.stride > 1 {
+			self.y4 = self.y3;
+			self.y3 = self.y2;
+		}
 		self.y2 = self.y1;
 		self.y1 = y;
 		y
@@ -482,16 +516,28 @@ struct fixed_res {
 	c:   i32,
 	y1:  i32,
 	y2:  i32,
+	y3:  i32,		// further back, for a stride of 2
+	y4:  i32,
+	stride: usize,	// samples between the outputs it feeds back, as in fx_res
 	bf:  f32,		// its frequency, Hz
 }
 impl fixed_res {
-	fn new(bf: f32, bw: f32) -> fixed_res {
-		let [a, b, c] = res_coeffs(bf, bw).map(|v| to_q(v, COEF_BITS));
-		fixed_res { a, b, c, y1: 0, y2: 0, bf }
+	fn new(bf: f32, bw: f32, stride: usize) -> fixed_res {
+		let s = stride as f32;
+		let [a, b, c] = res_coeffs(bf * s, bw * s).map(|v| to_q(v, COEF_BITS));
+		fixed_res { a, b, c, y1: 0, y2: 0, y3: 0, y4: 0, stride, bf }
+	}
+	fn clear(&mut self) {
+		(self.y1, self.y2, self.y3, self.y4) = (0, 0, 0, 0);
 	}
 	fn step(&mut self, x: i32) -> i32 {
-		let acc = self.a as i64 * x as i64 + self.b as i64 * self.y1 as i64 + self.c as i64 * self.y2 as i64;
+		let (back1, back2) = if self.stride > 1 { (self.y2, self.y4) } else { (self.y1, self.y2) };
+		let acc = self.a as i64 * x as i64 + self.b as i64 * back1 as i64 + self.c as i64 * back2 as i64;
 		let y = sat(acc >> COEF_BITS);
+		if self.stride > 1 {
+			self.y4 = self.y3;
+			self.y3 = self.y2;
+		}
 		self.y2 = self.y1;
 		self.y1 = y;
 		y
@@ -508,32 +554,39 @@ struct fx_nasal {
 	c:   Glide,
 	x1:  i32,
 	x2:  i32,
+	x3:  i32,		// further back, for a stride of 2
+	x4:  i32,
 	y1:  i32,
 	y2:  i32,
+	y3:  i32,
+	y4:  i32,
+	stride: usize,	// samples between the inputs and outputs it reaches back to, as in fx_res
 	shrink_z: i32,	// per-sample scales of the history while a frequency falls (Q28)
 	shrink_p: i32,
 	fz:  f32,		// the zero's frequency, Hz
 	fp:  f32,		// the pole's
 }
 impl fx_nasal {
-	fn new(f: f32, bw: f32) -> fx_nasal {
+	fn new(f: f32, bw: f32, stride: usize) -> fx_nasal {
 		let g = Glide::default();
 		let mut n = fx_nasal {
-			n0: g, n1: g, n2: g, b: g, c: g, x1: 0, x2: 0, y1: 0, y2: 0, shrink_z: ONE, shrink_p: ONE, fz: f, fp: f,
+			n0: g, n1: g, n2: g, b: g, c: g, x1: 0, x2: 0, x3: 0, x4: 0, y1: 0, y2: 0, y3: 0, y4: 0, stride,
+			shrink_z: ONE, shrink_p: ONE, fz: f, fp: f,
 		};
 		n.set(f, bw, f, bw);
 		n
 	}
-	// the coefficients for a zero at fz and a pole at fp: n0, n1, n2, b, c
-	fn coeffs(fz: f32, bz: f32, fp: f32, bp: f32) -> [i32; 5] {
-		let [za, zb, zc] = res_coeffs(fz, bz);
-		let [pa, pb, pc] = res_coeffs(fp, bp);
+	// the coefficients for a zero at fz and a pole at fp, at this stride: n0, n1, n2, b, c
+	fn coeffs(fz: f32, bz: f32, fp: f32, bp: f32, stride: usize) -> [i32; 5] {
+		let s = stride as f32;
+		let [za, zb, zc] = res_coeffs(fz * s, bz * s);
+		let [pa, pb, pc] = res_coeffs(fp * s, bp * s);
 		// the zero is a resonator inverted: (1 - zb z^-1 - zc z^-2) / za
 		let k = pa / za;
 		[k, -zb * k, -zc * k, pb, pc].map(|v| to_q(v, COEF_BITS))
 	}
 	fn set(&mut self, fz: f32, bz: f32, fp: f32, bp: f32) {
-		let [n0, n1, n2, b, c] = Self::coeffs(fz, bz, fp, bp);
+		let [n0, n1, n2, b, c] = Self::coeffs(fz, bz, fp, bp, self.stride);
 		self.n0.set(n0);
 		self.n1.set(n1);
 		self.n2.set(n2);
@@ -544,7 +597,7 @@ impl fx_nasal {
 		// as with a resonator, a falling frequency scales its history down
 		self.shrink_z = shrink_per_sample(fz, self.fz);
 		self.shrink_p = shrink_per_sample(fp, self.fp);
-		let [n0, n1, n2, b, c] = Self::coeffs(fz, bz, fp, bp);
+		let [n0, n1, n2, b, c] = Self::coeffs(fz, bz, fp, bp, self.stride);
 		self.n0.to(n0);
 		self.n1.to(n1);
 		self.n2.to(n2);
@@ -554,18 +607,35 @@ impl fx_nasal {
 		self.fp = fp;
 	}
 	fn step(&mut self, x: i32) -> i32 {
+		let wide = self.stride > 1;
 		if self.shrink_z != ONE {
 			self.x1 = mul(self.shrink_z, self.x1);
 			self.x2 = mul(self.shrink_z, self.x2);
+			if wide {
+				self.x3 = mul(self.shrink_z, self.x3);
+				self.x4 = mul(self.shrink_z, self.x4);
+			}
 		}
 		if self.shrink_p != ONE {
 			self.y1 = mul(self.shrink_p, self.y1);
 			self.y2 = mul(self.shrink_p, self.y2);
+			if wide {
+				self.y3 = mul(self.shrink_p, self.y3);
+				self.y4 = mul(self.shrink_p, self.y4);
+			}
 		}
-		let zeros = self.n0.next() as i64 * x as i64 + self.n1.next() as i64 * self.x1 as i64
-			+ self.n2.next() as i64 * self.x2 as i64;
-		let poles = self.b.next() as i64 * self.y1 as i64 + self.c.next() as i64 * self.y2 as i64;
+		let (xb1, xb2) = if wide { (self.x2, self.x4) } else { (self.x1, self.x2) };
+		let (yb1, yb2) = if wide { (self.y2, self.y4) } else { (self.y1, self.y2) };
+		let zeros = self.n0.next() as i64 * x as i64 + self.n1.next() as i64 * xb1 as i64
+			+ self.n2.next() as i64 * xb2 as i64;
+		let poles = self.b.next() as i64 * yb1 as i64 + self.c.next() as i64 * yb2 as i64;
 		let y = sat((zeros + poles) >> COEF_BITS);
+		if wide {
+			self.x4 = self.x3;
+			self.x3 = self.x2;
+			self.y4 = self.y3;
+			self.y3 = self.y2;
+		}
 		self.x2 = self.x1;
 		self.x1 = x;
 		self.y2 = self.y1;
@@ -584,10 +654,25 @@ struct Biquad {
 	a2: i32,
 	x1: i32,
 	x2: i32,
+	x3: i32,		// further back, for a stride of 2
+	x4: i32,
 	y1: i32,
 	y2: i32,
+	y3: i32,
+	y4: i32,
+	stride: usize,	// samples between the values it reaches back to (0 or 1: the last two), as in fx_res
 }
 impl Biquad {
+	// a low-pass section at hz with this Q
+	fn lowpass(hz: f32, q: f32) -> Biquad {
+		let w = 2.0 * PI * hz / m_sr as f32;
+		let alpha = libm::sinf(w) / (2.0 * q);
+		let cw = libm::cosf(w);
+		let a0 = 1.0 + alpha;
+		let mut f = Biquad::default();
+		f.set((1.0 - cw) / 2.0 / a0, (1.0 - cw) / a0, (1.0 - cw) / 2.0 / a0, -2.0 * cw / a0, (1.0 - alpha) / a0);
+		f
+	}
 	fn set(&mut self, b0: f32, b1: f32, b2: f32, a1: f32, a2: f32) {
 		self.b0 = to_q(b0, COEF_BITS);
 		self.b1 = to_q(b1, COEF_BITS);
@@ -596,9 +681,18 @@ impl Biquad {
 		self.a2 = to_q(a2, COEF_BITS);
 	}
 	fn step(&mut self, x: i32) -> i32 {
-		let acc = self.b0 as i64 * x as i64 + self.b1 as i64 * self.x1 as i64 + self.b2 as i64 * self.x2 as i64
-			- self.a1 as i64 * self.y1 as i64 - self.a2 as i64 * self.y2 as i64;
+		let wide = self.stride > 1;
+		let (xb1, xb2) = if wide { (self.x2, self.x4) } else { (self.x1, self.x2) };
+		let (yb1, yb2) = if wide { (self.y2, self.y4) } else { (self.y1, self.y2) };
+		let acc = self.b0 as i64 * x as i64 + self.b1 as i64 * xb1 as i64 + self.b2 as i64 * xb2 as i64
+			- self.a1 as i64 * yb1 as i64 - self.a2 as i64 * yb2 as i64;
 		let y = sat(acc >> COEF_BITS);
+		if wide {
+			self.x4 = self.x3;
+			self.x3 = self.x2;
+			self.y4 = self.y3;
+			self.y3 = self.y2;
+		}
 		self.x2 = self.x1;
 		self.x1 = x;
 		self.y2 = self.y1;
@@ -608,10 +702,17 @@ impl Biquad {
 }
 
 #[derive(Default)]
-struct LpPole { a: i32, y1: i32, }
+struct LpPole {
+	a:  i32,
+	y1: i32,
+	y2: i32,			// for a stride of 2
+	stride: usize,		// as in Biquad
+}
 impl LpPole {
 	fn step(&mut self, x: i32) -> i32 {
-		let y = mul(ONE - self.a, x) + mul(self.a, self.y1);
+		let back = if self.stride > 1 { self.y2 } else { self.y1 };
+		let y = mul(ONE - self.a, x) + mul(self.a, back);
+		self.y2 = self.y1;
 		self.y1 = y;
 		y
 	}
@@ -664,8 +765,8 @@ impl LfSource {
 			inc: 0,
 			exc: [0; PULSE_RING],
 			n: 0,
-			glottal: Biquad::default(),
-			tilt: LpPole::default(),
+			glottal: Biquad { stride: RES_STRIDE, ..Biquad::default() },
+			tilt: LpPole { stride: RES_STRIDE, ..LpPole::default() },
 			flut_clock: 0,
 			ra: 0.0,
 			oq: 0.5,
@@ -720,15 +821,16 @@ impl LfSource {
 		let alpha_m = 1.0 / (1.0 + rk);
 		let bg = 1.0 / (oq  * t0 * libm::tanf(PI * (1.0 - alpha_m)));
 
-		// calculate coefficients for glottal biquad filter
-		let a1 = -2.0 * libm::expf(-PI * bg / m_sr as f32) * libm::cosf(2.0 * PI * fg / m_sr as f32);
-		let a2 = libm::expf(-2.0 * PI * bg / m_sr as f32);
-		let ag = 1.0 / libm::sinf(PI * (1.0 - alpha_m));
+		// calculate coefficients for glottal biquad filter, at the rate it answers as (RES_SR)
+		let a1 = -2.0 * libm::expf(-PI * bg / RES_SR) * libm::cosf(2.0 * PI * fg / RES_SR);
+		let a2 = libm::expf(-2.0 * PI * bg / RES_SR);
+		// at a stride of 2 a pulse fills every other sample, half the level: the gain makes it up
+		let ag = RES_STRIDE as f32 / libm::sinf(PI * (1.0 - alpha_m));
 		self.glottal.set(0.0, -ag, ag, a1, a2);
 
 		// calculate coefficients for tilt filter
 		let fa = 1.0 / (2.0 * PI * self.ra * t0);
-		self.tilt.a = to_q(libm::expf(-2.0 * PI * fa / m_sr as f32), COEF_BITS);
+		self.tilt.a = to_q(libm::expf(-2.0 * PI * fa / RES_SR), COEF_BITS);
 	}
 	fn set_oq(&mut self, oq: f32) {
 		self.oq = oq.clamp(0.05, 1.0);
@@ -792,6 +894,9 @@ impl LfSource {
 // the parallel branch rests after this long without input: its narrowest ring has died away by 100 dB
 const PARR_REST: u32 = m_sr / 10;
 
+// white noise at 44100 Hz spreads over twice the band: sqrt 2 keeps its level per Hz (Q28)
+const NOISE_44100_K: i32 = (core::f32::consts::SQRT_2 * ONE as f32) as i32;
+
 // fixed-point constants: the voicing's share of the source, and the branches' makeup gains
 const VOICING_K: i32 = (0.01 * ONE as f32) as i32;
 const PARR_K: i32 = (PARR_GAIN * ONE as f32) as i32;
@@ -840,6 +945,8 @@ pub struct vtm {
 	VR6:      fixed_res,
 	VR7:      fixed_res,
 	VR8:      fixed_res,
+	out_lp:   [Biquad; 3],	// keeps the output under 11 kHz at 44100 Hz, as at 22050 Hz
+	noise_lp: [Biquad; 3],	// and the noise, before the resonators
 	FR2:      fx_res,
 	FR3:      fx_res,
 	FR4:      fixed_res,
@@ -876,7 +983,12 @@ pub struct vtm {
 }
 impl vtm {
 	pub fn new() -> vtm {
-		let lip_d = libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH));
+		let fric_lp_hz = if cfg!(feature = "rate-44100") { FRIC_LP_HZ_44100 } else { FRIC_LP_HZ };
+		let lip_d = if cfg!(feature = "rate-44100") {
+			LIP_D_44100
+		} else {
+			libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / m_sr as f32, LIP_MATCH))
+		};
 		let g = Glide::default();
 		let mut tract = vtm {
 			F0     : 125.0,											// fundamental frequency (Hz)
@@ -907,24 +1019,26 @@ impl vtm {
 			B3_ADJ : 1.0,
 			noisegen : noise::new(),								// noise generator
 			glottal  : LfSource::new(),								// glottal pulse generator
-			NASAL    : fx_nasal::new(FN_INIT, BN_INIT),				// nasal pair
-			VR1      : fx_res::new(F1_INIT,  B1_INIT),				// cascade resonators
-			VR2      : fx_res::new(F2_INIT,  B2_INIT),				//    |
-			VR3      : fx_res::new(F3_INIT,  B3_INIT),				//    |
-			VR4      : fixed_res::new(F4_INIT,  B4_INIT),				//    |
-			VR5      : fixed_res::new(F5_INIT,  B5_INIT),				//    |
-			VR6      : fixed_res::new(F6_INIT,  B6_INIT),				//    |
-			VR7      : fixed_res::new(F7_INIT,  B7_INIT),				//    |
-			VR8      : fixed_res::new(F8_INIT,  B8_INIT),				//    V
-			FR2      : fx_res::new(F2_INIT,  B2_INIT),				// parallel resonators
-			FR3      : fx_res::new(F3_INIT,  B3_INIT),				//    |
-			FR4      : fixed_res::new(F4_INIT,  B4_INIT),				//    |
-			FR5      : fixed_res::new(F5_INIT,  B5_INIT),				//    |
-			FR6      : fixed_res::new(F6_INIT,  B6_INIT),				//    |
-			FR7      : fixed_res::new(F7_INIT,  B7_INIT),				//    |
-			FR8      : fixed_res::new(F8_INIT,  B8_INIT),				//    |
-			FR9      : fixed_res::new(F9_INIT,  B9_INIT),				//    |
-			FR10     : fixed_res::new(F10_INIT, B10_INIT),				//    V
+			NASAL    : fx_nasal::new(FN_INIT, BN_INIT, RES_STRIDE),		// nasal pair
+			VR1      : fx_res::new(F1_INIT,  B1_INIT, RES_STRIDE),				// cascade resonators
+			VR2      : fx_res::new(F2_INIT,  B2_INIT, RES_STRIDE),				//    |
+			VR3      : fx_res::new(F3_INIT,  B3_INIT, RES_STRIDE),				//    |
+			VR4      : fixed_res::new(F4_INIT,  B4_INIT, RES_STRIDE),				//    |
+			VR5      : fixed_res::new(F5_INIT,  B5_INIT, RES_STRIDE),				//    |
+			VR6      : fixed_res::new(F6_INIT,  B6_INIT, RES_STRIDE),				//    |
+			VR7      : fixed_res::new(F7_INIT,  B7_INIT, RES_STRIDE),				//    |
+			VR8      : fixed_res::new(F8_INIT,  B8_INIT, RES_STRIDE),				//    V
+			out_lp  : OUT_LP_Q.map(|q| Biquad::lowpass(OUT_LP_HZ, q)),
+			noise_lp: OUT_LP_Q.map(|q| Biquad::lowpass(OUT_LP_HZ, q)),
+			FR2      : fx_res::new(F2_INIT,  B2_INIT, RES_STRIDE),				// parallel resonators
+			FR3      : fx_res::new(F3_INIT,  B3_INIT, RES_STRIDE),				//    |
+			FR4      : fixed_res::new(F4_INIT,  B4_INIT, RES_STRIDE),				//    |
+			FR5      : fixed_res::new(F5_INIT,  B5_INIT, RES_STRIDE),				//    |
+			FR6      : fixed_res::new(F6_INIT,  B6_INIT, RES_STRIDE),				//    |
+			FR7      : fixed_res::new(F7_INIT,  B7_INIT, RES_STRIDE),				//    |
+			FR8      : fixed_res::new(F8_INIT,  B8_INIT, RES_STRIDE),				//    |
+			FR9      : fixed_res::new(F9_INIT,  B9_INIT, RES_STRIDE),				//    |
+			FR10     : fixed_res::new(F10_INIT, B10_INIT, RES_STRIDE),				//    V
 			av: g,
 			ah: g,
 			af: g,
@@ -946,7 +1060,7 @@ impl vtm {
 			min_bw: CASC_MIN_BW,
 			f1_over_f0: 0.0,
 
-			fric_a:  to_q(libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32), COEF_BITS),
+			fric_a:  to_q(libm::expf(-2.0 * PI * fric_lp_hz / m_sr as f32), COEF_BITS),
 			lip_d:   to_q(lip_d, COEF_BITS),
 			lip_k:   to_q((1.0 - LIP_D) / (1.0 - lip_d), COEF_BITS),
 			out_k:   0,
@@ -969,7 +1083,7 @@ impl vtm {
 		self.glottal.shimmer = v.shim;
 		let upper = |hz: f32, bw: f32| {
 			let (f, b) = upper_formant(&v, hz, bw);
-			fixed_res::new(f, b)
+			fixed_res::new(f, b, RES_STRIDE)
 		};
 		self.VR4  = upper(F4_INIT,  B4_INIT);
 		self.VR5  = upper(F5_INIT,  B5_INIT);
@@ -1071,13 +1185,16 @@ impl vtm {
 		let fnp = FN_INIT + k * (FN_MURMUR - FN_INIT);
 		self.NASAL.glide_to(fnz, bnz, fnp * scale, bnp);
 
-		self.VR1.glide_to(self.F1, bb1);			// F1 - tongue height
-		self.VR2.glide_to(self.F2, bb2);			// F2 - tongue fronting
-		self.VR3.glide_to(self.F3, bb3);			// F3 - R-coloring
+		// the formants keep the cap of the rate they answer as
+		let top = F_MAX_SR * RES_SR;
+		self.VR1.glide_to(self.F1.min(top), bb1);			// F1 - tongue height
+		self.VR2.glide_to(self.F2.min(top), bb2);			// F2 - tongue fronting
+		self.VR3.glide_to(self.F3.min(top), bb3);			// F3 - R-coloring
 	}
 	fn set_parallel(&mut self) {
-		self.FR2.glide_to(self.F2, (self.B2 * self.B2_ADJ).max(MIN_BW));
-		self.FR3.glide_to(self.F3, (self.B3 * self.B3_ADJ).max(MIN_BW));
+		let top = F_MAX_SR * RES_SR;
+		self.FR2.glide_to(self.F2.min(top), (self.B2 * self.B2_ADJ).max(MIN_BW));
+		self.FR3.glide_to(self.F3.min(top), (self.B3 * self.B3_ADJ).max(MIN_BW));
 	}
 	fn set_gains(&mut self) {
 		let gain = |g: f32| to_q(g.clamp(0.0, 1.0), COEF_BITS);
@@ -1120,15 +1237,11 @@ impl vtm {
 		sat(yy)
 	}
 	fn clear_parallel(&mut self) {
-		for (y1, y2) in [
-			(&mut self.FR2.y1, &mut self.FR2.y2), (&mut self.FR3.y1, &mut self.FR3.y2),
-			(&mut self.FR4.y1, &mut self.FR4.y2), (&mut self.FR5.y1, &mut self.FR5.y2),
-			(&mut self.FR6.y1, &mut self.FR6.y2), (&mut self.FR7.y1, &mut self.FR7.y2),
-			(&mut self.FR8.y1, &mut self.FR8.y2), (&mut self.FR9.y1, &mut self.FR9.y2),
-			(&mut self.FR10.y1, &mut self.FR10.y2),
-		] {
-			*y1 = 0;
-			*y2 = 0;
+		self.FR2.clear();
+		self.FR3.clear();
+		for r in [&mut self.FR4, &mut self.FR5, &mut self.FR6, &mut self.FR7, &mut self.FR8, &mut self.FR9,
+			&mut self.FR10] {
+			r.clear();
 		}
 	}
 	fn cascade(&mut self, x: i32) -> i32 {
@@ -1171,6 +1284,10 @@ impl vtm {
 		self.frame_left -= 1;
 		let av = self.av.next();
 		let white = self.noisegen.step();
+		let mut white = if cfg!(feature = "rate-44100") { mul(NOISE_44100_K, white) } else { white };
+		if RES_STRIDE > 1 {
+			for f in self.noise_lp.iter_mut() { white = f.step(white); }
+		}
 
 		// voicing starts with a pulse, not wherever the free-running period happens to be
 		if av > 0 && !self.voiced { self.glottal.restart(); }
@@ -1197,7 +1314,10 @@ impl vtm {
 		let casc_out = sat((self.cascade(casc_in) as i64 * CASC_K) >> 16);
 		let parr_out = mul(PARR_K, self.parallel(parr_in));
 
-		let out = mul(self.out_k, self.radiate(casc_out.saturating_add(parr_out)));
+		let mut out = mul(self.out_k, self.radiate(casc_out.saturating_add(parr_out)));
+		if RES_STRIDE > 1 {
+			for f in self.out_lp.iter_mut() { out = f.step(out); }
+		}
 		Self::softclip(out) as f32 * OUT_SCALE
 	}
 }
@@ -1340,7 +1460,106 @@ mod tests {
 		}
 	}
 
+	// noise power per Hz between lo and hi Hz, in dB (Hann-windowed DFT, so any rate and length compare)
+	fn density_db(x: &[f32], lo: f32, hi: f32) -> f32 {
+		let n = x.len();
+		let w: Vec<f64> = (0..n).map(|i| 0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos()).collect();
+		let w2: f64 = w.iter().map(|v| v * v).sum();
+		let (k0, k1) = ((lo * n as f32 / m_sr as f32) as usize, (hi * n as f32 / m_sr as f32) as usize);
+		let mut sum = 0.0f64;
+		for k in k0..k1 {
+			let (mut re, mut im) = (0.0f64, 0.0f64);
+			for (i, &v) in x.iter().enumerate() {
+				let ph = 2.0 * std::f64::consts::PI * (k * i) as f64 / n as f64;
+				re += w[i] * v as f64 * ph.cos();
+				im -= w[i] * v as f64 * ph.sin();
+			}
+			sum += re * re + im * im;
+		}
+		10.0 * (sum / (k1 - k0) as f64 / (m_sr as f64 * w2)).log10() as f32
+	}
+
 	#[test]
+	fn vowel_spectrum_keeps_to_the_rate() {
+		// a held ah has the same level per 1 kHz band up to 6 kHz at either rate. the levels are the 22050 Hz
+		// build's, measured over 0.74 s
+		let mut v = vtm::new();
+		let span = 16384 * (m_sr / 22050) as usize;
+		let x: Vec<f32> = (0..m_sr as usize / 2 + span).map(|_| {
+			v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
+			v.F1 = 700.0; v.F2 = 1220.0; v.F3 = 2600.0; v.B1 = 90.0; v.B2 = 110.0; v.B3 = 160.0;
+			v.step()
+		}).collect();
+		let tail = &x[x.len() - span..];
+		let want = [-50.71f32, -59.72, -79.12, -85.29, -89.62, -103.08];
+		let got: Vec<f32> = (0..6)
+			.map(|k| density_db(tail, (k as f32 * 1000.0).max(50.0), (k + 1) as f32 * 1000.0))
+			.collect();
+		for k in 0..6 {
+			assert!((got[k] - want[k]).abs() < 1.0, "{}-{} kHz: {:?} dB per Hz, not {:?}", k, k + 1, got, want);
+		}
+	}
+
+	#[test]
+	fn noise_level_per_hz_keeps_to_the_rate() {
+		// frication straight through the parallel bypass is as loud per Hz at either rate. the levels are the 22050 Hz
+		// build's; over 0.74 s the estimate holds to about 0.1 dB
+		let mut v = vtm::new();
+		let span = 16384 * (m_sr / 22050) as usize;
+		let x: Vec<f32> = (0..m_sr as usize / 4 + span).map(|_| {
+			v.AV = 0.0; v.AH = 0.0; v.AF = DB_GAIN[60]; v.AB = DB_GAIN[60];
+			v.step()
+		}).collect();
+		let tail = &x[x.len() - span..];
+		for (lo, hi, want) in [(2000.0, 4000.0, -100.30), (6000.0, 8000.0, -98.73)] {
+			let got = density_db(tail, lo, hi);
+			assert!((got - want).abs() < 0.5, "{}-{} Hz: {} dB per Hz, not {}", lo, hi, got, want);
+		}
+	}
+
+	#[test]
+	#[cfg(feature = "rate-44100")]
+	fn hiss_stays_under_the_reference_band() {
+		// at 44100 Hz frication adds no hiss the 22050 Hz voice never had: 12-16 kHz over 20 dB under 2-4 kHz
+		let mut v = vtm::new();
+		let span = 16384 * (m_sr / 22050) as usize;
+		let x: Vec<f32> = (0..m_sr as usize / 4 + span).map(|_| {
+			v.AV = 0.0; v.AH = 0.0; v.AF = DB_GAIN[60]; v.AB = DB_GAIN[60];
+			v.step()
+		}).collect();
+		let tail = &x[x.len() - span..];
+		let gap = density_db(tail, 12000.0, 16000.0) - density_db(tail, 2000.0, 4000.0);
+		assert!(gap < -20.0, "12-16 kHz only {} dB under 2-4 kHz", gap);
+	}
+
+	#[test]
+	fn lip_radiation_matches_the_reference_rate() {
+		// radiate()'s tilt, relative to 100 Hz, follows the 22050 Hz filter's at either rate (one coefficient fits it
+		// within 0.75 dB up to 10 kHz)
+		let gain = |hz: f32| {
+			let mut v = vtm::new();
+			let mut peak = 0.0f32;
+			for i in 0..4 * m_sr as usize {
+				let x = (2.0 * PI * hz * i as f32 / m_sr as f32).sin();
+				let y = v.radiate(to_q(x, SIG_BITS)) as f32 * OUT_SCALE;
+				if i > 2 * m_sr as usize { peak = peak.max(y.abs()); }
+			}
+			20.0 * peak.log10()
+		};
+		let d = libm::powf(LIP_D, libm::powf(LIP_TUNED_SR / 22050.0, LIP_MATCH));
+		let reference = |hz: f32| {
+			let w = 2.0 * PI * hz / 22050.0;
+			10.0 * (1.0 + d * d - 2.0 * d * w.cos()).log10()
+		};
+		for hz in [1000.0, 4000.0, 8000.0] {
+			let got = gain(hz) - gain(100.0);
+			let want = reference(hz) - reference(100.0);
+			assert!((got - want).abs() < 0.75, "{} Hz: {} dB over 100 Hz, the reference {}", hz, got, want);
+		}
+	}
+
+	#[test]
+	#[cfg(not(feature = "rate-44100"))]
 	fn lip_radiation_tilts_less_than_its_raw_coefficient() {
 		// at this rate the raw coefficient lifts the highs more than at its tuned rate.
 		// radiate() takes part of that back and leaves the low end alone
@@ -1384,14 +1603,21 @@ mod tests {
 	// one sample of the source at a steady pitch, as a float
 	fn source(g: &mut LfSource, f0: f32, rd: f32) -> f32 { g.step(phase_step(f0) as u32, f0, rd).0 as f32 * OUT_SCALE }
 
+	// hnr() of the source after half a second, over 0.37 s at any rate so the harmonics stay as sharp in Hz
+	const HNR_SPAN: usize = 8192 * (m_sr / 22050) as usize;
+	fn source_hnr(g: &mut LfSource, f0: f32, lo: f32, hi: f32) -> f32 {
+		let x: Vec<f32> = (0..m_sr as usize / 2 + HNR_SPAN).map(|_| source(g, f0, 0.6)).collect();
+		hnr(&x[x.len() - HNR_SPAN..], f0, lo, hi)
+	}
+
 	#[test]
 	fn glottal_pulses_keep_exact_time() {
 		// at a period that is no whole number of samples, the voice's highs are still harmonic
-		let mut g = LfSource::new();
-		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| source(&mut g, 120.0, 0.6)).collect();
-		let tail = &x[x.len() - 8192..];
-		let h = hnr(tail, 120.0, 2000.0, 4000.0);
+		let h = source_hnr(&mut LfSource::new(), 120.0, 2000.0, 4000.0);
 		assert!(h > 40.0, "2-4 kHz harmonics only {} dB over the rest", h);
+		// and on a sung high C, where the pulses come every 21 samples at 22050 Hz
+		let h = source_hnr(&mut LfSource::new(), 1046.0, 2000.0, 8000.0);
+		assert!(h > 40.0, "at 1046 Hz the 2-8 kHz harmonics only {} dB over the rest", h);
 	}
 
 	#[test]
@@ -1462,8 +1688,7 @@ mod tests {
 		// and the pulses feel it: 1% jitter blurs the 2-4 kHz harmonics that stay clean without it
 		let mut g = LfSource::new();
 		g.jitter = 1.0;
-		let x: Vec<f32> = (0..m_sr as usize / 2 + 8192).map(|_| source(&mut g, 120.0, 0.6)).collect();
-		let h = hnr(&x[x.len() - 8192..], 120.0, 2000.0, 4000.0);
+		let h = source_hnr(&mut g, 120.0, 2000.0, 4000.0);
 		assert!(h < 30.0, "2-4 kHz harmonics {} dB over the rest with jitter", h);
 	}
 
