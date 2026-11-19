@@ -410,6 +410,7 @@ fn stop_timeline(
 pub struct engine {
 	pub tbl: &'static [u16; TABLE_LEN],	// the formant table, swapped by --table
 	pub vowel_glide_ms: Option<f32>,	// longest a vowel's move from its first target to its second; None: all of it
+	pub vowel_bw_scale: f32,			// vowel bandwidths times this (1: the table's)
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -568,6 +569,7 @@ impl engine {
 		engine {
 			tbl: &formant_tbl,
 			vowel_glide_ms: None,
+			vowel_bw_scale: 1.0,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
 			amp_len:   0,
@@ -1761,6 +1763,11 @@ impl engine {
 		self.vtm_eng.B1  = self.B1_reg + damp * ASP_B1_WIDEN;
 		self.vtm_eng.B2  = self.B2_reg + damp * ASP_B2_WIDEN + self.lip_hold * LABIAL_BURST_WIDEN;
 		self.vtm_eng.B3  = self.B3_reg + self.lip_hold * LABIAL_BURST_WIDEN;
+		if self.pft_c & VOWEL != 0 {
+			self.vtm_eng.B1 *= self.vowel_bw_scale;
+			self.vtm_eng.B2 *= self.vowel_bw_scale;
+			self.vtm_eng.B3 *= self.vowel_bw_scale;
+		}
 		self.vtm_eng.F2  = self.F2_reg + self.lip_hold * (self.F2_reg.min(LABIAL_BURST_F2) - self.F2_reg);
 		self.vtm_eng.F3  = self.F3_reg + self.lip_hold * (self.F3_reg.min(LABIAL_BURST_F3) - self.F3_reg);
 		self.vtm_eng.RD  = self.RD_reg + BREATH_END_RD * breath + VOICE_BAR_RD * bar;
@@ -2479,6 +2486,29 @@ mod tests {
 		let end = f2[f2.len() - 1];
 		assert!((mid.1 - mid.2).abs() < 20.0, "F2 {} in the middle, first target {}", mid.1, mid.2);
 		assert!((end.1 - end.3).abs() < 20.0, "F2 {} at the end, second target {}", end.1, end.3);
+	}
+
+	#[test]
+	fn vowel_bandwidths_follow_their_scale() {
+		// the bandwidths the tract gets in the middle of a held aa
+		let mid_bw = |scale: f32| {
+			let mut e = engine::new();
+			e.vowel_bw_scale = scale;
+			let mut bw: Vec<[f32; 3]> = Vec::new();
+			for (seg, &(p, d)) in [(PAU, 50), (AA, 400), (PAU, 100), (SIL, 50)].iter().enumerate() {
+				if e.load(p, d, true, seg, true) {
+					while e.is_running() {
+						play(&mut e);
+						if e.phn_c == AA { bw.push([e.vtm_eng.B1, e.vtm_eng.B2, e.vtm_eng.B3]); }
+					}
+				}
+			}
+			bw[bw.len() / 2]
+		};
+		let (plain, wide) = (mid_bw(1.0), mid_bw(1.3));
+		for k in 0..3 {
+			assert!((wide[k] / plain[k] - 1.3).abs() < 0.01, "B{} {} against {}", k + 1, wide[k], plain[k]);
+		}
 	}
 
 	#[test]
