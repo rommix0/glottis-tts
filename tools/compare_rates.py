@@ -40,6 +40,10 @@ for name, lyric in (('s', 'sass'), ('sh', 'shush'), ('f', 'fluff'), ('th', 'thin
 	SOUNDS[name] = (sung(0, 48, lyric, 600), ('hiss', 60, 4000))
 for name, lyric in (('k', 'kick'), ('t', 'tip')):
 	SOUNDS[name] = (sung(0, 48, lyric, 600), ('hiss', 20, 2000))
+for v in (3, 5):
+	# breath and high sung notes on the voices whose levels and headroom differ most
+	SOUNDS[f'h{v}'] = (sung(v, 60, 'ha', 600), ('hiss', 60, 4000))
+	SOUNDS[f'high{v}'] = (['--voice', str(v), '--sing', 'r:200 84:900:ee 86:900:day 88:900:ah 91:900:ee r:300'], ('all',))
 for v in range(8):
 	SOUNDS[f'speech{v}'] = (['--voice', str(v), SENTENCE], ('all',))
 SOUNDS['bingo'] = (['--sing', score(BINGO, 0)], ('all',))

@@ -142,7 +142,8 @@ const F_MAX_SR: f32 = 0.45;
 // the resonators and the glottal filters at 44100 Hz feed back every second sample, so below 11 kHz they answer
 // exactly as at 22050 Hz, where they lift the top of the band (a brightness the voice was tuned with); a low-pass at
 // OUT_LP_HZ on the output takes away the mirror image this makes above 11 kHz, and any hiss the voice never had.
-// the noise goes through the same low-pass before the resonators, which would fold its top into 11-14 kHz
+// the noise and the glottal source go through the same low-pass before the resonators, which would fold the noise's
+// top into 11-14 kHz and lift the source's own mirror past the fixed-point range
 const RES_STRIDE: usize = (m_sr / 22050) as usize;
 const RES_SR: f32 = 22050.0;
 const OUT_LP_HZ: f32 = 11000.0;
@@ -197,21 +198,23 @@ pub const VOICES: [Voice; 8] = [
 // measure aspiration's loudness at a voice's scale: white noise through the cascade and lips, times the output level.
 // a bigger scale lets more noise through, but the voice's db only evens out its vowels
 fn asp_level(v: &Voice) -> f32 {
-	let top = F_MAX_SR * m_sr as f32;
+	// worked out at the rate the resonators answer as (RES_SR), where the noise meets them
+	let top = F_MAX_SR * RES_SR;
 	let (s1, s2, s3) = (v.f1 / 100.0, v.f2 / 100.0, v.f3 / 100.0);
 	// F1-F3 and their widths as in a release (the table's row), widened like fix_bw;
 	// upper formants as set_voice builds them
 	let row = |k: usize| formant_tbl[IXP as usize * ROW_LEN + k] as f32;
 	let (f1, f2, f3) = (row(5) * s1, row(6) * s2, row(7) * s3);
 	let [a1, a2, a3] = bw_widen3(f1, f2, f3, F4_INIT * (v.fhi / 100.0));
+	let at_res = |hz: f32, bw: f32| resonator::new(hz * RES_STRIDE as f32, bw * RES_STRIDE as f32);
 	let upper = |hz: f32, bw: f32| {
 		let (f, b) = upper_formant(v, hz, bw);
-		resonator::new(f, b)
+		at_res(f, b)
 	};
 	let mut rs = [
-		resonator::new(f1.min(top), row(8) * s1 * a1),
-		resonator::new(f2.min(top), row(9) * s2 * a2),
-		resonator::new(f3.min(top), row(10) * s3 * a3),
+		at_res(f1.min(top), row(8) * s1 * a1),
+		at_res(f2.min(top), row(9) * s2 * a2),
+		at_res(f3.min(top), row(10) * s3 * a3),
 		upper(F4_INIT, B4_INIT), upper(F5_INIT, B5_INIT), upper(F6_INIT, B6_INIT), upper(F7_INIT, B7_INIT),
 		upper(F8_INIT, B8_INIT),
 	];
@@ -746,6 +749,7 @@ struct LfSource {
 	n:          usize,				// sample index, modulo PULSE_RING
 	glottal:    Biquad,
 	tilt:       LpPole,
+	mirror_lp:  [Biquad; 3],		// at a stride of 2, takes off the filters' mirror of the pulse above 11 kHz
 	flut_clock: u32,
 	ra:         f32,
 	oq:         f32,				// open quotient: share of the period the glottis is open
@@ -767,6 +771,7 @@ impl LfSource {
 			n: 0,
 			glottal: Biquad { stride: RES_STRIDE, ..Biquad::default() },
 			tilt: LpPole { stride: RES_STRIDE, ..LpPole::default() },
+			mirror_lp: OUT_LP_Q.map(|q| Biquad::lowpass(OUT_LP_HZ, q)),
 			flut_clock: 0,
 			ra: 0.0,
 			oq: 0.5,
@@ -881,7 +886,11 @@ impl LfSource {
 		self.exc[slot] = 0;
 		self.n = (self.n + 1) % PULSE_RING;
 
-		let sample = self.tilt.step(self.glottal.step(impulse));
+		let mut sample = self.tilt.step(self.glottal.step(impulse));
+		if RES_STRIDE > 1 {
+			// let through, the tract and the lips would lift the mirror past the fixed-point range
+			for f in self.mirror_lp.iter_mut() { sample = f.step(sample); }
+		}
 
 		self.inc = ((base_inc as u64 * self.jit_q as u64) >> 30) as u32;
 		let (phase, ended) = self.phase.overflowing_add(self.inc);
@@ -1530,6 +1539,29 @@ mod tests {
 		let tail = &x[x.len() - span..];
 		let gap = density_db(tail, 12000.0, 16000.0) - density_db(tail, 2000.0, 4000.0);
 		assert!(gap < -20.0, "12-16 kHz only {} dB under 2-4 kHz", gap);
+	}
+
+	#[test]
+	#[cfg(feature = "rate-44100")]
+	fn voicing_has_no_mirror_above_the_reference_band() {
+		// the glottal filters answer as at 22050 Hz, which mirrors the pulse's lows up under 22 kHz; let through, the
+		// tract and the lips lift that mirror past the fixed-point range on a loud high note
+		for f0 in [120.0, 1046.0] {
+			let mut g = LfSource::new();
+			let x: Vec<f32> = (0..m_sr as usize / 2 + HNR_SPAN).map(|_| source(&mut g, f0, 0.6)).collect();
+			let tail = &x[x.len() - HNR_SPAN..];
+			let gap = density_db(tail, 15000.0, 21000.0) - density_db(tail, 500.0, 2000.0);
+			assert!(gap < -30.0, "at {} Hz, 15-21 kHz only {} dB under 0.5-2 kHz", f0, gap);
+		}
+	}
+
+	#[test]
+	fn aspiration_gain_keeps_to_the_rate() {
+		// each voice's aspiration level against the table voice's is the same at either rate (the 22050 Hz build's, dB)
+		for (v, want) in [(2, -9.50f32), (3, -6.25), (5, -12.72)] {
+			let got = 20.0 * libm::log10f(asp_level(&VOICES[0]) / asp_level(&VOICES[v]));
+			assert!((got - want).abs() < 0.1, "voice {}: {} dB, not {}", v, got, want);
+		}
 	}
 
 	#[test]
