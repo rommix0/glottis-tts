@@ -23,6 +23,9 @@ pitch, in layers on the notes:
 	+ a scoop up into a note after a rest, a fall at the end of one before a rest
 	+ vibrato that sets in a while into a note and fades before it ends
 
+rapped (Style::Rap), the timing is the same but the pitch is spoken: the
+speech contour's, laid over the sung lengths, a phrase between rests.
+
 each sing() call is a passage of its own: start it with a rest to give the
 first consonants their time ahead of the beat.
 
@@ -35,9 +38,9 @@ use crate::{_synth, _vtm::m_sr};
 use crate::_vtm::Voice;
 use crate::_dread::dictreader;
 use crate::_utils::cbuf;
-use crate::_utt::Utterance;
+use crate::_utt::{Utterance, Seg, Syl, Word, Phrase, Boundary, Kind, is_vowel};
 use crate::_dur::{phone_dur, RELEASE_MS};
-use crate::_f0::REF_HZ;
+use crate::_f0::{self, REF_HZ};
 use crate::_phone::*;
 
 // a lyric that carries on the word before
@@ -70,8 +73,15 @@ const VIBRATO_ST:       f32 = 0.35;			// peak deviation
 const VIBRATO_DELAY_MS: f32 = 300.0;		// into the note
 const VIBRATO_RISE_MS:  f32 = 400.0;
 const VIBRATO_FADE_MS:  f32 = 150.0;		// before the note, or the glide out of it, ends
+const RAP_ACCENT_MS:    f32 = 100.0;		// rapped, an accent peaks this soon into its vowel at the latest, as spoken
 const MIN_HZ:           f32 = 40.0;
 const MAX_HZ:           f32 = 1600.0;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Style {
+	Sing,		// each vowel held for its note, on the note's pitch
+	Rap,		// the same timing, with the pitch of speech
+}
 
 pub struct Note<'a> {
 	pub key:   u8,			// MIDI key: 60 is middle C, 69 is A4 at 440 Hz
@@ -82,15 +92,16 @@ pub struct Note<'a> {
 // one phone to sing
 struct Sung {
 	phone:      u8,
-	stressed:   bool,
+	stress:     u8,			// 0, 1 primary, 2 secondary
 	word_start: bool,
 	ms:         f32,
 }
 
 // a syllable's phones and which of them is its vowel
 struct Syllable {
-	phones:  Vec<Sung>,
-	nucleus: usize,
+	phones:   Vec<Sung>,
+	nucleus:  usize,
+	function: bool,		// of a function word, which takes no accent
 }
 
 impl Syllable {
@@ -145,14 +156,14 @@ fn syllables(lyric: &str, dict: &mut dictreader) -> Vec<Syllable> {
 			let s = &utt.segs[i];
 			phones.push(Sung {
 				phone:      s.phone,
-				stressed:   s.stress != 0,
+				stress:     s.stress,
 				word_start: utt.words[s.word].segs.start == i,
 				ms:         phone_dur(s.phone).inherent * CONSONANT_SCALE,
 			});
 		}
 		// a syllable with no vowel ("hmm") holds its last sound
 		let nucleus = syl.nucleus.map_or(phones.len() - 1, |n| n - syl.segs.start);
-		out.push(Syllable { phones, nucleus });
+		out.push(Syllable { phones, nucleus, function: utt.words[syl.word].function });
 	}
 	out
 }
@@ -213,7 +224,7 @@ fn add_releases(spans: &mut [Span]) {
 		let before_rest = spans.get(j + 1).is_none_or(|s| s.syl.is_none());
 		if let Some(s) = spans[j].syl.as_mut() && before_rest {
 			let last = s.phones[s.phones.len() - 1].phone;
-			s.phones.push(Sung { phone: release_phone(last), stressed: false, word_start: false, ms: RELEASE_MS });
+			s.phones.push(Sung { phone: release_phone(last), stress: 0, word_start: false, ms: RELEASE_MS });
 		}
 	}
 }
@@ -265,6 +276,61 @@ fn key_hz(key: f32) -> f32 { 440.0 * libm::exp2f((key - 69.0) / 12.0) }
 // the pitch to give the synthesizer so the voice's pitch scaling lands on hz
 fn voice_input_hz(hz: f32, v: &Voice) -> f32 {
 	REF_HZ * libm::powf(hz / (REF_HZ * v.f0 / 100.0), 100.0 / v.range)
+}
+
+// rapped, the passage as an utterance for the speech contour: its words, syllables and stress at the sung
+// lengths, a phrase between rests; and the stream index each segment plays as, counting from first_seg
+fn rap_utterance(spans: &[Span], first_seg: usize) -> (Utterance, Vec<usize>) {
+	let mut utt = Utterance {
+		segs: Vec::new(), syls: Vec::new(), words: Vec::new(), phrases: Vec::new(), kind: Kind::Statement,
+	};
+	let mut stream: Vec<usize> = Vec::new();
+	let mut seg = first_seg;
+	let mut phrase_start = 0;		// the first word of the phrase being built
+	for span in spans {
+		let Some(syl) = &span.syl else {
+			// the rest's pause plays as a segment of its own, outside the utterance
+			seg += 1;
+			end_phrase(&mut utt, &mut phrase_start, Boundary::Comma);
+			continue;
+		};
+		let new_word = syl.phones[0].word_start || utt.words.len() == phrase_start;
+		if new_word {
+			let (n, s) = (utt.segs.len(), utt.syls.len());
+			let phrase = utt.phrases.len();
+			utt.words.push(Word { segs: n..n, syls: s..s, function: syl.function, text: String::new(), phrase });
+		}
+		let w = utt.words.len() - 1;
+		let first = utt.segs.len();
+		for (i, p) in syl.phones.iter().enumerate() {
+			seg += 1;
+			// the release is the voice dying away after the phrase, as in speech
+			if matches!(p.phone, AXP | IXP) { continue; }
+			let dur_ms = if i == syl.nucleus { span.ms } else { p.ms };
+			let s = utt.syls.len();
+			utt.segs.push(Seg { phone: p.phone, stress: p.stress, word: w, syl: s, dur_ms, rules: Vec::new(), glide: false });
+			stream.push(seg - 1);
+		}
+		let nucleus = Some(first + syl.nucleus).filter(|&n| is_vowel(utt.segs[n].phone));
+		let stress = syl.phones[syl.nucleus].stress;
+		utt.syls.push(Syl { segs: first..utt.segs.len(), nucleus, stress, word: w });
+		utt.words[w].segs.end = utt.segs.len();
+		utt.words[w].syls.end = utt.syls.len();
+	}
+	end_phrase(&mut utt, &mut phrase_start, Boundary::Period);
+	// the passage's last phrase ends it like a period, after a rest too
+	if let Some(last) = utt.phrases.last_mut() {
+		last.end = Boundary::Period;
+	}
+	(utt, stream)
+}
+
+// close the phrase begun at word phrase_start, if it has any words
+fn end_phrase(utt: &mut Utterance, phrase_start: &mut usize, end: Boundary) {
+	if utt.words.len() > *phrase_start {
+		utt.phrases.push(Phrase { words: *phrase_start..utt.words.len(), end });
+		*phrase_start = utt.words.len();
+	}
 }
 
 // the notes and the segments played, on the song clock
@@ -344,7 +410,9 @@ impl Melody {
 pub struct Singer {
 	pub synth: _synth::engine,
 	pub trace: bool,		// send each phone's plan to SpeechSink::trace
+	pub style: Style,
 	melody:    Melody,
+	contour:   _f0::Contour,	// the pitch when rapped
 	dict:      dictreader,
 	clock:     f64,			// ms of song sung so far
 	played:    i64,			// samples given to the synthesizer, less what it left out
@@ -362,10 +430,14 @@ impl Singer {
 		synth.vowel_min_b2 = VOWEL_MIN_B2;
 		// a sung line runs legato from vowel to vowel
 		synth.word_catch = false;
+		let mut contour = _f0::Contour::new();
+		contour.accent_max_ms = RAP_ACCENT_MS;
 		Singer {
 			synth,
 			trace:    false,
+			style:    Style::Sing,
 			melody:   Melody { tones: Vec::new(), segs: Vec::new() },
+			contour,
 			dict:     dictreader::new(),
 			clock:    0.0,
 			played:   0,
@@ -385,6 +457,10 @@ impl Singer {
 		let (tones, mut spans) = lay_out(pieces, self.clock);
 		add_releases(&mut spans);
 		fit(&mut spans, &tones);
+		if self.style == Style::Rap {
+			let (utt, stream) = rap_utterance(&spans, self.next_seg);
+			self.contour.add_utterance(&utt, &stream);
+		}
 		// a passage ends in a rest, so the next one starts fresh
 		let end = tones.last().map_or(self.clock, |n| n.end);
 		self.melody.tones.extend(tones);
@@ -403,7 +479,7 @@ impl Singer {
 				self.clock += ms as f64;
 				let dur_ms = if i == syl.nucleus { self.ms_until_clock() } else { libm::roundf(ms) as i32 };
 				// every sung vowel carries a note, so none is unstressed ("i" is the pronoun to the dictionary)
-				let stressed = p.stressed || i == syl.nucleus;
+				let stressed = p.stress != 0 || i == syl.nucleus;
 				self.play(out, p.phone, dur_ms, stressed, p.word_start).await?;
 			}
 		}
@@ -431,9 +507,10 @@ impl Singer {
 	async fn play<O: SpeechSink>(
 		&mut self, out: &mut O, phone: u8, dur_ms: i32, stressed: bool, word_start: bool
 	) -> Result<(), O::Error> {
-		if dur_ms <= 0 { return Ok(()); }
+		// every phone takes a stream index, played or not, so rap_utterance can count them out ahead
 		let seg = self.next_seg;
 		self.next_seg += 1;
+		if dur_ms <= 0 { return Ok(()); }
 		let start = self.played as f64 / SAMPLES_PER_MS;
 		self.melody.segs.push((seg, start, dur_ms as f32));
 		if self.trace {
@@ -443,8 +520,11 @@ impl Singer {
 		self.played += (dur_ms as f32 * m_sr as f32 / 1000.0) as i64;
 		if self.synth.load(phone, dur_ms, stressed, seg, word_start) {
 			let v = self.synth.voice();
-			let melody = &self.melody;
-			run_synth(&mut self.synth, out, &mut self.f0, |s, f| melody.hz_at(s, f, &v)).await?;
+			let (melody, contour) = (&self.melody, &mut self.contour);
+			match self.style {
+				Style::Sing => run_synth(&mut self.synth, out, &mut self.f0, |s, f| melody.hz_at(s, f, &v)).await?,
+				Style::Rap  => run_synth(&mut self.synth, out, &mut self.f0, |s, f| contour.hz_at(s, f)).await?,
+			}
 		}
 		Ok(())
 	}
@@ -474,6 +554,33 @@ mod tests {
 		let (tones, spans) = lay_out(p, 0.0);
 		assert_eq!(spans[0].tones, 0..2, "the held note is part of the syllable");
 		assert!(tones[1].sung && !tones[2].sung);
+	}
+
+	#[test]
+	fn a_rapped_passage_is_spoken_with_early_accents() {
+		// rest, farmer (over two notes), dog, rest: one phrase of two content words, ending in a fall,
+		// each accent peaking within RAP_ACCENT_MS of its long vowel's start
+		let notes = [note(0, 300.0, ""), note(55, 1000.0, "farmer"), note(57, 500.0, "-"), note(60, 1000.0, "dog"),
+			note(0, 300.0, "")];
+		let (tones, mut spans) = lay_out(pieces(&notes, &mut dictreader::new()), 0.0);
+		add_releases(&mut spans);
+		fit(&mut spans, &tones);
+		let (utt, stream) = rap_utterance(&spans, 0);
+		assert_eq!(utt.words.len(), 2);
+		assert_eq!(utt.phrases.len(), 1);
+		assert!(utt.phrases[0].end == Boundary::Period);
+		assert!(stream.len() == utt.segs.len() && stream.windows(2).all(|w| w[0] < w[1]));
+		let mut contour = _f0::Contour::new();
+		contour.accent_max_ms = RAP_ACCENT_MS;
+		contour.add_utterance(&utt, &stream);
+		let mut accents = 0;
+		for (i, seg) in utt.segs.iter().enumerate() {
+			for t in contour.targets_of(stream[i]).filter(|t| t.kind == _f0::TargetKind::Accent) {
+				assert!(t.frac * seg.dur_ms <= RAP_ACCENT_MS + 0.01, "peak {} ms in", t.frac * seg.dur_ms);
+				accents += 1;
+			}
+		}
+		assert_eq!(accents, 2);
 	}
 
 	#[test]

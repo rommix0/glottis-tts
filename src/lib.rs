@@ -43,7 +43,7 @@ use _dread::{dictreader, END_OF_PHONES};
 use _utt::{Utterance, Boundary, Seg};
 use _phone::*;
 
-pub use _sing::{Note, Singer};
+pub use _sing::{Note, Singer, Style};
 
 // master samples rate
 pub const SAMPLE_RATE: u32 = _vtm::m_sr;
@@ -649,10 +649,14 @@ mod tests {
 	}
 
 	// sing a passage on a voice to the end, with its trace
-	fn sing(notes: &[Note], voice: usize) -> Traced {
+	fn sing(notes: &[Note], voice: usize) -> Traced { perform(notes, voice, Style::Sing) }
+
+	// sing or rap a passage on a voice to the end, with its trace
+	fn perform(notes: &[Note], voice: usize, style: Style) -> Traced {
 		let mut out = Traced { x: Vec::new(), segs: Vec::new(), lines: Vec::new() };
 		let mut s = Singer::new();
 		s.trace = true;
+		s.style = style;
 		s.synth.set_voice(_vtm::VOICES[voice]);
 		block_on(async { s.sing(notes, &mut out).await?; s.finish(&mut out).await }).unwrap();
 		out
@@ -698,6 +702,15 @@ mod tests {
 		let out = sing(&notes, 0);
 		let vowel = out.lines.iter().find(|l| l.starts_with(&format!("TRACE {} ", AY))).unwrap();
 		assert!(vowel.starts_with(&format!("TRACE {} 1 ", AY)), "{}", vowel);
+	}
+
+	#[test]
+	fn rap_keeps_the_singing_timing() {
+		// every phone rapped plays as long, and as stressed, as when it is sung
+		let notes = [Note { key: 0, ms: 300.0, lyric: "" }, Note { key: 55, ms: 600.0, lyric: "farmer" },
+			Note { key: 57, ms: 300.0, lyric: "-" }, Note { key: 60, ms: 1000.0, lyric: "dog" },
+			Note { key: 0, ms: 300.0, lyric: "" }];
+		assert_eq!(perform(&notes, 0, Style::Rap).lines, perform(&notes, 0, Style::Sing).lines);
 	}
 
 	#[test]

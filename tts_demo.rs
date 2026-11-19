@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io::{BufWriter, Cursor, Seek, Write};
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
-use tts_synth::{_vtm, Note, Singer, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
+use tts_synth::{_vtm, Note, Singer, SpeechSink, Style, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
 use tts_synth::_phone::{TOKEN_CW, TOKEN_PERIOD};
 use tts_synth::_vtbl::TABLE_LEN;
 
@@ -29,12 +29,13 @@ struct Opts {
 	phone: Option<u8>,	// token of a single phone to say instead of the text
 	table: Option<String>,	// formant table file to use instead of the built-in one
 	sing:  Option<Vec<(u8, f32, String)>>,	// notes to sing instead of the text: (MIDI key, ms, lyric)
+	rap:   bool,	// rap the notes instead of singing them
 }
 
 fn parse_args() -> Result<Opts, String> {
 	let mut opts = Opts {
 		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, wav: None,
-		voice: 0, phone: None, table: None, sing: None
+		voice: 0, phone: None, table: None, sing: None, rap: false
 	};
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
@@ -49,6 +50,8 @@ fn parse_args() -> Result<Opts, String> {
 			opts.wav = Some(args.next().ok_or("--wav needs a file name")?);
 		} else if arg == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
+		} else if arg == "--rap" {
+			opts.rap = true;
 		} else if arg == "--sing" {
 			opts.sing = Some(parse_score(&args.next().ok_or("--sing needs a score")?)?);
 		} else if arg == "--table" {
@@ -144,6 +147,7 @@ fn render<W: Write + Seek>(opts: &Opts, writer: hound::WavWriter<W>) -> Result<(
 		let mut singer = Singer::new();
 		singer.synth.set_voice(_vtm::VOICES[opts.voice]);
 		singer.trace = opts.trace;
+		singer.style = if opts.rap { Style::Rap } else { Style::Sing };
 		block_on(async { singer.sing(&notes, &mut out).await?; singer.finish(&mut out).await })?;
 		out.writer.finalize()?;
 		return Ok(());

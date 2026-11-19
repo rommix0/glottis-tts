@@ -212,6 +212,10 @@ keeps its first vowel and glides to the second only at the end.
 sing can be called again with the next passage; each call is sung as a
 passage of its own.
 
+To rap the notes instead, set singer.style = Style::Rap. The timing stays
+the same, but the pitch is spoken: the voice's own speaking pitch, with the
+melody's ups and downs squeezed to about a third.
+
 
 8. WITHOUT THE STANDARD LIBRARY
 -------------------------------
@@ -238,5 +242,6 @@ Options:
     --table FILE      use a formant table file instead of the built-in one
     --sing SCORE      sing notes instead of speaking: key:ms:lyric for a
                       note, r:ms for a rest, separated by spaces
+    --rap             with --sing, rap the notes instead of singing them
 
     cargo run --release --example tts_demo -- --voice 2 --sing         "r:300 67:300:happy 67:150:- 69:450:birthday 67:450:- 72:450:to 71:900:you r:300"
