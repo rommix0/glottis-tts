@@ -200,6 +200,8 @@ const ramp_share: f32 = 0.6;
 // vowel reduction: how far a vowel of d ms gets from neutral toward its target (0..1)
 const tau_vwl: f32 = 60.0;
 fn reduce_k(d_ms: f32) -> f32 { 1.0 - libm::expf(-d_ms / tau_vwl) }
+// a long vowel still moves this far toward ax, as a short one does: on its full target it sounds overdone
+const MIN_VOWEL_REDUCTION: f32 = 0.2;
 
 // velar F3 next to a vowel: (slope, offset) of F3 = offset + slope * the vowel's F2 (near F2 by front vowels)
 const VELAR_F3: (f32, f32) = (0.45, 1700.0);
@@ -412,7 +414,7 @@ pub struct engine {
 	pub vowel_glide_ms: Option<f32>,	// longest a vowel's move from its first target to its second; None: all of it
 	pub vowel_bw_scale: f32,			// vowel bandwidths times this (1: the table's)
 	pub vowel_min_b2: f32,				// and a vowel's F2 bandwidth at least this (0: no floor)
-	pub uw_soften: f32,					// share of the way uw's formants move toward uh's (0: none)
+	pub vowel_min_reduction: f32,		// a vowel moves at least this share of the way to ax, however long it lasts
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -573,7 +575,7 @@ impl engine {
 			vowel_glide_ms: None,
 			vowel_bw_scale: 1.0,
 			vowel_min_b2: 0.0,
-			uw_soften: 0.0,
+			vowel_min_reduction: MIN_VOWEL_REDUCTION,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
 			amp_len:   0,
@@ -763,18 +765,6 @@ impl engine {
 		self.read_table_row(row);
 		self.copy_a_to_empty_b();
 		self.hold_formants_in_pause();
-	}
-	fn soften_uw(&mut self) {
-		// held, uw's "oo" sounds hooty: open it toward uh
-		let tbl = self.tbl;
-		let uh = |i: usize| tbl[UH as usize * ROW_LEN + 5 + i] as f32;		// uh's F1-F3, as read_table_row reads them
-		let k = self.uw_soften;
-		for (i, f) in [&mut self.F1_A_src, &mut self.F2_A_src, &mut self.F3_A_src].into_iter().enumerate() {
-			*f += k * (uh(i) - *f);
-		}
-		for (i, f) in [&mut self.F1_B_src, &mut self.F2_B_src, &mut self.F3_B_src].into_iter().enumerate() {
-			*f += k * (uh(i) - *f);
-		}
 	}
 	fn read_table_row(&mut self, row: u8) {
 		let offset_src: usize = row as usize * ROW_LEN;
@@ -1010,7 +1000,7 @@ impl engine {
 	fn reduced(&self, f: [f32; 3], dur: i32) -> [f32; 3] {
 		// move F1-F3 of a vowel lasting dur samples toward the neutral vowel's
 		let ax_row = AX as usize * ROW_LEN;
-		let k = reduce_k(dur as f32 * 1000.0 / m_sr as f32);
+		let k = reduce_k(dur as f32 * 1000.0 / m_sr as f32).min(1.0 - self.vowel_min_reduction);
 		[0, 1, 2].map(|i| { let n = self.tbl[ax_row + 5 + i] as f32; n + (f[i] - n) * k })
 	}
 	fn quiet_next_db(&self) -> f32 {
@@ -1422,9 +1412,6 @@ impl engine {
 		let (prev_b, prev_av) = ([self.B1_B_src, self.B2_B_src, self.B3_B_src], self.AV_src);
 
 		self.fetch();
-		if self.phn_c == UW {
-			self.soften_uw();
-		}
 
 		// do formant target re-adjustments before doing anything else
 		self.ftar();
@@ -1826,9 +1813,16 @@ mod tests {
 		y
 	}
 
+	// an engine whose long vowels keep their table targets: the formant rules are checked against the table
+	fn on_table() -> engine {
+		let mut e = engine::new();
+		e.vowel_min_reduction = 0.0;
+		e
+	}
+
 	// render phones (id, ms, stressed) as segments 0, 1, ... and pass the engine and each sample to `each`
 	fn drive(phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
-		let mut e = engine::new();
+		let mut e = on_table();
 		for (seg, &(p, d, st)) in phones.iter().enumerate() {
 			if e.load(p, d, st, seg, true) {
 				while e.is_running() {
@@ -1841,7 +1835,7 @@ mod tests {
 
 	// render phones (id, ms, stressed) up to phone `at` and return the engine as that one loads
 	fn loaded(phones: &[(u8, i32, bool)], at: u8) -> engine {
-		let mut e = engine::new();
+		let mut e = on_table();
 		for &(p, d, st) in phones {
 			if e.load(p, d, st, 0, true) {
 				if e.phn_c == at { break; }
@@ -1853,7 +1847,7 @@ mod tests {
 
 	// render phones (id, ms) the way lib.rs drives the engine
 	fn render(phones: &[(u8, i32)]) -> Vec<f32> {
-		let mut e = engine::new();
+		let mut e = on_table();
 		let mut out: Vec<f32> = Vec::new();
 		for &(p, d) in phones {
 			if e.load(p, d, true, 0, true) {
@@ -2081,7 +2075,7 @@ mod tests {
 	fn trace_regs_st(
 		phones: &[(u8, i32, usize)], unstressed: &[usize]
 	) -> (Vec<(u8, i32, f32, f32, f32, (usize, f32))>, Vec<(i32, i32, f32)>) {
-		let mut e = engine::new();
+		let mut e = on_table();
 		let mut out = Vec::new();
 		let mut marks = Vec::new();		// (marker_A, marker_B, AF_src) of each phone
 		for &(p, d, seg) in phones {
@@ -2555,23 +2549,24 @@ mod tests {
 	}
 
 	#[test]
-	fn a_softened_uw_moves_toward_uh() {
-		// the formant targets uw and uh load with
-		let targets = |v: u8, soften: f32| {
+	fn a_long_vowel_still_moves_its_floor_toward_ax() {
+		// a long aa's targets with a floor of a quarter: a quarter of the way to ax's, where without one it keeps its own
+		let targets = |floor: f32| {
 			let mut e = engine::new();
-			e.uw_soften = soften;
-			let mut f = [0.0f32; 6];
-			for (seg, &(p, d)) in [(PAU, 50), (v, 300), (PAU, 100), (SIL, 50)].iter().enumerate() {
-				if e.load(p, d, true, seg, true) && e.phn_c == v {
-					f = [e.F1_A_src, e.F2_A_src, e.F3_A_src, e.F1_B_src, e.F2_B_src, e.F3_B_src];
+			e.vowel_min_reduction = floor;
+			let mut f = [0.0f32; 3];
+			for (seg, &(p, d)) in [(PAU, 50), (AA, 1000), (PAU, 100), (SIL, 50)].iter().enumerate() {
+				if e.load(p, d, true, seg, true) && e.phn_c == AA {
+					f = [e.F1_A_src, e.F2_A_src, e.F3_A_src];
 				}
 			}
 			f
 		};
-		let (uw, half, uh) = (targets(UW, 0.0), targets(UW, 0.5), targets(UH, 0.0));
-		for k in 0..6 {
-			let mid = (uw[k] + uh[k % 3]) / 2.0;
-			assert!((half[k] - mid).abs() < 1.0, "target {}: {} for {} halfway to uh", k, half[k], mid);
+		let ax = |i: usize| formant_tbl[AX as usize * ROW_LEN + 5 + i] as f32;
+		let (own, floored) = (targets(0.0), targets(0.25));
+		for i in 0..3 {
+			let want = own[i] + 0.25 * (ax(i) - own[i]);
+			assert!((floored[i] - want).abs() < 2.0, "F{} {} for {}", i + 1, floored[i], want);
 		}
 	}
 
