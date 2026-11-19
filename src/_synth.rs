@@ -415,6 +415,7 @@ pub struct engine {
 	pub vowel_bw_scale: f32,			// vowel bandwidths times this (1: the table's)
 	pub vowel_min_b2: f32,				// and a vowel's F2 bandwidth at least this (0: no floor)
 	pub vowel_min_reduction: f32,		// a vowel moves at least this share of the way to ax, however long it lasts
+	pub word_catch: bool,				// a vowel starting a word after a vowel starts with a glottal catch
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -576,6 +577,7 @@ impl engine {
 			vowel_bw_scale: 1.0,
 			vowel_min_b2: 0.0,
 			vowel_min_reduction: MIN_VOWEL_REDUCTION,
+			word_catch: true,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
 			amp_len:   0,
@@ -1628,7 +1630,7 @@ impl engine {
 			self.dip_half = half;
 			self.dip_db = NASAL_DIP_DB;
 		}
-		if self.pft_c & VOWEL != 0 && self.pwi_c && self.pft_l1 & VOWEL != 0 && !quiet(self.phn_l1)
+		if self.word_catch && self.pft_c & VOWEL != 0 && self.pwi_c && self.pft_l1 & VOWEL != 0 && !quiet(self.phn_l1)
 			&& (self.pst_c || !matches!(self.phn_l1, AXR | ER)) {
 			self.dip_mid = 0;
 			self.dip_half = samples(GLOTTAL_DIP_MS / 2.0).min(-self.counter);
@@ -3280,6 +3282,25 @@ mod tests {
 		assert!((full - dip - GLOTTAL_DIP_UNSTRESSED_DB).abs() < 1.0, "unstressed catch dips to {} from {}", dip, full);
 		let (run_on, full) = av(7, &[2]);
 		assert!(run_on > full - 3.0, "unstressed AA after AXR dips to {} from {}", run_on, full);
+	}
+
+	#[test]
+	fn without_the_catch_a_word_after_a_vowel_runs_on() {
+		// AA-AA (the second starting a word) with word_catch off: the voice holds through the join
+		let mut e = on_table();
+		e.word_catch = false;
+		let mut av: Vec<(usize, i32, f32)> = Vec::new();		// (segment, counter, AV)
+		for (seg, &(p, d)) in [(PAU, 50), (AA, 150), (AA, 150), (AXP, 100), (SIL, 50)].iter().enumerate() {
+			if e.load(p, d, true, seg, true) {
+				while e.is_running() {
+					let (s, _) = e.position();
+					play(&mut e);
+					av.push((s, e.counter, db(e.AV_reg)));
+				}
+			}
+		}
+		let at = |c: i32| av.iter().find(|x| x.0 == 2 && x.1 == c).unwrap().2;
+		assert!((at(0) - at(ms(40.0))).abs() < 1.0, "the join dips to {} from {}", at(0), at(ms(40.0)));
 	}
 
 	#[test]

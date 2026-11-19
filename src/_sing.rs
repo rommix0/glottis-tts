@@ -360,6 +360,8 @@ impl Singer {
 		synth.vowel_glide_ms = Some(DIPHTHONG_GLIDE_MS);
 		synth.vowel_bw_scale = VOWEL_BW_SCALE;
 		synth.vowel_min_b2 = VOWEL_MIN_B2;
+		// a sung line runs legato from vowel to vowel
+		synth.word_catch = false;
 		Singer {
 			synth,
 			trace:    false,
