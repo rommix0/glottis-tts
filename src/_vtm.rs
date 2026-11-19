@@ -44,6 +44,12 @@ const CASC_MIN_BW: f32 = 60.0;
 // the narrowest any other formant gets (Hz)
 const MIN_BW: f32 = 40.0;
 
+// a tuned F1 stays at least this far under F2
+const F1_TUNE_BELOW_F2: f32 = 200.0;
+// a raised F1 lifts every harmonic above it by about the square of its rise: give back this power of the rise,
+// so the note comes out fuller, not louder
+const F1_TUNE_GAIN_POW: f32 = 2.0;
+
 // dB to an amplitude ratio
 fn db_amp(db: f32) -> f32 { libm::powf(10.0, db / 20.0) }
 
@@ -860,6 +866,7 @@ pub struct vtm {
 	vgain:    f32,		// the voice profile's output level, linear
 	// cascade B1/B2 floor, wider for a higher voice (its rings have less time to die)
 	min_bw:   f32,
+	pub f1_over_f0: f32,	// F1 at least the pitch times this, as a singer opens up on a high note (0: off)
 	fric_a:   i32,		// frication lowpass coefficient (Q28)
 	lip_d:    i32,		// lip radiation coefficient at this rate (Q28)
 	lip_k:    i32,		// lip radiation's makeup gain (Q28)
@@ -937,6 +944,7 @@ impl vtm {
 			asp_gain: 1.0,
 			vgain: 1.0,
 			min_bw: CASC_MIN_BW,
+			f1_over_f0: 0.0,
 
 			fric_a:  to_q(libm::expf(-2.0 * PI * FRIC_LP_HZ / m_sr as f32), COEF_BITS),
 			lip_d:   to_q(lip_d, COEF_BITS),
@@ -993,6 +1001,17 @@ impl vtm {
 		self.B3 *= v.f3 / 100.0;
 		self.RD *= v.rd / 100.0;
 		self.BR += v.br;
+		self.tune_f1();
+	}
+	fn tune_f1(&mut self) {
+		// a pitch over F1 has no harmonic for F1 to lift, so the note comes out thin and its level jumps
+		// from note to note: raise F1 over the pitch, keeping its sharpness (Q)
+		let tuned = (self.F0 * self.f1_over_f0).min(self.F2 - F1_TUNE_BELOW_F2);
+		if tuned > self.F1 {
+			self.AV *= libm::powf(self.F1.max(1.0) / tuned, F1_TUNE_GAIN_POW);
+			self.B1 *= tuned / self.F1.max(1.0);
+			self.F1 = tuned;
+		}
 	}
 	fn db2lin(gain: f32) -> f32 {
 		if gain <= 0.0 { return 0.0; }
@@ -1265,6 +1284,28 @@ mod tests {
 		let hi = VOICES[3];
 		assert_eq!(steady(hi, 600.0, 1500.0, 65.0, 10.0), steady(hi, 600.0, 1500.0, 10.0, 10.0));
 		assert_ne!(steady(VOICES[0], 600.0, 1500.0, 65.0, 10.0), steady(VOICES[0], 600.0, 1500.0, 10.0, 10.0));
+	}
+
+	#[test]
+	fn a_tuned_f1_rises_over_a_high_pitch_only() {
+		// (F1, B1, AV) the tract gets for an ee-like vowel at pitch f0, tuned by k
+		let f1 = |f0: f32, k: f32| {
+			let mut v = vtm::new();
+			v.f1_over_f0 = k;
+			v.F0 = f0; v.AV = DB_GAIN[60]; v.RD = 0.6; v.F1 = 300.0; v.F2 = 2300.0; v.B1 = 60.0; v.B2 = 100.0;
+			v.step();
+			(v.F1, v.B1, v.AV)
+		};
+		assert_eq!(f1(800.0, 0.0).0, 300.0);
+		assert_eq!(f1(150.0, 1.1).0, 300.0);
+		let (tuned, b1, av) = f1(800.0, 1.1);
+		assert!((tuned - 880.0).abs() < 0.1, "F1 {}", tuned);
+		assert!(b1 > 60.0 * 880.0 / 300.0 - 1.0, "B1 {} for F1 {}", b1, tuned);
+		// and gives back some of the level the raise adds
+		let untuned_av = f1(800.0, 0.0).2;
+		assert!((av / untuned_av - libm::powf(300.0 / 880.0, F1_TUNE_GAIN_POW)).abs() < 0.001, "AV {}", av);
+		// never up into F2
+		assert!(f1(2500.0, 1.1).0 <= 2300.0 - F1_TUNE_BELOW_F2);
 	}
 
 	#[test]

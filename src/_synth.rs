@@ -737,6 +737,7 @@ impl engine {
 	}
 	pub fn set_voice(&mut self, v: Voice) { self.vtm_eng.set_voice(v); }
 	pub fn voice(&self) -> Voice { self.vtm_eng.voice() }
+	pub fn set_f1_over_f0(&mut self, k: f32) { self.vtm_eng.f1_over_f0 = k; }
 	// the samples left out of what was loaded since the last call; whoever keeps time can give them back
 	pub fn take_lost_samples(&mut self) -> i32 { core::mem::take(&mut self.lost) }
 	fn advance(&mut self, phone: u8, dur_ms: i32, stressed: bool, seg: usize, word_start: bool) {
