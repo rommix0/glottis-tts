@@ -983,6 +983,8 @@ pub struct vtm {
 	// cascade B1/B2 floor, wider for a higher voice (its rings have less time to die)
 	min_bw:   f32,
 	pub f1_over_f0: f32,	// F1 at least the pitch times this, as a singer opens up on a high note (0: off)
+	pub ease_from_hz: f32,	// above this pitch the voicing eases off by ease_db_per_oct (0: off)
+	pub ease_db_per_oct: f32,
 	fric_a:   i32,		// frication lowpass coefficient (Q28)
 	lip_d:    i32,		// lip radiation coefficient at this rate (Q28)
 	lip_k:    i32,		// lip radiation's makeup gain (Q28)
@@ -1068,6 +1070,8 @@ impl vtm {
 			vgain: 1.0,
 			min_bw: CASC_MIN_BW,
 			f1_over_f0: 0.0,
+			ease_from_hz: 0.0,
+			ease_db_per_oct: 0.0,
 
 			fric_a:  to_q(libm::expf(-2.0 * PI * fric_lp_hz / m_sr as f32), COEF_BITS),
 			lip_d:   to_q(lip_d, COEF_BITS),
@@ -1125,6 +1129,13 @@ impl vtm {
 		self.RD *= v.rd / 100.0;
 		self.BR += v.br;
 		self.tune_f1();
+		self.ease_high_notes();
+	}
+	fn ease_high_notes(&mut self) {
+		// the voice gets louder with its pitch, so a sung high note runs into the soft clip: ease the voicing off
+		if self.ease_from_hz <= 0.0 || self.F0 <= self.ease_from_hz { return; }
+		let octaves = libm::log2f(self.F0 / self.ease_from_hz);
+		self.AV *= db_amp(-self.ease_db_per_oct * octaves);
 	}
 	fn tune_f1(&mut self) {
 		// a pitch over F1 has no harmonic for F1 to lift, so the note comes out thin and its level jumps

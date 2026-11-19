@@ -651,6 +651,16 @@ mod tests {
 	// sing a passage on a voice to the end, with its trace
 	fn sing(notes: &[Note], voice: usize) -> Traced { perform(notes, voice, Style::Sing) }
 
+	#[test]
+	fn high_notes_stay_out_of_the_soft_clip() {
+		// a sung line up to G6 on the loudest voice keeps its peaks under the output's soft clip (0.85)
+		for lyric in ["ah", "ee", "day"] {
+			let notes: Vec<Note> = [72u8, 79, 84, 86, 88, 91].iter().map(|&k| Note { key: k, ms: 900.0, lyric }).collect();
+			let peak = sing(&notes, 5).x.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+			assert!(peak < 0.85, "{}: peak {}", lyric, peak);
+		}
+	}
+
 	// sing or rap a passage exactly as written, on a voice to the end, with its trace
 	fn perform(notes: &[Note], voice: usize, style: Style) -> Traced { perform_take(notes, voice, style, 0.0, 1) }
 

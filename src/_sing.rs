@@ -57,6 +57,8 @@ const DIPHTHONG_GLIDE_MS:  f32 = 150.0;		// a held vowel keeps its first target 
 const VOWEL_BW_SCALE:      f32 = 1.3;		// a held vowel's still formants ring on a harmonic unless wider
 const VOWEL_MIN_B2:        f32 = 130.0;		// ... and a narrower F2 rings on its harmonic all the same (ao)
 const F1_OVER_F0:          f32 = 1.1;		// F1 kept over the pitch on a high note, as a singer opens up
+const EASE_FROM_HZ:        f32 = 262.0;		// above middle C the voicing eases off this much an octave ...
+const EASE_DB_PER_OCT:     f32 = 5.0;		// ... or high notes, louder with their pitch, run into the soft clip
 const FLUSH_MS:            f32 = 50.0;		// pause and silence that play out the end in finish()
 const SAMPLES_PER_MS:      f64 = m_sr as f64 / 1000.0;
 
@@ -502,6 +504,7 @@ impl Singer {
 		synth.vowel_bw_scale = VOWEL_BW_SCALE;
 		synth.vowel_min_b2 = VOWEL_MIN_B2;
 		synth.set_f1_over_f0(F1_OVER_F0);
+		synth.set_high_note_ease(EASE_FROM_HZ, EASE_DB_PER_OCT);
 		// a sung line runs legato from vowel to vowel
 		synth.word_catch = false;
 		let mut contour = _f0::Contour::new();
