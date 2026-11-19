@@ -411,6 +411,7 @@ pub struct engine {
 	pub tbl: &'static [u16; TABLE_LEN],	// the formant table, swapped by --table
 	pub vowel_glide_ms: Option<f32>,	// longest a vowel's move from its first target to its second; None: all of it
 	pub vowel_bw_scale: f32,			// vowel bandwidths times this (1: the table's)
+	pub vowel_min_b2: f32,				// and a vowel's F2 bandwidth at least this (0: no floor)
 	pub uw_soften: f32,					// share of the way uw's formants move toward uh's (0: none)
 	vtm_eng: vtm,
 	marker_A: i32,
@@ -571,6 +572,7 @@ impl engine {
 			tbl: &formant_tbl,
 			vowel_glide_ms: None,
 			vowel_bw_scale: 1.0,
+			vowel_min_b2: 0.0,
 			uw_soften: 0.0,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
@@ -1784,6 +1786,7 @@ impl engine {
 			self.vtm_eng.B1 *= self.vowel_bw_scale;
 			self.vtm_eng.B2 *= self.vowel_bw_scale;
 			self.vtm_eng.B3 *= self.vowel_bw_scale;
+			self.vtm_eng.B2 = self.vtm_eng.B2.max(self.vowel_min_b2);
 		}
 		self.vtm_eng.F2  = self.F2_reg + self.lip_hold * (self.F2_reg.min(LABIAL_BURST_F2) - self.F2_reg);
 		self.vtm_eng.F3  = self.F3_reg + self.lip_hold * (self.F3_reg.min(LABIAL_BURST_F3) - self.F3_reg);
@@ -2526,6 +2529,29 @@ mod tests {
 		for k in 0..3 {
 			assert!((wide[k] / plain[k] - 1.3).abs() < 0.01, "B{} {} against {}", k + 1, wide[k], plain[k]);
 		}
+	}
+
+	#[test]
+	fn a_vowels_f2_bandwidth_keeps_to_its_floor() {
+		// the F2 bandwidth the tract gets in the middle of a held vowel
+		let mid_b2 = |v: u8, floor: f32| {
+			let mut e = engine::new();
+			e.vowel_glide_ms = Some(150.0);
+			e.vowel_min_b2 = floor;
+			let mut b2: Vec<f32> = Vec::new();
+			for (seg, &(p, d)) in [(PAU, 50), (v, 800), (PAU, 100), (SIL, 50)].iter().enumerate() {
+				if e.load(p, d, true, seg, true) {
+					while e.is_running() {
+						play(&mut e);
+						if e.phn_c == v { b2.push(e.vtm_eng.B2); }
+					}
+				}
+			}
+			b2[b2.len() / 2]
+		};
+		// ao's first target is narrow, so it rises to the floor; ae's is wider and keeps its own
+		assert!(mid_b2(AO, 0.0) < 100.0 && (mid_b2(AO, 130.0) - 130.0).abs() < 0.01, "ao {}", mid_b2(AO, 130.0));
+		assert_eq!(mid_b2(AE, 130.0), mid_b2(AE, 0.0));
 	}
 
 	#[test]
