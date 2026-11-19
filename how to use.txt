@@ -13,6 +13,15 @@ In your Cargo.toml:
     [dependencies]
     tts_synth = { path = "../tts_synth" }
 
+For 44100 Hz output (a music host, a plugin), turn on the rate-44100 feature:
+
+    tts_synth = { path = "../tts_synth", features = ["rate-44100"] }
+
+SAMPLE_RATE is then 44100. The voice sounds the same as at 22050 Hz, with nothing
+above 11 kHz, and the DSP does twice the work, so keep 22050 Hz on a small chip.
+The feature applies to the whole program: if any crate turns it on, every user of
+tts_synth in that program gets 44100 Hz.
+
 
 2. SPEAK SOME TEXT
 ------------------
@@ -237,6 +246,10 @@ Pentium, a Cortex-M4F, an ESP32) runs it well, one without one will be slow.
 tts_demo speaks the text on the default output device (on Windows):
 
     cargo run --release --example tts_demo -- "this is an example sentence."
+
+At 44100 Hz:
+
+    cargo run --release --features rate-44100 --example tts_demo -- "this is an example sentence."
 
 Options:
     --wav FILE        save the speech to a WAV file instead of playing it

@@ -4,7 +4,7 @@ A formant text-to-speech synthesizer for English, written in Rust.
 
 The majority of this code has been written by hand by Anthony C. Bartman, while Claude Opus 5.5 was used for assistance during the touch-up stage.
 
-It turns plain English text into mono, signed 16-bit speech at 22050 Hz. The library is `#![no_std]` and needs only an allocator, so the same code runs on a desktop or on a microcontroller with an FPU.
+It turns plain English text into mono, signed 16-bit speech at 22050 Hz, or at 44100 Hz with the `rate-44100` feature for music hosts (the same voice, at twice the DSP work). The library is `#![no_std]` and needs only an allocator, so the same code runs on a desktop or on a microcontroller with an FPU.
 
 ```
 text -> normalizer -> dictionary / suffix matching / letter-to-sound
