@@ -129,9 +129,10 @@ const BREATH_RAMP_MS: f32 = 60.0;
 const VOWEL_EXIT_MS: f32 = 50.0;
 
 // out of a vowel an r reaches its formants within this long
-const R_ONSET_MS: f32 = 50.0;
-// a vowel's own tail plays at most this much of the move into an r: the speaker's vowel holds until about the r
-const R_ENTRY_MS: f32 = 15.0;
+const R_ONSET_MS: f32 = 90.0;
+// a vowel's own tail plays at most this much of the move into an r: the vowel glides into the r, which a quicker
+// move makes sound clipped
+const R_ENTRY_MS: f32 = 50.0;
 
 // while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
@@ -3241,16 +3242,15 @@ mod tests {
 	}
 
 	#[test]
-	fn a_vowel_holds_until_just_before_an_r() {
-		// "four", "car", "air": the move into an r starts well inside the vowel's usual exit and ends inside the r
+	fn a_vowel_glides_into_an_r_over_its_last_50_ms() {
+		// "four", "car", "air": the move into an r starts about 50 ms inside the vowel, so it glides into the r
 		for &v in &[AO, AA, EH, IY] {
 			let mut start = None;
 			let seq = [(PAU, 50, false), (SH, 90, false), (v, 200, true), (RX, 110, false),
 				(AXP, 80, false), (SIL, 50, false)];
 			drive(&seq, |e, _| if e.phn_c == RX && start.is_none() { start = Some(e.counter) });
-			let early = -start.unwrap();
-			assert!(early < samples(VOWEL_EXIT_MS) / 2,
-				"{}: the move into r starts {} ms early", v, early as f32 * 1000.0 / m_sr as f32);
+			let early_ms = -start.unwrap() as f32 * 1000.0 / m_sr as f32;
+			assert!((45.0..=55.0).contains(&early_ms), "{}: the move into r starts {} ms early", v, early_ms);
 		}
 	}
 
