@@ -402,7 +402,9 @@ impl Singer {
 				let ms = if i == syl.nucleus { span.ms } else { p.ms };
 				self.clock += ms as f64;
 				let dur_ms = if i == syl.nucleus { self.ms_until_clock() } else { libm::roundf(ms) as i32 };
-				self.play(out, p.phone, dur_ms, p.stressed, p.word_start).await?;
+				// every sung vowel carries a note, so none is unstressed ("i" is the pronoun to the dictionary)
+				let stressed = p.stressed || i == syl.nucleus;
+				self.play(out, p.phone, dur_ms, stressed, p.word_start).await?;
 			}
 		}
 		Ok(())

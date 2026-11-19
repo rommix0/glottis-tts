@@ -692,6 +692,15 @@ mod tests {
 	}
 
 	#[test]
+	fn every_sung_vowel_is_stressed() {
+		// the dictionary has "i" as the unstressed pronoun; sung, it carries a note like any vowel
+		let notes = [Note { key: 0, ms: 200.0, lyric: "" }, Note { key: 60, ms: 500.0, lyric: "i" }];
+		let out = sing(&notes, 0);
+		let vowel = out.lines.iter().find(|l| l.starts_with(&format!("TRACE {} ", AY))).unwrap();
+		assert!(vowel.starts_with(&format!("TRACE {} 1 ", AY)), "{}", vowel);
+	}
+
+	#[test]
 	fn vowels_start_on_their_beat() {
 		// rest, sat, on, mats, rest, eyes: the vowels are due at 300, 900, 1300 and 2400 ms
 		let notes = [Note { key: 0, ms: 300.0, lyric: "" }, Note { key: 55, ms: 600.0, lyric: "sat" },
