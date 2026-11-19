@@ -212,6 +212,14 @@ keeps its first vowel and glides to the second only at the end.
 sing can be called again with the next passage; each call is sung as a
 passage of its own.
 
+The singer drifts a little like a person does: each syllable lands up to
+20 ms early or late, each note up to a tenth of a semitone sharp or flat,
+the pitch wanders slowly and the vibrato varies from note to note. The
+passage still starts and ends on the beat, so a song never drifts from its
+backing. singer.humanize sets how much (0 sings exactly as written, 1 is
+the default) and singer.seed picks the take: the same seed always sings the
+same way, so a song renders the same every time.
+
 To rap the notes instead, set singer.style = Style::Rap. The timing stays
 the same, but the pitch is spoken: the voice's own speaking pitch, with the
 melody's ups and downs squeezed to about a third.
@@ -243,5 +251,7 @@ Options:
     --sing SCORE      sing notes instead of speaking: key:ms:lyric for a
                       note, r:ms for a rest, separated by spaces
     --rap             with --sing, rap the notes instead of singing them
+    --humanize H      with --sing, how human the drift: 0 exact, 1 natural (default)
+    --seed N          with --sing, the take the drift follows (default 1)
 
     cargo run --release --example tts_demo -- --voice 2 --sing         "r:300 67:300:happy 67:150:- 69:450:birthday 67:450:- 72:450:to 71:900:you r:300"

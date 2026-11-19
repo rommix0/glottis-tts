@@ -30,12 +30,14 @@ struct Opts {
 	table: Option<String>,	// formant table file to use instead of the built-in one
 	sing:  Option<Vec<(u8, f32, String)>>,	// notes to sing instead of the text: (MIDI key, ms, lyric)
 	rap:   bool,	// rap the notes instead of singing them
+	humanize: f32,	// how human the singing drifts: 0 exact, 1 natural
+	seed:  u32,		// the take the drift follows
 }
 
 fn parse_args() -> Result<Opts, String> {
 	let mut opts = Opts {
 		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, wav: None,
-		voice: 0, phone: None, table: None, sing: None, rap: false
+		voice: 0, phone: None, table: None, sing: None, rap: false, humanize: 1.0, seed: 1
 	};
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
@@ -50,6 +52,12 @@ fn parse_args() -> Result<Opts, String> {
 			opts.wav = Some(args.next().ok_or("--wav needs a file name")?);
 		} else if arg == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
+		} else if arg == "--humanize" {
+			let h: f32 = args.next().and_then(|v| v.parse().ok()).unwrap_or(-1.0);
+			if !(0.0..=4.0).contains(&h) { return Err("humanize must be between 0 and 4".to_string()); }
+			opts.humanize = h;
+		} else if arg == "--seed" {
+			opts.seed = args.next().and_then(|v| v.parse().ok()).ok_or("--seed needs a whole number")?;
 		} else if arg == "--rap" {
 			opts.rap = true;
 		} else if arg == "--sing" {
@@ -148,6 +156,8 @@ fn render<W: Write + Seek>(opts: &Opts, writer: hound::WavWriter<W>) -> Result<(
 		singer.synth.set_voice(_vtm::VOICES[opts.voice]);
 		singer.trace = opts.trace;
 		singer.style = if opts.rap { Style::Rap } else { Style::Sing };
+		singer.humanize = opts.humanize;
+		singer.seed = opts.seed;
 		block_on(async { singer.sing(&notes, &mut out).await?; singer.finish(&mut out).await })?;
 		out.writer.finalize()?;
 		return Ok(());

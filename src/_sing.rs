@@ -26,6 +26,10 @@ pitch, in layers on the notes:
 rapped (Style::Rap), the timing is the same but the pitch is spoken: the
 speech contour's, laid over the sung lengths, a phrase between rests.
 
+humanized (Singer::humanize, 0 for none), each syllable lands a little early
+or late and each note a little sharp or flat, the pitch wanders slowly and
+the vibrato varies; the same seed always gives the same take.
+
 each sing() call is a passage of its own: start it with a rest to give the
 first consonants their time ahead of the beat.
 
@@ -75,6 +79,18 @@ const VIBRATO_DELAY_MS: f32 = 300.0;		// into the note
 const VIBRATO_RISE_MS:  f32 = 400.0;
 const VIBRATO_FADE_MS:  f32 = 150.0;		// before the note, or the glide out of it, ends
 const RAP_ACCENT_MS:    f32 = 100.0;		// rapped, an accent peaks this soon into its vowel at the latest, as spoken
+// humanizing, at humanize 1
+const HUMAN_ONSET_MS:   f32 = 20.0;			// a syllable lands up to this early or late ...
+const HUMAN_ONSET_ROOM: f32 = 0.25;			// ... but takes at most this share of the note or rest beside it
+const HUMAN_DETUNE_ST:  f32 = 0.1;			// a note lands up to this sharp or flat
+const HUMAN_WANDER_ST:  f32 = 0.08;			// the pitch wanders up to this far ...
+const HUMAN_WANDER_MS:  f32 = 300.0;		// ... in a new direction this often
+const HUMAN_VIBRATO:    f32 = 0.2;			// a note's vibrato is up to this share deeper or shallower, a third of it faster
+// what each kind of variation draws from the seed
+const ONSET_DRAW:   u32 = 1;
+const DETUNE_DRAW:  u32 = 2;
+const VIBRATO_DRAW: u32 = 3;
+const WANDER_DRAW:  u32 = 4;
 const MIN_HZ:           f32 = 40.0;
 const MAX_HZ:           f32 = 1600.0;
 
@@ -129,8 +145,9 @@ struct Piece {
 struct Tone {
 	start: f64,		// ms
 	end:   f64,
-	key:   f32,
+	key:   f32,		// with its humanized detuning
 	sung:  bool,	// false for a rest
+	vib:   f32,		// humanized vibrato: depth this share more, rate a third of it
 }
 
 // a syllable, or a rest, over one or more tones
@@ -203,7 +220,7 @@ fn lay_out(pieces: Vec<Piece>, start: f64) -> (Vec<Tone>, Vec<Span>) {
 	let mut t = start;
 	for p in pieces {
 		let k = tones.len();
-		tones.push(Tone { start: t, end: t + p.ms as f64, key: p.key, sung: false });
+		tones.push(Tone { start: t, end: t + p.ms as f64, key: p.key, sung: false, vib: 0.0 });
 		t += p.ms as f64;
 		match (p.part, spans.last_mut()) {
 			(Part::Sing(s), _) => spans.push(Span { tones: k..k + 1, syl: Some(s), ms: 0.0 }),
@@ -285,6 +302,40 @@ fn voice_input_hz(hz: f32, v: &Voice) -> f32 {
 	REF_HZ * libm::powf(hz / (REF_HZ * v.f0 / 100.0), 100.0 / v.range)
 }
 
+// a repeatable random number in -1..1 for draw i of a kind of variation
+fn noise(seed: u32, kind: u32, i: u64) -> f32 {
+	let mut x = i ^ ((seed as u64) << 32) ^ ((kind as u64) << 56);
+	x = x.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+	x ^= x >> 29;
+	x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+	x ^= x >> 32;
+	(x >> 40) as f32 / (1u64 << 23) as f32 - 1.0
+}
+
+// each sung note's detuning and vibrato, drawn by where it falls in the song
+fn humanize_tones(tones: &mut [Tone], amount: f32, seed: u32) {
+	for t in tones.iter_mut().filter(|t| t.sung) {
+		let at = libm::round(t.start) as u64;
+		t.key += HUMAN_DETUNE_ST * amount * noise(seed, DETUNE_DRAW, at);
+		t.vib = HUMAN_VIBRATO * amount * noise(seed, VIBRATO_DRAW, at);
+	}
+}
+
+// each syllable after the first lands a little early or late, out of the note or rest beside it;
+// the passage's start and end stay on the beat, so a long song never drifts
+fn humanize_onsets(tones: &mut [Tone], spans: &[Span], amount: f32, seed: u32) {
+	for j in 1..spans.len() {
+		if spans[j].syl.is_none() { continue; }
+		let (before, k) = (&spans[j - 1].tones, spans[j].tones.start);
+		let len = |r: &Range<usize>| (tones[r.end - 1].end - tones[r.start].start) as f32;
+		let room = HUMAN_ONSET_ROOM * len(before).min(len(&spans[j].tones));
+		let shift = (HUMAN_ONSET_MS * amount * noise(seed, ONSET_DRAW, libm::round(tones[k].start) as u64))
+			.clamp(-room, room) as f64;
+		tones[k].start += shift;
+		tones[k - 1].end += shift;
+	}
+}
+
 // rapped, the passage as an utterance for the speech contour: its words, syllables and stress at the sung
 // lengths, a phrase between rests; and the stream index each segment plays as, counting from first_seg
 fn rap_utterance(spans: &[Span], first_seg: usize) -> (Utterance, Vec<usize>) {
@@ -344,6 +395,8 @@ fn end_phrase(utt: &mut Utterance, phrase_start: &mut usize, end: Boundary) {
 struct Melody {
 	tones: Vec<Tone>,
 	segs:  Vec<(usize, f64, f32)>,		// (stream index, start ms, ms) of every phone played
+	wander_st: f32,						// how far the pitch wanders (0: not at all)
+	seed:      u32,
 }
 
 impl Melody {
@@ -377,7 +430,7 @@ impl Melody {
 		let next = self.tones.get(k + 1).filter(|n| n.sung);
 		let age = (t - tone.start) as f32;		// below 0 for the consonants ahead of the beat
 		let left = (tone.end - t) as f32;
-		let mut key = tone.key;
+		let mut key = tone.key + self.wander(t);
 
 		// INTO THE NOTE
 		match prev {
@@ -401,10 +454,20 @@ impl Melody {
 		// VIBRATO
 		let vib_age = age - VIBRATO_DELAY_MS;
 		if vib_age > 0.0 && sustain_left > 0.0 {
-			let depth = VIBRATO_ST * (vib_age / VIBRATO_RISE_MS).min(1.0) * (sustain_left / VIBRATO_FADE_MS).min(1.0);
-			key += depth * libm::sinf(2.0 * PI * VIBRATO_HZ * vib_age / 1000.0);
+			let shape = (vib_age / VIBRATO_RISE_MS).min(1.0) * (sustain_left / VIBRATO_FADE_MS).min(1.0);
+			let (depth, hz) = (VIBRATO_ST * (1.0 + tone.vib) * shape, VIBRATO_HZ * (1.0 + tone.vib / 3.0));
+			key += depth * libm::sinf(2.0 * PI * hz * vib_age / 1000.0);
 		}
 		Some(key)
+	}
+
+	// the slow wander at t: a new random height every HUMAN_WANDER_MS, eased between
+	fn wander(&self, t: f64) -> f32 {
+		if self.wander_st == 0.0 { return 0.0; }
+		let x = t.max(0.0) / HUMAN_WANDER_MS as f64;
+		let k = x as u64;
+		let (a, b) = (noise(self.seed, WANDER_DRAW, k), noise(self.seed, WANDER_DRAW, k + 1));
+		self.wander_st * (a + (b - a) * ease((x - k as f64) as f32))
 	}
 
 	// drop what is older than the previous passage: the synth is never more than a phone or two behind
@@ -418,6 +481,8 @@ pub struct Singer {
 	pub synth: _synth::engine,
 	pub trace: bool,		// send each phone's plan to SpeechSink::trace
 	pub style: Style,
+	pub humanize: f32,		// how human the timing and pitch drift: 0 exact as written, 1 natural
+	pub seed:  u32,			// the take: the same seed always drifts the same way
 	melody:    Melody,
 	contour:   _f0::Contour,	// the pitch when rapped
 	dict:      dictreader,
@@ -443,7 +508,9 @@ impl Singer {
 			synth,
 			trace:    false,
 			style:    Style::Sing,
-			melody:   Melody { tones: Vec::new(), segs: Vec::new() },
+			humanize: 1.0,
+			seed:     1,
+			melody:   Melody { tones: Vec::new(), segs: Vec::new(), wander_st: 0.0, seed: 1 },
 			contour,
 			dict:     dictreader::new(),
 			clock:    0.0,
@@ -461,7 +528,10 @@ impl Singer {
 		(self.prev_seg, self.prev_ms) = (self.next_seg, self.clock);
 
 		let pieces = pieces(notes, &mut self.dict);
-		let (tones, mut spans) = lay_out(pieces, self.clock);
+		let (mut tones, mut spans) = lay_out(pieces, self.clock);
+		humanize_tones(&mut tones, self.humanize, self.seed);
+		humanize_onsets(&mut tones, &spans, self.humanize, self.seed);
+		(self.melody.wander_st, self.melody.seed) = (HUMAN_WANDER_ST * self.humanize, self.seed);
 		add_releases(&mut spans);
 		fit(&mut spans, &tones);
 		if self.style == Style::Rap {
@@ -471,7 +541,7 @@ impl Singer {
 		// a passage ends in a rest, so the next one starts fresh
 		let end = tones.last().map_or(self.clock, |n| n.end);
 		self.melody.tones.extend(tones);
-		self.melody.tones.push(Tone { start: end, end, key: 0.0, sung: false });
+		self.melody.tones.push(Tone { start: end, end, key: 0.0, sung: false, vib: 0.0 });
 
 		// a vowel or pause ends on the clock; the consonants keep their own length
 		for span in spans {
@@ -594,13 +664,49 @@ mod tests {
 	fn a_short_note_falls_less_before_a_rest() {
 		// a long note falls FALL_ST over its last FALL_MS; one of 250 ms over its last 30%, as far in proportion
 		let at = |note_ms: f64, left: f64| {
-			let tones = vec![Tone { start: 0.0, end: note_ms, key: 60.0, sung: true },
-				Tone { start: note_ms, end: note_ms + 300.0, key: 60.0, sung: false }];
-			60.0 - (Melody { tones, segs: Vec::new() }).key_at(note_ms - left).unwrap()
+			let tones = vec![Tone { start: 0.0, end: note_ms, key: 60.0, sung: true, vib: 0.0 },
+				Tone { start: note_ms, end: note_ms + 300.0, key: 60.0, sung: false, vib: 0.0 }];
+			60.0 - (Melody { tones, segs: Vec::new(), wander_st: 0.0, seed: 0 }).key_at(note_ms - left).unwrap()
 		};
 		assert!((at(1000.0, 0.0) - FALL_ST).abs() < 0.01, "falls {} st", at(1000.0, 0.0));
 		assert!((at(250.0, 0.0) - FALL_ST * 0.5).abs() < 0.01, "falls {} st", at(250.0, 0.0));
 		assert!(at(250.0, 76.0).abs() < 0.01, "already {} st down", at(250.0, 76.0));
+	}
+
+	// a passage laid out: rest, sat, on, mats, a long hum, rest
+	fn laid_out() -> (Vec<Tone>, Vec<Span>) {
+		let notes = [note(0, 300.0, ""), note(55, 600.0, "sat"), note(57, 400.0, "on"), note(59, 800.0, "mats"),
+			note(60, 900.0, "hum"), note(0, 300.0, "")];
+		lay_out(pieces(&notes, &mut dictreader::new()), 0.0)
+	}
+
+	#[test]
+	fn humanized_syllables_land_near_their_beat() {
+		let (mut tones, spans) = laid_out();
+		let grid: Vec<(f64, f64)> = tones.iter().map(|t| (t.start, t.end)).collect();
+		humanize_onsets(&mut tones, &spans, 1.0, 7);
+		let mut moved = 0;
+		for (t, &(start, end)) in tones.iter().zip(&grid) {
+			assert!((t.start - start).abs() <= HUMAN_ONSET_MS as f64 && t.end > t.start, "{} for {}", t.start, start);
+			assert!((t.end - end).abs() <= HUMAN_ONSET_MS as f64);
+			if t.start != start { moved += 1; }
+		}
+		assert!(moved > 0, "nothing moved");
+		// the passage starts and ends on the beat
+		assert_eq!((tones[0].start, tones[tones.len() - 1].end), (grid[0].0, grid[grid.len() - 1].1));
+	}
+
+	#[test]
+	fn a_humanized_note_lands_near_its_key() {
+		let (mut tones, _) = laid_out();
+		let keys: Vec<f32> = tones.iter().map(|t| t.key).collect();
+		humanize_tones(&mut tones, 1.0, 7);
+		let off: Vec<f32> = tones.iter().zip(&keys).map(|(t, k)| t.key - k).collect();
+		assert!(off.iter().all(|d| d.abs() <= HUMAN_DETUNE_ST) && off.iter().any(|d| *d != 0.0), "{:?}", off);
+		// and wanders no further than HUMAN_WANDER_ST
+		let m = Melody { tones, segs: Vec::new(), wander_st: HUMAN_WANDER_ST, seed: 7 };
+		let w: Vec<f32> = (0..300).map(|i| m.wander(i as f64 * 10.0)).collect();
+		assert!(w.iter().all(|x| x.abs() <= HUMAN_WANDER_ST) && w.iter().any(|x| x.abs() > HUMAN_WANDER_ST / 4.0));
 	}
 
 	#[test]

@@ -651,12 +651,17 @@ mod tests {
 	// sing a passage on a voice to the end, with its trace
 	fn sing(notes: &[Note], voice: usize) -> Traced { perform(notes, voice, Style::Sing) }
 
-	// sing or rap a passage on a voice to the end, with its trace
-	fn perform(notes: &[Note], voice: usize, style: Style) -> Traced {
+	// sing or rap a passage exactly as written, on a voice to the end, with its trace
+	fn perform(notes: &[Note], voice: usize, style: Style) -> Traced { perform_take(notes, voice, style, 0.0, 1) }
+
+	// ... humanized this much, as the take seed gives
+	fn perform_take(notes: &[Note], voice: usize, style: Style, humanize: f32, seed: u32) -> Traced {
 		let mut out = Traced { x: Vec::new(), segs: Vec::new(), lines: Vec::new() };
 		let mut s = Singer::new();
 		s.trace = true;
 		s.style = style;
+		s.humanize = humanize;
+		s.seed = seed;
 		s.synth.set_voice(_vtm::VOICES[voice]);
 		block_on(async { s.sing(notes, &mut out).await?; s.finish(&mut out).await }).unwrap();
 		out
@@ -711,6 +716,18 @@ mod tests {
 			Note { key: 57, ms: 300.0, lyric: "-" }, Note { key: 60, ms: 1000.0, lyric: "dog" },
 			Note { key: 0, ms: 300.0, lyric: "" }];
 		assert_eq!(perform(&notes, 0, Style::Rap).lines, perform(&notes, 0, Style::Sing).lines);
+	}
+
+	#[test]
+	fn a_humanized_take_repeats_with_its_seed_and_keeps_its_length() {
+		let notes = [Note { key: 0, ms: 300.0, lyric: "" }, Note { key: 55, ms: 600.0, lyric: "sat" },
+			Note { key: 57, ms: 400.0, lyric: "on" }, Note { key: 59, ms: 800.0, lyric: "mats" },
+			Note { key: 0, ms: 300.0, lyric: "" }];
+		let take = |seed: u32| perform_take(&notes, 0, Style::Sing, 1.0, seed).x;
+		let (one, again, other) = (take(1), take(1), take(2));
+		assert_eq!(one, again, "the same seed sings another take");
+		assert_ne!(one, other, "another seed sings the same take");
+		assert_eq!(one.len(), perform(&notes, 0, Style::Sing).x.len(), "humanizing changed the passage's length");
 	}
 
 	#[test]
