@@ -658,11 +658,12 @@ mod tests {
 		out
 	}
 
-	// the strongest period of x[from..to] (ms) between 70 and 500 Hz, in Hz
-	fn pitch_hz(x: &[f32], from: f32, to: f32) -> f32 {
+	// the strongest period of x[from..to] (ms) within 4 semitones of near_hz, in Hz
+	fn pitch_hz(x: &[f32], from: f32, to: f32, near_hz: f32) -> f32 {
 		let at = |ms: f32| (ms * m_sr as f32 / 1000.0) as usize;
 		let w = &x[at(from)..at(to)];
-		let lags = m_sr as usize / 500..m_sr as usize / 70;
+		let span = libm::exp2f(4.0 / 12.0);
+		let lags = (m_sr as f32 / (near_hz * span)) as usize..(m_sr as f32 / (near_hz / span)) as usize + 1;
 		let corr = |lag: usize| -> f32 {
 			let n = w.len() - lag;
 			w[..n].iter().zip(&w[lag..]).map(|(a, b)| a * b).sum::<f32>() / n as f32
@@ -676,10 +677,18 @@ mod tests {
 		let notes = [Note { key: 0, ms: 200.0, lyric: "" }, Note { key: 57, ms: 1000.0, lyric: "la" }];
 		for voice in [0, 2, 3, 6] {
 			// after the scoop, before the vibrato
-			let hz = pitch_hz(&sing(&notes, voice).x, 330.0, 480.0);
+			let hz = pitch_hz(&sing(&notes, voice).x, 330.0, 480.0, 220.0);
 			let off = 12.0 * libm::log2f(hz / 220.0);
 			assert!(off.abs() < 0.3, "voice {} sings {} Hz for 220", voice, hz);
 		}
+	}
+
+	#[test]
+	fn a_soprano_high_c_sings_at_its_key() {
+		let notes = [Note { key: 0, ms: 200.0, lyric: "" }, Note { key: 84, ms: 1000.0, lyric: "la" }];
+		let hz = pitch_hz(&sing(&notes, 2).x, 330.0, 480.0, 1046.5);
+		let off = 12.0 * libm::log2f(hz / 1046.5);
+		assert!(off.abs() < 0.3, "sings {} Hz for 1046.5", hz);
 	}
 
 	#[test]

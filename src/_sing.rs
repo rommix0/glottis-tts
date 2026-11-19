@@ -71,7 +71,7 @@ const VIBRATO_DELAY_MS: f32 = 300.0;		// into the note
 const VIBRATO_RISE_MS:  f32 = 400.0;
 const VIBRATO_FADE_MS:  f32 = 150.0;		// before the note, or the glide out of it, ends
 const MIN_HZ:           f32 = 40.0;
-const MAX_HZ:           f32 = 1000.0;
+const MAX_HZ:           f32 = 1600.0;
 
 pub struct Note<'a> {
 	pub key:   u8,			// MIDI key: 60 is middle C, 69 is A4 at 440 Hz
