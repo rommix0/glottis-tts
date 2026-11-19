@@ -16,6 +16,8 @@ text -> normalizer -> dictionary / suffix matching / letter-to-sound
 - [Tour](samples/tour.mp3) (35 s): the standard voice reading numbers, dates and money, questions and a long sentence
 - [Voices](samples/voices.mp3) (48 s): voices 1 to 7
 - [Speaking rate](samples/rate.mp3) (9 s): fast, slow and normal
+- [Happy Birthday](samples/birthday.mp3) (14 s): sung by the standard voice
+- [Bingo](samples/bingo.mp3) (40 s): sung, then rapped, by the standard voice
 
 `python tools/build_samples.py` renders them again.
 

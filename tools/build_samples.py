@@ -2,8 +2,8 @@
 
 usage: python tools/build_samples.py
 
-Each sample is a few lines said one after another: trailing silence trimmed, 550 ms between lines of the same voice,
-950 ms when the voice changes.
+Each sample is a few lines said or sung one after another: trailing silence trimmed, 550 ms between lines of the
+same voice, 950 ms when the voice changes.
 """
 import array
 import os
@@ -46,10 +46,52 @@ SAMPLES = {
 	],
 }
 
+# songs as (MIDI key, ms, lyric), Happy Birthday in G and Bingo in C; a key of None is a rest, a lyric of "-" carries on
+# the word
+BIRTHDAY = [
+	(None, 400, ''), (55, 340, 'happy'), (55, 110, '-'), (57, 450, 'birthday'), (55, 450, '-'), (60, 450, 'to'),
+	(59, 900, 'you'), (None, 450, ''),
+	(55, 340, 'happy'), (55, 110, '-'), (57, 450, 'birthday'), (55, 450, '-'), (62, 450, 'to'), (60, 900, 'you'),
+	(None, 450, ''),
+	(55, 340, 'happy'), (55, 110, '-'), (67, 450, 'birthday'), (64, 450, '-'), (60, 450, 'dear'), (59, 450, 'friend'),
+	(57, 900, '-'), (None, 450, ''),
+	(65, 340, 'happy'), (65, 110, '-'), (64, 450, 'birthday'), (60, 450, '-'), (62, 450, 'to'), (60, 1350, 'you'),
+	(None, 300, ''),
+]
+BINGO = [
+	(None, 500, ''), (55, 500, 'there'),
+	(60, 500, 'was'), (60, 500, 'a'), (55, 500, 'farmer'), (55, 500, '-'),
+	(57, 500, 'had'), (57, 500, 'a'), (55, 750, 'dog'), (None, 250, ''),
+	(55, 500, 'and'), (60, 500, 'bingo'), (60, 500, '-'), (62, 500, 'was'), (62, 500, 'his'),
+	(64, 1000, 'name'), (60, 750, 'oh'), (None, 250, ''),
+	(64, 500, 'b'), (64, 500, 'i'), (65, 250, 'n'), (65, 250, 'g'), (65, 250, 'o'), (None, 250, ''),
+	(62, 500, 'b'), (62, 500, 'i'), (64, 250, 'n'), (64, 250, 'g'), (64, 250, 'o'), (None, 250, ''),
+	(60, 500, 'b'), (60, 500, 'i'), (62, 250, 'n'), (62, 250, 'g'), (62, 250, 'o'), (None, 250, ''),
+	(59, 500, 'and'), (55, 500, 'bingo'), (57, 500, '-'), (59, 250, 'was'), (59, 250, 'his'),
+	(60, 1000, 'name'), (60, 1000, 'oh'), (None, 500, ''),
+]
 
-def render(demo, tmp, voice, rate, text):
+
+def score(song, shift):
+	# the demo's --sing score, moved by shift semitones
+	return ' '.join(f'r:{ms}' if key is None else f'{key + shift}:{ms}:{lyric}' for key, ms, lyric in song)
+
+
+# song name: (voice, demo options) lines
+SONGS = {
+	'birthday': [
+		(0, ['--sing', score(BIRTHDAY, 0)]),
+	],
+	'bingo': [
+		(0, ['--sing', score(BINGO, 0)]),
+		(0, ['--rap', '--sing', score(BINGO, 0)]),
+	],
+}
+
+
+def render(demo, tmp, voice, options):
 	path = os.path.join(tmp, 'line.wav')
-	subprocess.run([demo, '--16bit', '--voice', str(voice), '--rate', str(rate), '--wav', path, text], check=True)
+	subprocess.run([demo, '--16bit', '--voice', str(voice), '--wav', path] + options, check=True)
 	with wave.open(path) as w:
 		x = array.array('h', w.readframes(w.getnframes()))
 	end = len(x)
@@ -66,13 +108,16 @@ def main():
 	subprocess.run(['cargo', 'build', '--release', '--example', 'tts_demo'], cwd=ROOT, check=True)
 	demo = os.path.join(ROOT, 'target', 'release', 'examples', 'tts_demo' + ('.exe' if sys.platform == 'win32' else ''))
 	os.makedirs(OUT, exist_ok=True)
+	takes = {name: [(voice, ['--rate', str(rate), text]) for voice, rate, text in lines]
+		for name, lines in SAMPLES.items()}
+	takes.update(SONGS)
 	with tempfile.TemporaryDirectory() as tmp:
-		for name, lines in SAMPLES.items():
+		for name, lines in takes.items():
 			x = silence(LEAD_MS)
-			for k, (voice, rate, text) in enumerate(lines):
+			for k, (voice, options) in enumerate(lines):
 				if k > 0:
 					x += silence(SAME_MS if voice == lines[k - 1][0] else CHANGE_MS)
-				x += render(demo, tmp, voice, rate, text)
+				x += render(demo, tmp, voice, options)
 			x += silence(TAIL_MS)
 			wav = os.path.join(tmp, name + '.wav')
 			with wave.open(wav, 'wb') as w:
