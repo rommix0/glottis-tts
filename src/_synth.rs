@@ -134,6 +134,11 @@ const R_ONSET_MS: f32 = 90.0;
 // move makes sound clipped
 const R_ENTRY_MS: f32 = 50.0;
 
+// a vowel after l, r, w or y glides out of it over this long: a quicker move sounds like a stop
+const APPROX_RELEASE_MS: f32 = 80.0;
+// out of a vowel an l takes at least this long to reach its formants ("ball", "feel")
+const L_ONSET_MS: f32 = 60.0;
+
 // while F2 glides, F1 still opens into a back vowel within this long
 const BACK_F1_MS: f32 = 40.0;
 
@@ -1486,11 +1491,16 @@ impl engine {
 			let back = self.pft_l1 & NASAL == 0 && tongue && self.F2_A_src < 1400.0;
 			self.marker_A = if self.pft_l1 & NASAL != 0 { samples(NASAL_RELEASE_MS) }
 				else if back { samples(BACK_TRANSITION_MS) }
+				else if self.pft_l1 & APPROXIMANT != 0 { samples(APPROX_RELEASE_MS) }
 				else { fifty_ms };
 			if back { self.f1_len = samples(BACK_F1_MS); }
 		} else {
 			// l, r, w and y: get transition from formant table
 			self.marker_A = share_of(self.pdr_c, self.C_A_src);
+			if self.phn_c == LX {
+				// an l after its vowel ("ball"); a short l between vowels must still arrive ("follow")
+				self.marker_A = self.marker_A.max(samples(L_ONSET_MS));
+			}
 		}
 		self.marker_B = share_of(self.pdr_c, 100 - self.C_B_src);
 		if self.pft_c & VOWEL != 0 {
@@ -3241,6 +3251,52 @@ mod tests {
 		out
 	}
 
+	// ms the biggest formant move from phone a's target to phone b's (the 3rd and 4th of these) takes from 10% to
+	// 90% of the way
+	fn move_ms(phones: &[(u8, i32)]) -> f32 {
+		let (a, b) = (phones[2].0, phones[3].0);
+		let mut e = on_table();
+		let mut tr: Vec<(u8, [f32; 3], [f32; 3])> = Vec::new();		// (phone, formants, its own A targets)
+		for (seg, &(p, d)) in phones.iter().enumerate() {
+			if e.load(p, d, true, seg, seg == 1) {
+				while e.is_running() {
+					play(&mut e);
+					tr.push((e.phn_c, [e.F1_reg, e.F2_reg, e.F3_reg], [e.F1_A_src, e.F2_A_src, e.F3_A_src]));
+				}
+			}
+		}
+		let first = |p: u8| (0..tr.len()).find(|&i| tr[i].0 == p).unwrap();
+		let (ia, ib) = (first(a), first(b));
+		let (from, to) = (tr[ia].2, tr[ib].2);
+		let k = (0..3).max_by(|&x, &y| (to[x] - from[x]).abs().partial_cmp(&(to[y] - from[y]).abs()).unwrap()).unwrap();
+		let share = |i: usize| (tr[i].1[k] - from[k]) / (to[k] - from[k]);
+		// once a is near its own target, from the last time it holds there to the first time b's is nearly reached
+		let held = (ia..tr.len()).find(|&i| share(i) < 0.1).unwrap();
+		let t90 = (held..tr.len()).find(|&i| share(i) >= 0.9).unwrap();
+		let t10 = (held..t90).rev().find(|&i| share(i) < 0.1).unwrap();
+		(t90 - t10) as f32 * 1000.0 / m_sr as f32
+	}
+
+	#[test]
+	fn a_vowel_glides_slowly_out_of_l_r_w_and_y() {
+		// "law", "reed", "we", "you": the move into the vowel takes its time, or l, r, w and y sound like stops
+		for c in [L, R, W, Y] {
+			for v in [AA, IY, UW] {
+				let ms = move_ms(&[(PAU, 80), (AX, 60), (c, 70), (v, 160), (PAU, 100), (SIL, 50)]);
+				assert!(ms >= 45.0, "{} into {}: {} ms", c, v, ms);
+			}
+		}
+	}
+
+	#[test]
+	fn a_vowel_glides_into_an_l() {
+		// "ball", "feel": the move into a final l takes its time, as into an r
+		for v in [AA, IY, AO, EH] {
+			let ms = move_ms(&[(PAU, 80), (B, 70), (v, 160), (LX, 100), (PAU, 100), (SIL, 50)]);
+			assert!(ms >= 70.0, "{} into lx: {} ms", v, ms);
+		}
+	}
+
 	#[test]
 	fn a_vowel_glides_into_an_r_over_its_last_50_ms() {
 		// "four", "car", "air": the move into an r starts about 50 ms inside the vowel, so it glides into the r
@@ -3459,4 +3515,5 @@ mod tests {
 		let worst = f.windows(3).map(|w| jump(w, 0).max(jump(w, 1)).max(jump(w, 2))).fold(0.0, f32::max);
 		assert!(worst < 0.1, "a formant changed speed by {} Hz per sample in one sample", worst);
 	}
+
 }
