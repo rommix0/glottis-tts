@@ -68,6 +68,7 @@ const SCOOP_ST:         f32 = 1.0;			// a note after a rest starts this low ...
 const SCOOP_MS:         f32 = 100.0;		// ... and rises over this long
 const FALL_ST:          f32 = 1.5;			// a note before a rest falls this far over its last FALL_MS
 const FALL_MS:          f32 = 150.0;
+const FALL_MAX_SHARE:   f32 = 0.3;			// of a short note: its fall shorter and shallower, or it droops
 const VIBRATO_HZ:       f32 = 5.5;
 const VIBRATO_ST:       f32 = 0.35;			// peak deviation
 const VIBRATO_DELAY_MS: f32 = 300.0;		// into the note
@@ -271,6 +272,12 @@ fn glide_ms(interval: f32, note_ms: f32) -> f32 {
 // the dip before a glide and the overshoot after it, in the glide's direction
 fn bend(interval: f32) -> f32 { (BEND_SHARE * interval).clamp(-BEND_MAX_ST, BEND_MAX_ST) }
 
+// how far a note before a rest has fallen with left ms to go
+fn fall(left: f32, note_ms: f32) -> f32 {
+	let ms = FALL_MS.min(FALL_MAX_SHARE * note_ms).max(1.0);
+	FALL_ST * ms / FALL_MS * ease(1.0 - left / ms)
+}
+
 fn key_hz(key: f32) -> f32 { 440.0 * libm::exp2f((key - 69.0) / 12.0) }
 
 // the pitch to give the synthesizer so the voice's pitch scaling lands on hz
@@ -388,7 +395,7 @@ impl Melody {
 				key -= bend(interval) * bump((left - g) / PREP_MS);
 				sustain_left = left - g;
 			},
-			None => key -= FALL_ST * ease(1.0 - left / FALL_MS),
+			None => key -= fall(left, (tone.end - tone.start) as f32),
 		}
 
 		// VIBRATO
@@ -581,6 +588,19 @@ mod tests {
 			}
 		}
 		assert_eq!(accents, 2);
+	}
+
+	#[test]
+	fn a_short_note_falls_less_before_a_rest() {
+		// a long note falls FALL_ST over its last FALL_MS; one of 250 ms over its last 30%, as far in proportion
+		let at = |note_ms: f64, left: f64| {
+			let tones = vec![Tone { start: 0.0, end: note_ms, key: 60.0, sung: true },
+				Tone { start: note_ms, end: note_ms + 300.0, key: 60.0, sung: false }];
+			60.0 - (Melody { tones, segs: Vec::new() }).key_at(note_ms - left).unwrap()
+		};
+		assert!((at(1000.0, 0.0) - FALL_ST).abs() < 0.01, "falls {} st", at(1000.0, 0.0));
+		assert!((at(250.0, 0.0) - FALL_ST * 0.5).abs() < 0.01, "falls {} st", at(250.0, 0.0));
+		assert!(at(250.0, 76.0).abs() < 0.01, "already {} st down", at(250.0, 76.0));
 	}
 
 	#[test]
