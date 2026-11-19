@@ -409,6 +409,7 @@ fn stop_timeline(
 
 pub struct engine {
 	pub tbl: &'static [u16; TABLE_LEN],	// the formant table, swapped by --table
+	pub vowel_glide_ms: Option<f32>,	// longest a vowel's move from its first target to its second; None: all of it
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -566,6 +567,7 @@ impl engine {
 	pub fn new() -> engine {
 		engine {
 			tbl: &formant_tbl,
+			vowel_glide_ms: None,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
 			amp_len:   0,
@@ -1569,6 +1571,10 @@ impl engine {
 			// out of a vowel the move into an r ends inside it (R_ENTRY_MS): its own move waits for that one to land
 			self.ab_at = self.ab_at.max(self.counter + (1.0 / self.slope) as i32);
 		}
+		if self.pft_c & VOWEL != 0 && let Some(glide) = self.vowel_glide_ms {
+			// hold the first target and glide only at the end, as a held sung diphthong does
+			self.ab_at = self.ab_at.max(self.marker_B - samples(glide));
+		}
 		// step() counts before it checks, so a move due on the phone's first sample starts on its second.
 		// if A and B are the same (a nasal after silence) skip it: a move would cut short the glide into A
 		if self.ab_at <= self.counter {
@@ -2453,6 +2459,26 @@ mod tests {
 		});
 		let (f2, target) = at_35ms.unwrap();
 		assert!((f2 - target).abs() < 1.0, "n's F2 {} by 35 ms, target {}", f2, target);
+	}
+
+	#[test]
+	fn a_held_vowel_glides_only_at_its_end() {
+		// a long ay with the glide capped: on its first target through the middle, on its second at the end
+		let mut e = engine::new();
+		e.vowel_glide_ms = Some(150.0);
+		let mut f2: Vec<(i32, f32, f32, f32)> = Vec::new();		// (counter, F2, first target, second target)
+		for (seg, &(p, d)) in [(PAU, 50), (AY, 800), (PAU, 100), (SIL, 50)].iter().enumerate() {
+			if e.load(p, d, true, seg, true) {
+				while e.is_running() {
+					play(&mut e);
+					if e.phn_c == AY { f2.push((e.counter, e.F2_reg, e.F2_A_src, e.F2_B_src)); }
+				}
+			}
+		}
+		let mid = f2[f2.len() / 2];
+		let end = f2[f2.len() - 1];
+		assert!((mid.1 - mid.2).abs() < 20.0, "F2 {} in the middle, first target {}", mid.1, mid.2);
+		assert!((end.1 - end.3).abs() < 20.0, "F2 {} at the end, second target {}", end.1, end.3);
 	}
 
 	#[test]

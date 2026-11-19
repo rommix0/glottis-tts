@@ -46,6 +46,7 @@ const HOLD: &str = "-";
 // timing
 const CONSONANT_SCALE:     f32 = 0.85;		// a sung consonant against its inherent speech length
 const MAX_CONSONANT_SHARE: f32 = 0.85;		// of the note or rest the consonants come out of
+const DIPHTHONG_GLIDE_MS:  f32 = 150.0;		// a held vowel keeps its first target until this long before its end
 const FLUSH_MS:            f32 = 50.0;		// pause and silence that play out the end in finish()
 const SAMPLES_PER_MS:      f64 = m_sr as f64 / 1000.0;
 
@@ -353,8 +354,10 @@ pub struct Singer {
 
 impl Singer {
 	pub fn new() -> Singer {
+		let mut synth = _synth::engine::new();
+		synth.vowel_glide_ms = Some(DIPHTHONG_GLIDE_MS);
 		Singer {
-			synth:    _synth::engine::new(),
+			synth,
 			trace:    false,
 			melody:   Melody { tones: Vec::new(), segs: Vec::new() },
 			dict:     dictreader::new(),

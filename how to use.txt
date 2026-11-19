@@ -206,7 +206,8 @@ so of the voice dying away.
 
 Pitch follows the keys whatever the voice: the voice changes only the
 timbre. Each note glides from the last, scoops up after a rest, falls before
-one, and gets vibrato when it is long.
+one, and gets vibrato when it is long. A held diphthong ("my", "go")
+keeps its first vowel and glides to the second only at the end.
 
 sing can be called again with the next passage; each call is sung as a
 passage of its own.
