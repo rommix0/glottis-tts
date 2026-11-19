@@ -119,6 +119,7 @@ impl Shape {
 const CLOCK_LIMIT_MS: f32 = 600_000.0;
 
 pub struct Contour {
+	pub accent_max_ms: f32,		// an accent peaks no later than this into its vowel (long sung vowels)
 	targets: Vec<Target>,
 	bumps:   Vec<Bump>,
 	starts:  Vec<(usize, f32, f32)>,	// (stream index, start ms, ms) of every utterance segment, on the clock
@@ -146,6 +147,7 @@ fn find<T>(v: &[T], last: &mut usize, before: impl Fn(&T) -> bool) -> usize {
 impl Contour {
 	pub fn new() -> Contour {
 		Contour {
+			accent_max_ms: f32::INFINITY,
 			targets: Vec::new(), bumps: Vec::new(), starts: Vec::new(), clock: 0.0, prev_seg: 0, prev_ms: 0.0,
 			target_hint: 0, bump_hint: 0, start_hint: 0,
 		}
@@ -159,7 +161,7 @@ impl Contour {
 		// stream[i] is the stream index of utt.segs[i]
 		if utt.segs.is_empty() { return; }
 		self.drop_old(stream[0]);
-		let mut lay = Layout::new(utt, stream, self.clock);
+		let mut lay = Layout::new(utt, stream, self.clock, self.accent_max_ms);
 		lay.place_phrases();
 		let kept = merge_close(core::mem::take(&mut lay.placed));
 		// time order is stream order, and a later utterance has later stream indices, so targets and starts stay sorted
@@ -240,10 +242,11 @@ struct Layout<'a> {
 	clock:  f32,						// the contour's clock where the utterance starts
 	placed: Vec<(usize, f32, Target)>,	// (phrase, time, target)
 	bumps:  Vec<Bump>,
+	accent_max_ms: f32,					// an accent peaks no later than this into its vowel
 }
 
 impl<'a> Layout<'a> {
-	fn new(utt: &'a Utterance, stream: &'a [usize], clock: f32) -> Layout<'a> {
+	fn new(utt: &'a Utterance, stream: &'a [usize], clock: f32, accent_max_ms: f32) -> Layout<'a> {
 		// start time of each segment (ms) within the utterance
 		let mut t0: Vec<f32> = Vec::with_capacity(utt.segs.len() + 1);
 		let mut acc = 0.0;
@@ -252,7 +255,7 @@ impl<'a> Layout<'a> {
 			acc += s.dur_ms;
 		}
 		t0.push(acc);
-		Layout { utt, stream, t0, clock, placed: Vec::new(), bumps: Vec::new() }
+		Layout { utt, stream, t0, clock, placed: Vec::new(), bumps: Vec::new(), accent_max_ms }
 	}
 
 	fn time(&self, i: usize, frac: f32) -> f32 { self.t0[i] + frac * self.utt.segs[i].dur_ms }
@@ -330,6 +333,7 @@ impl<'a> Layout<'a> {
 				(true, _) => (NUCLEAR_FRAC, TargetKind::Accent),
 				_ => (ACCENT_FRAC, TargetKind::Accent),
 			};
+			let frac = frac.min(self.accent_max_ms / utt.segs[n].dur_ms.max(1.0));
 			let tp = self.time(n, frac);
 			let height = match kind {
 				TargetKind::Low => LOW_ACCENT_ST,
