@@ -127,6 +127,8 @@ const BREATH_RAMP_MS: f32 = 60.0;
 
 // longest move out of a vowel into the next phone
 const VOWEL_EXIT_MS: f32 = 50.0;
+// and at least this share of the vowel, up to VOWEL_EXIT_MS
+const VOWEL_EXIT_SHARE: f32 = 0.3;
 
 // out of a vowel an r reaches its formants within this long
 const R_ONSET_MS: f32 = 90.0;
@@ -1546,6 +1548,12 @@ impl engine {
 		} else {
 			self.update_B_to_Next();
 			self.marker_BA = share_of(self.pdr_c, self.C_B_src);
+		}
+		let exit_floor = samples(VOWEL_EXIT_MS).min((VOWEL_EXIT_SHARE * self.pdr_c as f32) as i32);
+		if self.pft_c & VOWEL != 0 && self.marker_BA < exit_floor {
+			// a diphthong or a back vowel with a small tail share still glides into the next phone, not snaps
+			self.marker_B -= exit_floor - self.marker_BA;
+			self.marker_BA = exit_floor;
 		}
 		if self.pft_c & VOWEL != 0 && self.marker_BA > samples(VOWEL_EXIT_MS) {
 			// long vowel: hold its own formants longer, so the move into the next phone keeps the same length
@@ -3294,6 +3302,25 @@ mod tests {
 		for v in [AA, IY, AO, EH] {
 			let ms = move_ms(&[(PAU, 80), (B, 70), (v, 160), (LX, 100), (PAU, 100), (SIL, 50)]);
 			assert!(ms >= 70.0, "{} into lx: {} ms", v, ms);
+		}
+	}
+
+	#[test]
+	fn a_diphthong_or_back_vowel_glides_into_the_next_consonant() {
+		// "out", "boy", "time", "food", "road": these vowels' small tail share would snap into the consonant
+		for v in [AW, OY, AY, UW, UH, OW] {
+			for c in [D, M] {
+				let mut e = on_table();
+				let mut move_ms = 0.0;
+				for (seg, &(p, d)) in [(PAU, 80), (B, 70), (v, 160), (c, 90), (AX, 80), (PAU, 100)].iter().enumerate() {
+					if e.load(p, d, true, seg, seg == 1) {
+						// load sets up the phone before the one it is given
+						if e.phn_c == c { move_ms = 1000.0 / e.slope / m_sr as f32; }
+						while e.is_running() { play(&mut e); }
+					}
+				}
+				assert!(move_ms >= 45.0, "{} into {}: {} ms", v, c, move_ms);
+			}
 		}
 	}
 
