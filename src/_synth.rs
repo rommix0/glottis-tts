@@ -411,6 +411,7 @@ pub struct engine {
 	pub tbl: &'static [u16; TABLE_LEN],	// the formant table, swapped by --table
 	pub vowel_glide_ms: Option<f32>,	// longest a vowel's move from its first target to its second; None: all of it
 	pub vowel_bw_scale: f32,			// vowel bandwidths times this (1: the table's)
+	pub uw_soften: f32,					// share of the way uw's formants move toward uh's (0: none)
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -570,6 +571,7 @@ impl engine {
 			tbl: &formant_tbl,
 			vowel_glide_ms: None,
 			vowel_bw_scale: 1.0,
+			uw_soften: 0.0,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
 			amp_len:   0,
@@ -759,6 +761,18 @@ impl engine {
 		self.read_table_row(row);
 		self.copy_a_to_empty_b();
 		self.hold_formants_in_pause();
+	}
+	fn soften_uw(&mut self) {
+		// held, uw's "oo" sounds hooty: open it toward uh
+		let tbl = self.tbl;
+		let uh = |i: usize| tbl[UH as usize * ROW_LEN + 5 + i] as f32;		// uh's F1-F3, as read_table_row reads them
+		let k = self.uw_soften;
+		for (i, f) in [&mut self.F1_A_src, &mut self.F2_A_src, &mut self.F3_A_src].into_iter().enumerate() {
+			*f += k * (uh(i) - *f);
+		}
+		for (i, f) in [&mut self.F1_B_src, &mut self.F2_B_src, &mut self.F3_B_src].into_iter().enumerate() {
+			*f += k * (uh(i) - *f);
+		}
 	}
 	fn read_table_row(&mut self, row: u8) {
 		let offset_src: usize = row as usize * ROW_LEN;
@@ -1406,6 +1420,9 @@ impl engine {
 		let (prev_b, prev_av) = ([self.B1_B_src, self.B2_B_src, self.B3_B_src], self.AV_src);
 
 		self.fetch();
+		if self.phn_c == UW {
+			self.soften_uw();
+		}
 
 		// do formant target re-adjustments before doing anything else
 		self.ftar();
@@ -2508,6 +2525,27 @@ mod tests {
 		let (plain, wide) = (mid_bw(1.0), mid_bw(1.3));
 		for k in 0..3 {
 			assert!((wide[k] / plain[k] - 1.3).abs() < 0.01, "B{} {} against {}", k + 1, wide[k], plain[k]);
+		}
+	}
+
+	#[test]
+	fn a_softened_uw_moves_toward_uh() {
+		// the formant targets uw and uh load with
+		let targets = |v: u8, soften: f32| {
+			let mut e = engine::new();
+			e.uw_soften = soften;
+			let mut f = [0.0f32; 6];
+			for (seg, &(p, d)) in [(PAU, 50), (v, 300), (PAU, 100), (SIL, 50)].iter().enumerate() {
+				if e.load(p, d, true, seg, true) && e.phn_c == v {
+					f = [e.F1_A_src, e.F2_A_src, e.F3_A_src, e.F1_B_src, e.F2_B_src, e.F3_B_src];
+				}
+			}
+			f
+		};
+		let (uw, half, uh) = (targets(UW, 0.0), targets(UW, 0.5), targets(UH, 0.0));
+		for k in 0..6 {
+			let mid = (uw[k] + uh[k % 3]) / 2.0;
+			assert!((half[k] - mid).abs() < 1.0, "target {}: {} for {} halfway to uh", k, half[k], mid);
 		}
 	}
 

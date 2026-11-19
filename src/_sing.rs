@@ -48,6 +48,7 @@ const CONSONANT_SCALE:     f32 = 0.85;		// a sung consonant against its inherent
 const MAX_CONSONANT_SHARE: f32 = 0.85;		// of the note or rest the consonants come out of
 const DIPHTHONG_GLIDE_MS:  f32 = 150.0;		// a held vowel keeps its first target until this long before its end
 const VOWEL_BW_SCALE:      f32 = 1.3;		// a held vowel's still formants ring on a harmonic unless wider
+const UW_SOFTEN:           f32 = 0.5;		// a held uw opens this far toward uh
 const FLUSH_MS:            f32 = 50.0;		// pause and silence that play out the end in finish()
 const SAMPLES_PER_MS:      f64 = m_sr as f64 / 1000.0;
 
@@ -358,6 +359,7 @@ impl Singer {
 		let mut synth = _synth::engine::new();
 		synth.vowel_glide_ms = Some(DIPHTHONG_GLIDE_MS);
 		synth.vowel_bw_scale = VOWEL_BW_SCALE;
+		synth.uw_soften = UW_SOFTEN;
 		Singer {
 			synth,
 			trace:    false,
