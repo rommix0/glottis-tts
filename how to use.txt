@@ -171,14 +171,55 @@ and 56 pau (pause). They have no token, so phone_token returns None for them,
 as it does for 0.
 
 
-7. WITHOUT THE STANDARD LIBRARY
+7. SINGING
+----------
+Singer sings notes with the same voices. Each Note has a MIDI key (60 is
+middle C, 69 is A4 at 440 Hz), a length in ms and a lyric:
+
+    a word        starts the word on this note, with its first syllable
+    "-"           the word's next syllable, or its vowel held on a new
+                  pitch once it has none left
+    ""            a rest
+
+    use tts_synth::{Note, Singer};
+
+    let notes = [
+        Note { key: 0,  ms: 300.0, lyric: "" },
+        Note { key: 55, ms: 300.0, lyric: "happy" },
+        Note { key: 55, ms: 150.0, lyric: "-" },
+        Note { key: 57, ms: 450.0, lyric: "birthday" },
+        Note { key: 55, ms: 450.0, lyric: "-" },
+    ];
+    let mut singer = Singer::new();
+    singer.synth.set_voice(tts_synth::_vtm::VOICES[2]);
+    singer.sing(&notes, &mut sink).await?;
+    singer.finish(&mut sink).await?;
+
+sing takes a SpeechSink, like Speaker::speak. A word with more syllables
+than notes splits its last note among the rest.
+
+Timing follows the notes to the sample: each vowel starts on its note, so
+the consonants before it come in ahead of the beat, out of the note or rest
+before. A passage should start with a rest to give its first consonants that
+time. The output runs as long as the notes; finish adds the last 100 ms or
+so of the voice dying away.
+
+Pitch follows the keys whatever the voice: the voice changes only the
+timbre. Each note glides from the last, scoops up after a rest, falls before
+one, and gets vibrato when it is long.
+
+sing can be called again with the next passage; each call is sung as a
+passage of its own.
+
+
+8. WITHOUT THE STANDARD LIBRARY
 -------------------------------
 The library is #![no_std] and uses alloc, so the program must provide a global
 allocator. It does its arithmetic in f32; a CPU with a floating-point unit (a
 Pentium, a Cortex-M4F, an ESP32) runs it well, one without one will be slow.
 
 
-8. TRYING IT BY HAND
+9. TRYING IT BY HAND
 --------------------
 tts_demo speaks the text on the default output device (on Windows):
 
@@ -194,3 +235,7 @@ Options:
     --seg-dump FILE   write the segment index of every sample (32-bit)
     --phone N         say one phone, by its number in section 6
     --table FILE      use a formant table file instead of the built-in one
+    --sing SCORE      sing notes instead of speaking: key:ms:lyric for a
+                      note, r:ms for a rest, separated by spaces
+
+    cargo run --release --example tts_demo -- --voice 2 --sing         "r:300 67:300:happy 67:150:- 69:450:birthday 67:450:- 72:450:to 71:900:you r:300"

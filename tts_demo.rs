@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io::{BufWriter, Cursor, Seek, Write};
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
-use tts_synth::{_vtm, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
+use tts_synth::{_vtm, Note, Singer, SpeechSink, Speaker, SAMPLE_RATE, normalize, phone_token, to_i16};
 use tts_synth::_phone::{TOKEN_CW, TOKEN_PERIOD};
 use tts_synth::_vtbl::TABLE_LEN;
 
@@ -28,12 +28,13 @@ struct Opts {
 	voice: usize,	// voice profile number
 	phone: Option<u8>,	// token of a single phone to say instead of the text
 	table: Option<String>,	// formant table file to use instead of the built-in one
+	sing:  Option<Vec<(u8, f32, String)>>,	// notes to sing instead of the text: (MIDI key, ms, lyric)
 }
 
 fn parse_args() -> Result<Opts, String> {
 	let mut opts = Opts {
 		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, wav: None,
-		voice: 0, phone: None, table: None
+		voice: 0, phone: None, table: None, sing: None
 	};
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
@@ -48,6 +49,8 @@ fn parse_args() -> Result<Opts, String> {
 			opts.wav = Some(args.next().ok_or("--wav needs a file name")?);
 		} else if arg == "--seg-dump" {
 			opts.seg_dump = Some(args.next().ok_or("--seg-dump needs a file name")?);
+		} else if arg == "--sing" {
+			opts.sing = Some(parse_score(&args.next().ok_or("--sing needs a score")?)?);
 		} else if arg == "--table" {
 			opts.table = Some(args.next().ok_or("--table needs a file name")?);
 		} else if arg == "--phone" {
@@ -68,8 +71,27 @@ fn parse_args() -> Result<Opts, String> {
 			have_text = true;
 		}
 	}
-	if !have_text && opts.phone.is_none() { return Err("please enter text!".to_string()); }
+	if !have_text && opts.phone.is_none() && opts.sing.is_none() { return Err("please enter text!".to_string()); }
 	Ok(opts)
+}
+
+// a score is notes separated by spaces: key:ms:lyric, or r:ms for a rest.
+// the key is a MIDI number (60 is middle C); a lyric of "-" sings the word's next syllable or holds the vowel
+fn parse_score(score: &str) -> Result<Vec<(u8, f32, String)>, String> {
+	let mut notes = Vec::new();
+	for item in score.split_whitespace() {
+		let mut f = item.splitn(3, ':');
+		let bad = || format!("bad note {item}: use key:ms:lyric or r:ms");
+		let key = f.next().ok_or_else(bad)?;
+		let ms: f32 = f.next().and_then(|v| v.parse().ok()).ok_or_else(bad)?;
+		if key == "r" {
+			notes.push((0, ms, String::new()));
+		} else {
+			let key: u8 = key.parse().ok().filter(|&k| k < 128).ok_or_else(bad)?;
+			notes.push((key, ms, f.next().ok_or_else(bad)?.to_string()));
+		}
+	}
+	Ok(notes)
 }
 
 // writes the WAV and the segment dump, prints the trace
@@ -116,6 +138,16 @@ fn read_table(path: &str) -> Result<&'static [u16; TABLE_LEN], String> {
 fn render<W: Write + Seek>(opts: &Opts, writer: hound::WavWriter<W>) -> Result<(), Box<dyn std::error::Error>> {
 	let mut out = WavOut { writer, dump: None };
 	if let Some(path) = &opts.seg_dump { out.dump = Some(BufWriter::new(File::create(path)?)); }
+
+	if let Some(score) = &opts.sing {
+		let notes: Vec<Note> = score.iter().map(|(key, ms, lyric)| Note { key: *key, ms: *ms, lyric }).collect();
+		let mut singer = Singer::new();
+		singer.synth.set_voice(_vtm::VOICES[opts.voice]);
+		singer.trace = opts.trace;
+		block_on(async { singer.sing(&notes, &mut out).await?; singer.finish(&mut out).await })?;
+		out.writer.finalize()?;
+		return Ok(());
+	}
 
 	let mut sp = Speaker::new();
 	sp.rate = opts.rate;

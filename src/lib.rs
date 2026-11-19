@@ -34,6 +34,7 @@ pub mod _dread;
 pub mod _utt;
 pub mod _dur;
 pub mod _f0;
+pub mod _sing;
 
 use alloc::{format, string::String, vec, vec::Vec};
 use core::{fmt::Write, future::Future};
@@ -41,6 +42,8 @@ use _utils::cbuf;
 use _dread::{dictreader, END_OF_PHONES};
 use _utt::{Utterance, Boundary, Seg};
 use _phone::*;
+
+pub use _sing::{Note, Singer};
 
 // master samples rate
 pub const SAMPLE_RATE: u32 = _vtm::m_sr;
@@ -85,6 +88,30 @@ impl<W: WriteSample> SpeechSink for Pcm<W> {
 	type Error = W::Error;
 	async fn sample(&mut self, x: f32, _seg: usize) -> Result<(), W::Error> {
 		self.0.write_sample(to_i16(x)).await
+	}
+}
+
+// play out what the synthesizer has loaded; hz_at gives the pitch at a (segment, fraction) position,
+// read once a frame, when the synthesizer reads it
+async fn run_synth<O: SpeechSink>(
+	synth: &mut _synth::engine, out: &mut O, f0: &mut f32, mut hz_at: impl FnMut(usize, f32) -> f32
+) -> Result<(), O::Error> {
+	while synth.is_running() {
+		if synth.wants_frame() {
+			let (s, f) = synth.position();
+			*f0 = hz_at(s, f);
+		}
+		let seg = synth.segment();
+		out.sample(synth.sample(*f0), seg).await?;
+	}
+	Ok(())
+}
+
+// the phrase-end release after a phone: the voice dying away
+fn release_phone(last_phone: u8) -> u8 {
+	match last_phone {
+		D | T => IXP,
+		_     => AXP,
 	}
 }
 
@@ -172,15 +199,7 @@ impl Speaker {
 		// feed one phone into the synthesizer and send out what it plays
 		self.last_phone = phone;
 		if self.synth.load(phone, libm::roundf(dur_ms) as i32, stressed, seg, word_start) {
-			while self.synth.is_running() {
-				// the pitch is read once a frame, when the synthesizer reads it
-				if self.synth.wants_frame() {
-					let (s, f) = self.synth.position();
-					self.f0 = self.contour.hz_at(s, f);
-				}
-				let seg = self.synth.segment();
-				out.sample(self.synth.sample(self.f0), seg).await?;
-			}
+			run_synth(&mut self.synth, out, &mut self.f0, |s, f| self.contour.hz_at(s, f)).await?;
 		}
 		Ok(())
 	}
@@ -280,10 +299,7 @@ impl Speaker {
 	async fn play_phrase_end<O: SpeechSink>(
 		&mut self, last_phone: u8, end: Boundary, (r, p): (usize, usize), out: &mut O
 	) -> Result<(), O::Error> {
-		let release = match last_phone {
-			D | T => IXP,
-			_     => AXP,
-		};
+		let release = release_phone(last_phone);
 		let pause = _dur::pause_after(end, self.rate);
 		if self.trace {
 			out.trace(&format!("TRACE {} 0 seg={} dur={:.0} rules=release", release, r, _dur::RELEASE_MS));
@@ -339,7 +355,9 @@ impl Speaker {
 	}
 
 	// take the word out of wbuf and add its phone tokens and text to the sentence
-	fn word_tokens(wbuf: &mut cbuf, dict_reader: &mut dictreader, tokens: &mut Vec<u8>, texts: &mut Vec<String>) {
+	pub(crate) fn word_tokens(
+		wbuf: &mut cbuf, dict_reader: &mut dictreader, tokens: &mut Vec<u8>, texts: &mut Vec<String>
+	) {
 		dict_reader.reset();
 		let mut raw = Vec::new();
 		while wbuf.is_not_empty() {
@@ -615,6 +633,85 @@ mod tests {
 		if let Some(i) = pause_end {
 			let peak = out[i..].iter().fold(0.0f32, |m, x| m.max(x.abs()));
 			panic!("sound after the final pause, peak {}", peak);
+		}
+	}
+
+	// collects samples, segments and the trace
+	struct Traced { x: Vec<f32>, segs: Vec<usize>, lines: Vec<String> }
+	impl SpeechSink for Traced {
+		type Error = Infallible;
+		async fn sample(&mut self, x: f32, seg: usize) -> Result<(), Infallible> {
+			self.x.push(x);
+			self.segs.push(seg);
+			Ok(())
+		}
+		fn trace(&mut self, line: &str) { self.lines.push(line.to_string()); }
+	}
+
+	// sing a passage on a voice to the end, with its trace
+	fn sing(notes: &[Note], voice: usize) -> Traced {
+		let mut out = Traced { x: Vec::new(), segs: Vec::new(), lines: Vec::new() };
+		let mut s = Singer::new();
+		s.trace = true;
+		s.synth.set_voice(_vtm::VOICES[voice]);
+		block_on(async { s.sing(notes, &mut out).await?; s.finish(&mut out).await }).unwrap();
+		out
+	}
+
+	// the strongest period of x[from..to] (ms) between 70 and 500 Hz, in Hz
+	fn pitch_hz(x: &[f32], from: f32, to: f32) -> f32 {
+		let at = |ms: f32| (ms * m_sr as f32 / 1000.0) as usize;
+		let w = &x[at(from)..at(to)];
+		let lags = m_sr as usize / 500..m_sr as usize / 70;
+		let corr = |lag: usize| -> f32 {
+			let n = w.len() - lag;
+			w[..n].iter().zip(&w[lag..]).map(|(a, b)| a * b).sum::<f32>() / n as f32
+		};
+		let best = lags.max_by(|&a, &b| corr(a).total_cmp(&corr(b))).unwrap();
+		m_sr as f32 / best as f32
+	}
+
+	#[test]
+	fn a_note_sings_at_its_key_on_every_voice() {
+		let notes = [Note { key: 0, ms: 200.0, lyric: "" }, Note { key: 57, ms: 1000.0, lyric: "la" }];
+		for voice in [0, 2, 3, 6] {
+			// after the scoop, before the vibrato
+			let hz = pitch_hz(&sing(&notes, voice).x, 330.0, 480.0);
+			let off = 12.0 * libm::log2f(hz / 220.0);
+			assert!(off.abs() < 0.3, "voice {} sings {} Hz for 220", voice, hz);
+		}
+	}
+
+	#[test]
+	fn vowels_start_on_their_beat() {
+		// rest, sat, on, mats, rest, eyes: the vowels are due at 300, 900, 1300 and 2400 ms
+		let notes = [Note { key: 0, ms: 300.0, lyric: "" }, Note { key: 55, ms: 600.0, lyric: "sat" },
+			Note { key: 57, ms: 400.0, lyric: "on" }, Note { key: 59, ms: 800.0, lyric: "mats" },
+			Note { key: 0, ms: 300.0, lyric: "" }, Note { key: 59, ms: 800.0, lyric: "eyes" }];
+		let out = sing(&notes, 0);
+		let ms = |seg: usize| out.segs.iter().position(|&s| s == seg).unwrap() as f32 * 1000.0 / m_sr as f32;
+		let mut vowels = Vec::new();
+		for line in &out.lines {
+			let f: Vec<&str> = line.split_whitespace().collect();
+			let phone: u8 = f[1].parse().unwrap();
+			let seg: usize = f[3].trim_start_matches("seg=").parse().unwrap();
+			if _utt::is_vowel(phone) && phone != AXP && phone != IXP { vowels.push(ms(seg)); }
+		}
+		// a vowel's label leads its beat by the transition carried into it; a pause carries none
+		for (got, due) in vowels.iter().zip([300.0, 900.0, 1300.0]) {
+			assert!(got - due <= 1.0 && due - got <= 25.0, "vowel at {} ms, due at {}", got, due);
+		}
+		assert!((vowels[3] - 2400.0).abs() <= 1.0, "the vowel after the rest is at {} ms", vowels[3]);
+	}
+
+	#[test]
+	fn odd_scores_neither_panic_nor_go_wrong() {
+		let n = |key: u8, ms: f32, lyric: &'static str| Note { key, ms, lyric };
+		for notes in [vec![], vec![n(60, 300.0, "-")], vec![n(60, f32::NAN, "la"), n(60, -5.0, "la")],
+			vec![n(0, 300.0, "la"), n(127, 300.0, "la"), n(60, 0.0, "la")], vec![n(60, 300.0, "!!!")],
+			vec![n(60, 20.0, "strengths"), n(60, 1.0, "-"), n(60, 20.0, "")]] {
+			let out = sing(&notes, 0);
+			assert!(out.x.iter().all(|x| x.is_finite()), "{} notes", notes.len());
 		}
 	}
 

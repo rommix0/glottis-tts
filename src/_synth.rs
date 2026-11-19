@@ -425,6 +425,7 @@ pub struct engine {
 	marker_B: i32,
 	marker_BA: i32,
 	is_first: bool,
+	lost: i32,				// samples of phones the synthesizer left out (an unreleased stop's) since take_lost_samples
 	counter: i32,
 	phn_l1: u8,
 	phn_c:  u8,
@@ -581,6 +582,7 @@ impl engine {
 			marker_B:  0,
 			marker_BA: 0,
 			is_first:  true,
+			lost:      0,
 			counter:   0,
 			phn_l1: SIL,
 			phn_c:  SIL,
@@ -722,6 +724,9 @@ impl engine {
 		}
 	}
 	pub fn set_voice(&mut self, v: Voice) { self.vtm_eng.set_voice(v); }
+	pub fn voice(&self) -> Voice { self.vtm_eng.voice() }
+	// the samples left out of what was loaded since the last call; whoever keeps time can give them back
+	pub fn take_lost_samples(&mut self) -> i32 { core::mem::take(&mut self.lost) }
 	fn advance(&mut self, phone: u8, dur_ms: i32, stressed: bool, seg: usize, word_start: bool) {
 		self.phn_l1 = self.phn_c;
 		self.phn_c  = self.phn_r1;
@@ -1480,6 +1485,7 @@ impl engine {
 		let stop = stop_timeline(
 			self.phn_c, self.pdr_c, self.phn_l1, self.phn_r1, self.pst_r1, self.pwi_c, self.pwi_r1
 		);
+		self.lost += self.pdr_c - (stop.closure + stop.burst + stop.asp);
 		self.marker_A = stop.closure;
 		self.marker_B = stop.closure + stop.burst;
 		self.burst_len = stop.burst;

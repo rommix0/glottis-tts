@@ -949,6 +949,7 @@ impl vtm {
 		tract.set_voice(VOICES[0]);
 		tract
 	}
+	pub fn voice(&self) -> Voice { self.voice }
 	pub fn set_voice(&mut self, v: Voice) {
 		// rebuild the fixed upper formants at the voice's scale (the lower ones follow the inputs every frame)
 		self.voice = v;
