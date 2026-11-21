@@ -197,6 +197,9 @@ fn asp_front_cut(f1: f32, f2: f32) -> f32 { ASP_FRONT_DB_PER_KHZ * ((f2 - f1) - 
 const H_DB: f32 = 12.0;
 const H_EDGE_MS: f32 = 20.0;
 
+// whisper: breath this far under the voicing it stands in for (aspiration is measured on a much lower scale)
+const WHISPER_BELOW_DB: f32 = 44.0;
+
 // the open glottis damps F1 and F2 during aspiration: bandwidth added, fading out with it
 const ASP_B1_WIDEN: f32 = 400.0;
 const ASP_B2_WIDEN: f32 = 70.0;
@@ -427,6 +430,7 @@ pub struct engine {
 	pub vowel_min_b2: f32,				// and a vowel's F2 bandwidth at least this (0: no floor)
 	pub vowel_min_reduction: f32,		// a vowel moves at least this share of the way to ax, however long it lasts
 	pub word_catch: bool,				// a vowel starting a word after a vowel starts with a glottal catch
+	pub whisper: bool,					// breath in place of the voice
 	vtm_eng: vtm,
 	marker_A: i32,
 	amp_len: i32,			// samples the amplitudes take to reach this phone's values
@@ -589,6 +593,7 @@ impl engine {
 			vowel_min_b2: 0.0,
 			vowel_min_reduction: MIN_VOWEL_REDUCTION,
 			word_catch: true,
+			whisper: false,
 			vtm_eng: vtm::new(),
 			marker_A:  0,
 			amp_len:   0,
@@ -1785,11 +1790,22 @@ impl engine {
 		let dir = if lips { 1.0 } else { -1.0 };
 		self.lip_hold = (self.lip_hold + dir / ramp as f32).clamp(0.0, 1.0);
 	}
+	// whisper: the voicing's breath through the tract; a voiced closure stays silent rather than hiss
+	fn whisper_breath(&self, av: f32) -> f32 {
+		if !self.whisper || (self.stop_on && self.stop_bar && self.counter >= 0) { return 0.0; }
+		let cut = asp_front_cut(self.F1_reg, self.F2_reg);
+		// no floor: an r or a vowel's onset sits under aspiration's 0 dB, yet is heard like its voicing
+		av * libm::powf(0.5, (WHISPER_BELOW_DB + cut) / DB_PER_HALF)
+	}
 	fn set_vtm_inputs(&mut self, f0: f32) {
+		let av = fade(self.AV_reg, self.GL_V);
+		let breath_ah = self.whisper_breath(av);
+
 		// aspiration: the open glottis damps F1 and F2, less so as voicing takes over
 		let damp = if self.asp_db <= 0.0 { 0.0 } else if self.counter < 0 { 1.0 } else {
 			(1.0 - self.counter as f32 / self.asp_fade.max(1) as f32).max(0.0)
 		};
+		let damp = if breath_ah > 0.0 { 1.0 } else { damp };
 
 		// as the voice dies away at a phrase end it gets breathier and laxer
 		let breath = if matches!(self.phn_c, AXP | IXP) {
@@ -1826,8 +1842,8 @@ impl engine {
 		self.vtm_eng.A10 = self.A10_reg;
 		self.vtm_eng.AB  = self.AB_reg;
 		self.vtm_eng.AF  = self.AF_reg;
-		self.vtm_eng.AH  = self.AH_reg;
-		self.vtm_eng.AV  = fade(self.AV_reg, self.GL_V);
+		self.vtm_eng.AH  = self.AH_reg.max(breath_ah);
+		self.vtm_eng.AV  = if self.whisper { 0.0 } else { av };
 	}
 }
 
@@ -1856,8 +1872,12 @@ mod tests {
 	}
 
 	// render phones (id, ms, stressed) as segments 0, 1, ... and pass the engine and each sample to `each`
-	fn drive(phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
-		let mut e = on_table();
+	fn drive(phones: &[(u8, i32, bool)], each: impl FnMut(&engine, f32)) {
+		drive_on(on_table(), phones, each);
+	}
+
+	// the same on a given engine
+	fn drive_on(mut e: engine, phones: &[(u8, i32, bool)], mut each: impl FnMut(&engine, f32)) {
 		for (seg, &(p, d, st)) in phones.iter().enumerate() {
 			if e.load(p, d, st, seg, true) {
 				while e.is_running() {
@@ -3567,6 +3587,64 @@ mod tests {
 		let jump = |w: &[[f32; 3]], k: usize| (w[2][k] - 2.0 * w[1][k] + w[0][k]).abs();
 		let worst = f.windows(3).map(|w| jump(w, 0).max(jump(w, 1)).max(jump(w, 2))).fold(0.0, f32::max);
 		assert!(worst < 0.1, "a formant changed speed by {} Hz per sample in one sample", worst);
+	}
+
+	// a whispering engine on the table's targets
+	fn whispering() -> engine {
+		let mut e = on_table();
+		e.whisper = true;
+		e
+	}
+
+	#[test]
+	fn whisper_breathes_vowels_without_voicing() {
+		let (mut vowel, mut breathed) = (0, 0);
+		drive_on(whispering(), &[(PAU, 50, false), (AA, 200, true), (AA, 200, true), (PAU, 50, false)], |e, _| {
+			assert_eq!(e.vtm_eng.AV, 0.0, "voicing in a whisper");
+			if e.phn_c == AA {
+				vowel += 1;
+				if e.vtm_eng.AH > 0.0 { breathed += 1; }
+			}
+		});
+		assert!(breathed as f32 > 0.8 * vowel as f32, "{} of {} vowel samples breathed", breathed, vowel);
+	}
+
+	#[test]
+	fn whisper_breathes_an_r_voiced_under_aspirations_floor() {
+		// "brown": the r's voicing turns into breath under aspiration's 0 dB, which must not cut it off
+		let (mut r, mut breathed) = (0, 0);
+		drive_on(whispering(), &[(PAU, 50, false), (B, 70, false), (R, 71, false), (AW, 166, true), (N, 76, false),
+			(PAU, 50, false)], |e, _| {
+			if e.phn_c == R {
+				r += 1;
+				if e.vtm_eng.AH > 0.0 { breathed += 1; }
+			}
+		});
+		assert!(r > 0 && breathed == r, "{} of {} r samples breathed", breathed, r);
+	}
+
+	#[test]
+	fn whisper_keeps_a_voiced_closure_silent() {
+		let mut seen = 0;
+		drive_on(whispering(), &[(PAU, 50, false), (AA, 150, true), (B, 80, false), (AA, 150, true),
+			(PAU, 50, false)], |e, _| {
+			if e.phn_c == B && e.counter >= five_ms && e.counter < e.marker_A {
+				seen += 1;
+				assert_eq!(e.vtm_eng.AH, 0.0, "breath in b's closure");
+			}
+		});
+		assert!(seen > 0, "b's closure never played");
+	}
+
+	#[test]
+	fn whisper_carries_a_vowel_into_the_next_stop() {
+		// the vowel still sounds as the stop's segment starts: its breath goes on with it
+		let mut carried = 0;
+		drive_on(whispering(), &[(PAU, 50, false), (AA, 150, true), (K, 80, false), (AA, 150, true),
+			(PAU, 50, false)], |e, _| {
+			if e.phn_c == K && e.counter < 0 && e.vtm_eng.AH > 0.0 { carried += 1; }
+		});
+		assert!(carried > 0, "the vowel's breath stops where k's segment starts");
 	}
 
 }

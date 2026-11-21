@@ -26,6 +26,7 @@ struct Opts {
 	pcm16: bool,	// write 16-bit integer samples instead of 32-bit float
 	wav:   Option<String>,	// file to save the speech to instead of playing it
 	voice: usize,	// voice profile number
+	whisper: bool,	// breathe instead of voicing
 	phone: Option<u8>,	// token of a single phone to say instead of the text
 	table: Option<String>,	// formant table file to use instead of the built-in one
 	sing:  Option<Vec<(u8, f32, String)>>,	// notes to sing instead of the text: (MIDI key, ms, lyric)
@@ -37,7 +38,7 @@ struct Opts {
 fn parse_args() -> Result<Opts, String> {
 	let mut opts = Opts {
 		text: String::new(), rate: 1.0, trace: false, text_only: false, seg_dump: None, pcm16: false, wav: None,
-		voice: 0, phone: None, table: None, sing: None, rap: false, humanize: 1.0, seed: 1
+		voice: 0, whisper: false, phone: None, table: None, sing: None, rap: false, humanize: 1.0, seed: 1
 	};
 	let mut have_text = false;
 	let mut args = env::args().skip(1);
@@ -58,6 +59,8 @@ fn parse_args() -> Result<Opts, String> {
 			opts.humanize = h;
 		} else if arg == "--seed" {
 			opts.seed = args.next().and_then(|v| v.parse().ok()).ok_or("--seed needs a whole number")?;
+		} else if arg == "--whisper" {
+			opts.whisper = true;
 		} else if arg == "--rap" {
 			opts.rap = true;
 		} else if arg == "--sing" {
@@ -154,6 +157,7 @@ fn render<W: Write + Seek>(opts: &Opts, writer: hound::WavWriter<W>) -> Result<(
 		let notes: Vec<Note> = score.iter().map(|(key, ms, lyric)| Note { key: *key, ms: *ms, lyric }).collect();
 		let mut singer = Singer::new();
 		singer.synth.set_voice(_vtm::VOICES[opts.voice]);
+		singer.synth.whisper = opts.whisper;
 		singer.trace = opts.trace;
 		singer.style = if opts.rap { Style::Rap } else { Style::Sing };
 		singer.humanize = opts.humanize;
@@ -167,6 +171,7 @@ fn render<W: Write + Seek>(opts: &Opts, writer: hound::WavWriter<W>) -> Result<(
 	sp.rate = opts.rate;
 	sp.trace = opts.trace;
 	sp.synth.set_voice(_vtm::VOICES[opts.voice]);
+	sp.synth.whisper = opts.whisper;
 	if let Some(path) = &opts.table { sp.synth.tbl = read_table(path)?; }
 
 	block_on(async {
