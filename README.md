@@ -58,7 +58,7 @@ cargo run --release --example tts_demo -- "this is an example sentence."
 ```
 
 Options include `--wav FILE` to save to a WAV file instead, `--voice N`, `--whisper`, `--rate R`, `--16bit`, `--text`,
-`--trace` and `--phone N`.
+`--trace` and `--phone N`; `--help` lists them all.
 
 See [how to use.txt](how%20to%20use.txt) for the full guide: voices, rate, float samples and timing, phone input, and running without `std`.
 

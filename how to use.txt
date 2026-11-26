@@ -272,5 +272,6 @@ Options:
     --rap             with --sing, rap the notes instead of singing them
     --humanize H      with --sing, how human the drift: 0 exact, 1 natural (default)
     --seed N          with --sing, the take the drift follows (default 1)
+    -h, --help        print the options
 
     cargo run --release --example tts_demo -- --voice 2 --sing         "r:300 67:300:happy 67:150:- 69:450:birthday 67:450:- 72:450:to 71:900:you r:300"

@@ -16,6 +16,37 @@ fn wav_spec(pcm16: bool) -> hound::WavSpec {
 	hound::WavSpec { channels: 1, sample_rate: SAMPLE_RATE, bits_per_sample: bits, sample_format: format }
 }
 
+const HELP: &str = "\
+usage: glottis-tts [options] \"text to speak.\"
+
+Speaks the text on the default output device, or saves it with --wav.
+
+options:
+    --wav FILE        save the speech to a WAV file instead of playing it
+    --voice N         voice 0 to 7: 0 table, 1 large head, 2 female, 3 child,
+                      4 giant, 5 deep voice tiny head, 6 pulled apart, 7 shaky
+    --whisper         whisper instead of voicing (also with --sing)
+    --rate R          speaking rate, 0.5 to 2.0 (default 1.0)
+    --16bit           with --wav, 16-bit samples instead of 32-bit float
+    --text            print the normalized text instead of speaking
+    --trace           print each word's and segment's plan
+    --seg-dump FILE   write the segment index of every sample (32-bit)
+    --phone N         say one phone, by its number in the guide's phone list
+    --table FILE      use a formant table file instead of the built-in one
+    --sing SCORE      sing notes instead of speaking: key:ms:lyric for a note,
+                      r:ms for a rest, separated by spaces (key 60 is middle C)
+    --rap             with --sing, rap the notes instead of singing them
+    --humanize H      with --sing, how human the drift: 0 exact, 1 natural
+                      (default), up to 4
+    --seed N          with --sing, the take the drift follows (default 1)
+    -h, --help        print this help
+
+examples:
+    glottis-tts \"this is an example sentence.\"
+    glottis-tts --voice 2 --rate 1.2 --wav hello.wav \"Hello, world.\"
+    glottis-tts --voice 2 --sing \"67:300:happy 67:150:- 69:450:birthday 67:450:- 72:450:to 71:900:you\"
+";
+
 // command line options
 struct Opts {
 	text:  String,
@@ -85,7 +116,9 @@ fn parse_args() -> Result<Opts, String> {
 			have_text = true;
 		}
 	}
-	if !have_text && opts.phone.is_none() && opts.sing.is_none() { return Err("please enter text!".to_string()); }
+	if !have_text && opts.phone.is_none() && opts.sing.is_none() {
+		return Err("please enter text! (--help lists the options)".to_string());
+	}
 	Ok(opts)
 }
 
@@ -209,6 +242,11 @@ fn play(_wav: &[u8]) -> Result<(), String> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+	if env::args().skip(1).any(|a| a == "--help" || a == "-h") {
+		print!("{HELP}");
+		return Ok(());
+	}
 
 	let opts = match parse_args() {
 		Ok(o) => o,
