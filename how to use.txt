@@ -89,6 +89,11 @@ Use a new Speaker for each text. The voices:
     6  pulled apart
     7  shaky
 
+Any voice can whisper: breath takes the place of the voicing, with the same
+words, timing and vowels.
+
+    sp.synth.whisper = true;
+
 
 4. TEXT INPUT
 -------------
@@ -254,6 +259,7 @@ At 44100 Hz:
 Options:
     --wav FILE        save the speech to a WAV file instead of playing it
     --voice N         voice 0 to 7
+    --whisper         whisper instead of voicing (also with --sing)
     --rate R          speaking rate, 0.5 to 2.0
     --16bit           with --wav, 16-bit samples instead of 32-bit float
     --text            print the normalized text instead of speaking
