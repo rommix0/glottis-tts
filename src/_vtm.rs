@@ -174,7 +174,7 @@ pub const VOICES: [Voice; 8] = [
 		rd: 100.0, br: 6.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },
 	// 1 large head
 	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0,
-		rd: 100.0, br: 0.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },
+		rd: 100.0, br: 9.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },
 	// 2 female
 	Voice { f0: 150.0, range:  85.0, f1: 136.0, f2: 113.0, f3: 117.0, fhi: 111.0,
 		rd: 240.0, br: 8.0, db:  2.2, fl:  25.0, jit: 0.2, shim: 0.2 },
@@ -183,13 +183,13 @@ pub const VOICES: [Voice; 8] = [
 		rd: 125.0, br: 2.0, db: -3.1, fl:  25.0, jit: 0.2, shim: 0.2 },
 	// 4 giant
 	Voice { f0:  65.0, range:  80.0, f1:  80.0, f2:  82.0, f3:  83.0, fhi:  84.0,
-		rd:  95.0, br: 0.0, db:  2.1, fl:  25.0, jit: 0.6, shim: 0.4 },
+		rd:  95.0, br: 9.0, db:  2.1, fl:  25.0, jit: 0.6, shim: 0.4 },
 	// 5 deep voice, tiny head
 	Voice { f0:  70.0, range: 100.0, f1: 135.0, f2: 132.0, f3: 130.0, fhi: 125.0,
-		rd: 100.0, br: 0.0, db:  2.6, fl:  25.0, jit: 0.2, shim: 0.2 },
+		rd: 100.0, br: 9.0, db:  2.6, fl:  25.0, jit: 0.2, shim: 0.2 },
 	// 6 pulled apart
 	Voice { f0: 100.0, range: 160.0, f1:  70.0, f2: 130.0, f3:  85.0, fhi: 100.0,
-		rd: 100.0, br: 0.0, db:  0.6, fl:  25.0, jit: 0.2, shim: 0.2 },
+		rd: 100.0, br: 6.0, db:  0.6, fl:  25.0, jit: 0.2, shim: 0.2 },
 	// 7 shaky
 	Voice { f0:  95.0, range: 110.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0,
 		rd: 110.0, br: 2.0, db:  1.1, fl: 250.0, jit: 1.5, shim: 1.0 },
