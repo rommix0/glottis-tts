@@ -171,7 +171,7 @@ pub struct Voice {
 pub const VOICES: [Voice; 8] = [
 	// 0 table voice
 	Voice { f0: 100.0, range: 100.0, f1: 100.0, f2: 100.0, f3: 100.0, fhi: 100.0,
-		rd: 100.0, br: 0.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },
+		rd: 100.0, br: 6.0, db:  0.8, fl:  25.0, jit: 0.2, shim: 0.2 },
 	// 1 large head
 	Voice { f0:  85.0, range:  95.0, f1:  90.0, f2:  91.0, f3:  92.0, fhi:  92.0,
 		rd: 100.0, br: 0.0, db:  0.9, fl:  25.0, jit: 0.2, shim: 0.2 },
@@ -1506,7 +1506,7 @@ mod tests {
 		let mut v = vtm::new();
 		let span = 16384 * (m_sr / 22050) as usize;
 		let x: Vec<f32> = (0..m_sr as usize / 2 + span).map(|_| {
-			v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6;
+			v.F0 = 120.0; v.AV = DB_GAIN[60]; v.RD = 0.6; v.BR = 0.0;
 			v.F1 = 700.0; v.F2 = 1220.0; v.F3 = 2600.0; v.B1 = 90.0; v.B2 = 110.0; v.B3 = 160.0;
 			v.step()
 		}).collect();
